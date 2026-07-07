@@ -44,7 +44,14 @@ async function buildSimklCard(
         ? h('img', { src: posters[i], width: 84, height: 118, style: { borderRadius: 4, objectFit: 'cover' } })
         : h('div', { style: { width: 84, height: 118, backgroundColor: C.panel, borderRadius: 4, display: 'flex' } }),
       h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(it.title, 14)),
-      h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, timeAgo(it.watchedAt)),
+      h(
+        'div',
+        { style: { display: 'flex', marginTop: 2 } },
+        h('span', { style: { fontSize: 10, color: C.accent } }, timeAgo(it.watchedAt)),
+        it.rating !== null
+          ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★ ${it.rating}`)
+          : h('div', { style: { display: 'flex' } })
+      ),
       h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1 } }, detail(it))
     )
   );
@@ -61,7 +68,11 @@ async function buildSimklCard(
     h(
       'div',
       { style: { display: 'flex', alignItems: 'center', marginBottom: 14 } },
-      h('img', { src: mark, width: 26, height: 26, style: { borderRadius: 6, marginRight: 8 } }),
+      h(
+        'div',
+        { style: { display: 'flex', backgroundColor: '#ffffff', borderRadius: 6, padding: 3, marginRight: 8 } },
+        h('img', { src: mark, width: 22, height: 22, style: { borderRadius: 4 } })
+      ),
       h('span', { style: { fontSize: 18, fontWeight: 700, color: C.text } }, 'Simkl'),
       h(
         'div',
@@ -81,7 +92,7 @@ async function buildSimklCard(
     h('div', { style: { display: 'flex' } }, ...tiles)
   );
 
-  return renderCard(node, 520, 268);
+  return renderCard(node, 520, 290);
 }
 
 export const buildSimklMoviesCard = (d: SimklStats) => buildSimklCard(d, 'movies');

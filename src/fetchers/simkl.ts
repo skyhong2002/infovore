@@ -5,6 +5,7 @@ export interface SimklItem {
   poster: string;
   year: number | null;
   watchedAt: string; // ISO date
+  rating: number | null; // user rating out of 10
   // Shows only: watched/total episode progress.
   watchedEpisodes?: number;
   totalEpisodes?: number;
@@ -69,6 +70,7 @@ export async function fetchSimkl(): Promise<SimklStats> {
       poster: poster(m.movie?.poster),
       year: m.movie?.year ?? null,
       watchedAt: m.last_watched_at,
+      rating: m.user_rating ?? null,
     }));
 
   const recentShows: SimklItem[] = (shows?.shows ?? [])
@@ -80,6 +82,7 @@ export async function fetchSimkl(): Promise<SimklStats> {
       poster: poster(s.show?.poster),
       year: s.show?.year ?? null,
       watchedAt: s.last_watched_at,
+      rating: s.user_rating ?? null,
       watchedEpisodes: s.watched_episodes_count ?? undefined,
       totalEpisodes: s.total_episodes_count ?? undefined,
     }));

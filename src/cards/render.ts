@@ -50,11 +50,11 @@ export function h(
 
 // Remote images inlined as data URIs so each SVG is self-contained.
 // Called once per refresh cycle, not per request.
-export async function toDataUri(url: string): Promise<string> {
+export async function toDataUri(url: string, attempt = 0): Promise<string> {
   if (!url) return '';
   try {
     const res = await fetch(url, { headers: { 'User-Agent': config.userAgent }, signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return '';
+    if (!res.ok) return attempt < 1 ? toDataUri(url, attempt + 1) : '';
     const buf = Buffer.from(await res.arrayBuffer());
     // Sniff the real type — some CDNs answer with binary/octet-stream,
     // which satori refuses to size.
@@ -68,6 +68,7 @@ export async function toDataUri(url: string): Promise<string> {
     }
     return `data:${type};base64,${buf.toString('base64')}`;
   } catch {
+    if (attempt < 1) return toDataUri(url, attempt + 1);
     return '';
   }
 }

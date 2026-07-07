@@ -41,8 +41,18 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
           })
         : h('div', { style: { width: 84, height: 112, backgroundColor: C.border, borderRadius: 4, display: 'flex' } }),
       h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(g.title, 14)),
-      h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, g.lastPlayed),
-      h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(g.platform, 15))
+      h(
+        'div',
+        { style: { display: 'flex', marginTop: 2 } },
+        h('span', { style: { fontSize: 10, color: C.accent } }, g.lastPlayed),
+        g.playtime
+          ? h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `· ${g.playtime}`)
+          : h('div', { style: { display: 'flex' } })
+      ),
+      h('span', { style: { fontSize: 9, color: C.dim, marginTop: 2, lineHeight: 1.3 } }, g.platform),
+      g.rating !== null
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginTop: 1 } }, `★ ${g.rating}`)
+        : h('div', { style: { display: 'flex', height: 13 } })
     )
   );
 
@@ -73,14 +83,21 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
     // Stats row, big white numbers like the profile page.
     h(
       'div',
-      { style: { display: 'flex', paddingBottom: 12, borderBottom: `1px solid ${C.border}`, marginBottom: 12 } },
+      { style: { display: 'flex' } },
       stat(data.gamesPlayed, 'Games Played'),
       stat(data.playedThisYear, `Played in ${new Date().getFullYear()}`),
       stat(data.backlog, 'Backlog')
+    ),
+    h(
+      'div',
+      { style: { display: 'flex', justifyContent: 'center', paddingBottom: 10, borderBottom: `1px solid ${C.border}`, marginBottom: 12 } },
+      data.yearExtras
+        ? h('span', { style: { fontSize: 10, color: C.dim, marginTop: 6 } }, data.yearExtras)
+        : h('div', { style: { display: 'flex' } })
     ),
     h('span', { style: { fontSize: 14, fontWeight: 700, color: C.header, marginBottom: 8 } }, 'Recently Played'),
     h('div', { style: { display: 'flex' } }, ...tiles)
   );
 
-  return renderCard(node, 520, 372);
+  return renderCard(node, 520, 420);
 }

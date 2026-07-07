@@ -48,7 +48,14 @@ async function buildKitsuCard(
         : h('div', { style: { width: 84, height: 118, backgroundColor: C.panel, borderRadius: 6, display: 'flex' } }),
       h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(e.title, 14)),
       h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, statusLabel(e, unit)),
-      h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1 } }, timeAgo(e.progressedAt))
+      h(
+        'div',
+        { style: { display: 'flex', marginTop: 1 } },
+        h('span', { style: { fontSize: 10, color: C.dim } }, timeAgo(e.progressedAt)),
+        e.rating !== null
+          ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★${Math.round(e.rating * 10) / 10}`)
+          : h('div', { style: { display: 'flex' } })
+      )
     )
   );
 
@@ -89,7 +96,7 @@ async function buildKitsuCard(
     h('div', { style: { display: 'flex' } }, ...tiles)
   );
 
-  return renderCard(node, 520, 268);
+  return renderCard(node, 520, 290);
 }
 
 export const buildKitsuAnimeCard = (d: KitsuStats) => buildKitsuCard(d, 'anime');

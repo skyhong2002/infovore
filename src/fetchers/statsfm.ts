@@ -16,6 +16,7 @@ export interface StatsfmStats {
   weeklyUniqueTracks: number;
   weeklyUniqueArtists: number;
   topAlbums: StatsfmAlbum[];
+  topArtists: { name: string; image: string; streams: number }[];
   currentTrack: { name: string; artist: string; albumImage: string } | null;
 }
 
@@ -30,10 +31,11 @@ async function getJson(url: string): Promise<any> {
 export async function fetchStatsfm(): Promise<StatsfmStats> {
   const user = config.statsfm.username;
 
-  const [profile, weekStats, topAlbums, current] = await Promise.all([
+  const [profile, weekStats, topAlbums, topArtists, current] = await Promise.all([
     getJson(`${API}/users/${user}`),
     getJson(`${API}/users/${user}/streams/stats?range=weeks`),
     getJson(`${API}/users/${user}/top/albums?range=weeks&limit=5`),
+    getJson(`${API}/users/${user}/top/artists?range=weeks&limit=5`),
     getJson(`${API}/users/${user}/streams/current`).catch(() => null),
   ]);
 
@@ -52,6 +54,11 @@ export async function fetchStatsfm(): Promise<StatsfmStats> {
       name: it.album?.name ?? '',
       artist: it.album?.artists?.[0]?.name ?? '',
       image: it.album?.image ?? '',
+      streams: it.streams ?? 0,
+    })),
+    topArtists: (topArtists.items ?? []).map((it: any) => ({
+      name: it.artist?.name ?? '',
+      image: it.artist?.image ?? '',
       streams: it.streams ?? 0,
     })),
     currentTrack: track

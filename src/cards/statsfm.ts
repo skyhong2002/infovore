@@ -13,12 +13,16 @@ const C = {
 };
 
 export async function buildStatsfmCard(data: StatsfmStats): Promise<string> {
-  const [avatar, mark, nowImg, ...albumImgs] = await Promise.all([
+  const nAlbums = data.topAlbums.length;
+  const [avatar, mark, nowImg, ...images] = await Promise.all([
     toDataUri(data.avatar),
     Promise.resolve(logo('statsfm')),
     data.currentTrack ? toDataUri(data.currentTrack.albumImage) : Promise.resolve(''),
     ...data.topAlbums.map((a) => toDataUri(a.image)),
+    ...data.topArtists.map((a) => toDataUri(a.image)),
   ]);
+  const albumImgs = images.slice(0, nAlbums);
+  const artistImgs = images.slice(nAlbums);
 
   const tiles = data.topAlbums.map((a, i) =>
     h(
@@ -35,6 +39,23 @@ export async function buildStatsfmCard(data: StatsfmStats): Promise<string> {
       ),
       h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.name, 14)),
       h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.artist, 15))
+    )
+  );
+
+  const artistTiles = data.topArtists.map((a, i) =>
+    h(
+      'div',
+      { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: 84, marginRight: i < 4 ? 12 : 0 } },
+      artistImgs[i]
+        ? h('img', { src: artistImgs[i], width: 64, height: 64, style: { borderRadius: 32, objectFit: 'cover' } })
+        : h('div', { style: { width: 64, height: 64, backgroundColor: C.panel, borderRadius: 32, display: 'flex' } }),
+      h(
+        'div',
+        { style: { display: 'flex', alignItems: 'baseline', marginTop: 6 } },
+        h('span', { style: { fontSize: 12, fontWeight: 700, color: C.accent } }, `#${i + 1}`),
+        h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `${a.streams} streams`)
+      ),
+      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: 84 } }, truncate(a.name, 14))
     )
   );
 
@@ -91,8 +112,15 @@ export async function buildStatsfmCard(data: StatsfmStats): Promise<string> {
         `last 4 weeks · ${data.weeklyStreams} streams · ${Math.round(data.weeklyMinutes / 60)}h`)
     ),
     h('div', { style: { display: 'flex' } }, ...tiles),
+    h(
+      'div',
+      { style: { display: 'flex', alignItems: 'baseline', marginTop: 16, marginBottom: 10 } },
+      h('span', { style: { fontSize: 12, fontWeight: 700, color: C.dim, letterSpacing: 1.5 } }, 'TOP ARTISTS'),
+      h('span', { style: { fontSize: 11, color: C.dim, marginLeft: 10 } }, 'last 4 weeks')
+    ),
+    h('div', { style: { display: 'flex' } }, ...artistTiles),
     nowPlaying
   );
 
-  return renderCard(node, 520, data.currentTrack ? 306 : 250);
+  return renderCard(node, 520, data.currentTrack ? 462 : 406);
 }

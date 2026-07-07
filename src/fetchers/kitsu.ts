@@ -6,6 +6,7 @@ export interface KitsuEntry {
   progress: number;
   status: string;
   progressedAt: string; // ISO date
+  rating: number | null; // out of 5 (ratingTwenty / 4)
 }
 
 export interface KitsuStats {
@@ -47,6 +48,7 @@ function parseEntries(doc: any, kind: 'anime' | 'manga'): KitsuEntry[] {
       progress: entry.attributes?.progress ?? 0,
       status: entry.attributes?.status ?? '',
       progressedAt: entry.attributes?.progressedAt ?? '',
+      rating: entry.attributes?.ratingTwenty ? entry.attributes.ratingTwenty / 4 : null,
     };
   });
 }
