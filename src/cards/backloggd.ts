@@ -51,8 +51,8 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
       ),
       h('span', { style: { fontSize: 9, color: C.dim, marginTop: 2, lineHeight: 1.3 } }, g.platform),
       g.rating !== null
-        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginTop: 1 } }, `★ ${g.rating}`)
-        : h('div', { style: { display: 'flex', height: 13 } })
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginTop: 2 } }, `★ ${g.rating}`)
+        : h('div', { style: { display: 'flex' } })
     )
   );
 
@@ -65,19 +65,19 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
         padding: '20px 24px', fontFamily: 'Roboto',
       },
     },
-    // Header: avatar + username left, wordmark right (like the site navbar).
+    // Header: wordmark left (like the site navbar), avatar + username right.
     h(
       'div',
       { style: { display: 'flex', alignItems: 'center', marginBottom: 14 } },
-      avatar
-        ? h('img', { src: avatar, width: 34, height: 34, style: { borderRadius: 4, marginRight: 10 } })
-        : h('div', { style: { display: 'flex' } }),
-      h('span', { style: { fontSize: 17, fontWeight: 700, color: '#ffffff' } }, data.username),
+      h('img', { src: wordmark, width: 26, height: 26, style: { borderRadius: 4, marginRight: 8 } }),
+      h('span', { style: { fontSize: 18, fontWeight: 700, color: '#ffffff' } }, 'Backloggd'),
       h(
         'div',
         { style: { display: 'flex', alignItems: 'center', marginLeft: 'auto' } },
-        h('img', { src: wordmark, width: 22, height: 22, style: { borderRadius: 4, marginRight: 7 } }),
-        h('span', { style: { fontSize: 16, fontWeight: 700, color: '#ffffff' } }, 'Backloggd')
+        avatar
+          ? h('img', { src: avatar, width: 30, height: 30, style: { borderRadius: 4, marginRight: 8 } })
+          : h('div', { style: { display: 'flex' } }),
+        h('span', { style: { fontSize: 14, fontWeight: 700, color: '#ffffff' } }, data.username)
       )
     ),
     // Stats row, big white numbers like the profile page.
@@ -99,5 +99,6 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
     h('div', { style: { display: 'flex' } }, ...tiles)
   );
 
-  return renderCard(node, 520, 420);
+  const anyRated = data.recent.some((g) => g.rating !== null);
+  return renderCard(node, 520, anyRated ? 414 : 400);
 }

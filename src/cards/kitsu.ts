@@ -50,7 +50,7 @@ async function buildKitsuCard(
       h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, statusLabel(e, unit)),
       h(
         'div',
-        { style: { display: 'flex', marginTop: 1 } },
+        { style: { display: 'flex', alignItems: 'baseline', marginTop: 1 } },
         h('span', { style: { fontSize: 10, color: C.dim } }, timeAgo(e.progressedAt)),
         e.rating !== null
           ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★${Math.round(e.rating * 10) / 10}`)

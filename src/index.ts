@@ -53,7 +53,67 @@ async function refreshAll(): Promise<void> {
 
 const app = new Hono();
 
+// Platform sections for the home page. Cards in one section sit side by
+// side when the viewport is wide enough and stack vertically otherwise.
+const sections: { title: string; url: string; cards: string[] }[] = [
+  { title: 'Backloggd', url: 'https://backloggd.com/u/skychopath/', cards: ['backloggd'] },
+  { title: 'Kitsu', url: 'https://kitsu.app/users/skyhong2002', cards: ['kitsu-anime', 'kitsu-manga'] },
+  { title: 'stats.fm', url: 'https://stats.fm/skyhong2002', cards: ['statsfm'] },
+  { title: 'Simkl', url: 'https://simkl.com', cards: ['simkl-movies', 'simkl-shows'] },
+];
+
+// Cache-buster: the newest fetch timestamp, appended as ?v= so browsers
+// pick up fresh renders without a hard reload.
+function version(cardName: string): number {
+  const source = cards[cardName]?.source;
+  return getCache(`data:${source}`)?.fetchedAt ?? 0;
+}
+
 app.get('/', (c) => {
+  const body = sections
+    .map((s) => {
+      const imgs = s.cards
+        .map(
+          (n) =>
+            `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.svg?v=${version(n)}" alt="${n}" width="520" loading="lazy"></a>`
+        )
+        .join('\n');
+      return `<section><h2><a href="${s.url}">${s.title}</a></h2><div class="row">${imgs}</div></section>`;
+    })
+    .join('\n');
+  c.header('Cache-Control', 'no-cache');
+  return c.html(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>status · Sky Hong</title>
+<style>
+  body { background: #0d0e11; color: #e8eaed; margin: 0 auto; padding: 32px 16px 48px;
+         max-width: 1100px; font-family: system-ui, -apple-system, sans-serif; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  p.sub { color: #8a939e; margin: 0 0 28px; font-size: 14px; }
+  section { margin-bottom: 36px; }
+  h2 { font-size: 15px; color: #8a939e; text-transform: uppercase; letter-spacing: 1.5px;
+       margin: 0 0 12px; }
+  h2 a { color: inherit; text-decoration: none; }
+  h2 a:hover { color: #e8eaed; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  .row img { max-width: 100%; height: auto; display: block; }
+  footer { color: #5a626b; font-size: 13px; }
+  footer a { color: #8a939e; }
+</style>
+</head>
+<body>
+<h1>status</h1>
+<p class="sub">What Sky Hong is playing, watching, reading and listening to — refreshed every 30 minutes.</p>
+${body}
+<footer><a href="https://github.com/skyhong2002/status.skyhong.tw">source</a> · <a href="/status">json</a></footer>
+</body>
+</html>`);
+});
+
+app.get('/status', (c) => {
   const sources = Object.keys(fetchers).map((name) => {
     const entry = getCache(`data:${name}`);
     return {
@@ -92,15 +152,7 @@ app.get('/card/:file{[a-z-]+\\.svg}', (c) => {
   return c.body(entry.data);
 });
 
-app.get('/cards', (c) => {
-  const imgs = Object.keys(cards)
-    .map((n) => `<a href="/card/${n}.svg"><img src="/card/${n}.svg" alt="${n}"></a>`)
-    .join('\n');
-  return c.html(
-    `<!doctype html><meta charset="utf-8"><title>status.skyhong.tw</title>` +
-      `<body style="background:#0d0e11;display:flex;flex-wrap:wrap;gap:16px;padding:24px;align-items:flex-start">${imgs}</body>`
-  );
-});
+app.get('/cards', (c) => c.redirect('/', 301));
 
 app.get('/healthz', (c) => c.text('ok'));
 
