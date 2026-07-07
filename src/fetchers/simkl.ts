@@ -1,56 +1,98 @@
 import { config } from '../config.js';
 
+export interface SimklItem {
+  title: string;
+  poster: string;
+  year: number | null;
+  watchedAt: string; // ISO date
+  // Shows only: watched/total episode progress.
+  watchedEpisodes?: number;
+  totalEpisodes?: number;
+}
+
 export interface SimklStats {
   userId: string;
+  name: string;
+  avatar: string;
   moviesCompleted: number;
   showsWatching: number;
   showsCompleted: number;
   totalMinutes: number;
-  lastWatched: { title: string; poster: string } | null;
+  recentMovies: SimklItem[];
+  recentShows: SimklItem[];
 }
 
-// Requires SIMKL_CLIENT_ID (create an app at https://simkl.com/settings/developer/).
-export async function fetchSimkl(): Promise<SimklStats> {
-  const { userId, clientId } = config.simkl;
-  if (!clientId) throw new Error('simkl: SIMKL_CLIENT_ID not set');
+const API = 'https://api.simkl.com';
 
-  const params = new URLSearchParams({
-    client_id: clientId,
-    'app-name': 'status.skyhong.tw',
-    'app-version': '0.1',
-  });
-  const res = await fetch(`https://api.simkl.com/users/${userId}/stats?${params}`, {
-    headers: { 'User-Agent': 'status.skyhong.tw/0.1' },
-  });
-  if (!res.ok) throw new Error(`simkl: HTTP ${res.status}`);
-  const data: any = await res.json();
-
-  // Public endpoint returning the most recently watched item with its poster.
-  let lastWatched: SimklStats['lastWatched'] = null;
-  try {
-    const bg = await fetch(
-      `https://api.simkl.com/users/recently-watched-background/${userId}?client_id=${clientId}`,
-      { headers: { 'User-Agent': 'status.skyhong.tw/0.1' } }
-    );
-    if (bg.ok) {
-      const item: any = await bg.json();
-      if (item?.title && item?.poster) {
-        lastWatched = {
-          title: item.title,
-          poster: `https://simkl.in/posters/${item.poster}_m.jpg`,
-        };
-      }
-    }
-  } catch {
-    // Card degrades gracefully without the poster.
+function apiHeaders(): Record<string, string> {
+  const h: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'User-Agent': 'status.skyhong.tw/0.1',
+    'simkl-api-key': config.simkl.clientId,
+  };
+  if (config.simkl.accessToken) {
+    h['Authorization'] = `Bearer ${config.simkl.accessToken}`;
   }
+  return h;
+}
+
+async function getJson(path: string): Promise<any> {
+  const res = await fetch(`${API}${path}`, { headers: apiHeaders(), signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`simkl: HTTP ${res.status} for ${path}`);
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+function poster(hash: string | undefined): string {
+  return hash ? `https://simkl.in/posters/${hash}_m.jpg` : '';
+}
+
+export async function fetchSimkl(): Promise<SimklStats> {
+  const { userId, clientId, accessToken } = config.simkl;
+  if (!clientId) throw new Error('simkl: SIMKL_CLIENT_ID not set');
+  if (!accessToken) throw new Error('simkl: SIMKL_ACCESS_TOKEN not set (run the PIN flow)');
+
+  const params = `?client_id=${clientId}&app-name=status.skyhong.tw&app-version=0.1`;
+  const [stats, settings, movies, shows] = await Promise.all([
+    getJson(`/users/${userId}/stats${params}`),
+    getJson(`/users/settings`),
+    getJson(`/sync/all-items/movies/completed`),
+    getJson(`/sync/all-items/shows`),
+  ]);
+
+  const recentMovies: SimklItem[] = (movies?.movies ?? [])
+    .filter((m: any) => m.last_watched_at)
+    .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
+    .slice(0, 5)
+    .map((m: any) => ({
+      title: m.movie?.title ?? 'Unknown',
+      poster: poster(m.movie?.poster),
+      year: m.movie?.year ?? null,
+      watchedAt: m.last_watched_at,
+    }));
+
+  const recentShows: SimklItem[] = (shows?.shows ?? [])
+    .filter((s: any) => s.last_watched_at)
+    .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
+    .slice(0, 5)
+    .map((s: any) => ({
+      title: s.show?.title ?? 'Unknown',
+      poster: poster(s.show?.poster),
+      year: s.show?.year ?? null,
+      watchedAt: s.last_watched_at,
+      watchedEpisodes: s.watched_episodes_count ?? undefined,
+      totalEpisodes: s.total_episodes_count ?? undefined,
+    }));
 
   return {
     userId,
-    moviesCompleted: data.movies?.completed?.count ?? 0,
-    showsWatching: data.tv?.watching?.count ?? 0,
-    showsCompleted: data.tv?.completed?.count ?? 0,
-    totalMinutes: data.total_mins ?? 0,
-    lastWatched,
+    name: settings?.user?.name ?? `#${userId}`,
+    avatar: settings?.user?.avatar ?? '',
+    moviesCompleted: stats?.movies?.completed?.count ?? 0,
+    showsWatching: stats?.tv?.watching?.count ?? 0,
+    showsCompleted: stats?.tv?.completed?.count ?? 0,
+    totalMinutes: stats?.total_mins ?? 0,
+    recentMovies,
+    recentShows,
   };
 }

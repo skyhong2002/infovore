@@ -10,6 +10,7 @@ export const config = {
   simkl: {
     userId: process.env.SIMKL_USER_ID ?? '8074923',
     clientId: process.env.SIMKL_CLIENT_ID ?? '',
+    accessToken: process.env.SIMKL_ACCESS_TOKEN ?? '',
   },
   userAgent:
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',

@@ -1,54 +1,92 @@
 import { config } from '../config.js';
 
+export interface KitsuEntry {
+  title: string;
+  poster: string;
+  progress: number;
+  status: string;
+  progressedAt: string; // ISO date
+}
+
 export interface KitsuStats {
   slug: string;
-  animeCompleted: number;
-  animeMinutesWatched: number;
-  episodesWatched: number;
-  currentlyWatching: { title: string; poster: string; progress: number }[];
+  name: string;
+  avatar: string;
+  anime: {
+    completed: number;
+    episodes: number;
+    hours: number;
+    recent: KitsuEntry[];
+  };
+  manga: {
+    completed: number;
+    chapters: number;
+    recent: KitsuEntry[];
+  };
 }
 
 const API = 'https://kitsu.app/api/edge';
-const headers = {
-  Accept: 'application/vnd.api+json',
-  'Content-Type': 'application/vnd.api+json',
-};
+const headers = { Accept: 'application/vnd.api+json' };
 
 async function getJson(url: string): Promise<any> {
-  const res = await fetch(url, { headers });
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`kitsu: HTTP ${res.status} for ${url}`);
   return res.json();
 }
 
-export async function fetchKitsu(): Promise<KitsuStats> {
-  const { userId, slug } = { userId: config.kitsu.userId, slug: config.kitsu.slug };
-
-  const statsDoc = await getJson(
-    `${API}/users/${userId}/stats?filter[kind]=anime-amount-consumed`
+function parseEntries(doc: any, kind: 'anime' | 'manga'): KitsuEntry[] {
+  const mediaById = new Map<string, any>(
+    (doc.included ?? []).map((m: any) => [m.id, m])
   );
-  const consumed = statsDoc.data?.[0]?.attributes?.statsData ?? {};
-
-  const libDoc = await getJson(
-    `${API}/library-entries?filter[userId]=${userId}&filter[kind]=anime&filter[status]=current&include=anime&page[limit]=5&sort=-progressedAt`
-  );
-  const animeById = new Map<string, any>(
-    (libDoc.included ?? []).map((a: any) => [a.id, a])
-  );
-  const currentlyWatching = (libDoc.data ?? []).map((entry: any) => {
-    const anime = animeById.get(entry.relationships?.anime?.data?.id);
-    const attrs = anime?.attributes ?? {};
+  return (doc.data ?? []).map((entry: any) => {
+    const media = mediaById.get(entry.relationships?.[kind]?.data?.id);
+    const attrs = media?.attributes ?? {};
     return {
       title: attrs.canonicalTitle ?? 'Unknown',
       poster: attrs.posterImage?.small ?? '',
       progress: entry.attributes?.progress ?? 0,
+      status: entry.attributes?.status ?? '',
+      progressedAt: entry.attributes?.progressedAt ?? '',
     };
   });
+}
+
+export async function fetchKitsu(): Promise<KitsuStats> {
+  const { userId, slug } = config.kitsu;
+
+  const [userDoc, statsDoc, animeDoc, mangaDoc] = await Promise.all([
+    getJson(`${API}/users/${userId}`),
+    getJson(`${API}/users/${userId}/stats`),
+    getJson(
+      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=anime&page[limit]=5&sort=-progressedAt&include=anime`
+    ),
+    getJson(
+      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=manga&page[limit]=5&sort=-progressedAt&include=manga`
+    ),
+  ]);
+
+  const user = userDoc.data?.attributes ?? {};
+  const statsByKind: Record<string, any> = {};
+  for (const s of statsDoc.data ?? []) {
+    statsByKind[s.attributes?.kind] = s.attributes?.statsData ?? {};
+  }
+  const anime = statsByKind['anime-amount-consumed'] ?? {};
+  const manga = statsByKind['manga-amount-consumed'] ?? {};
 
   return {
     slug,
-    animeCompleted: consumed.completed ?? 0,
-    animeMinutesWatched: Math.round((consumed.time ?? 0) / 60),
-    episodesWatched: consumed.units ?? 0,
-    currentlyWatching,
+    name: user.name ?? slug,
+    avatar: user.avatar?.medium ?? user.avatar?.small ?? '',
+    anime: {
+      completed: anime.completed ?? 0,
+      episodes: anime.units ?? 0,
+      hours: Math.round((anime.time ?? 0) / 3600),
+      recent: parseEntries(animeDoc, 'anime'),
+    },
+    manga: {
+      completed: manga.completed ?? 0,
+      chapters: manga.units ?? 0,
+      recent: parseEntries(mangaDoc, 'manga'),
+    },
   };
 }

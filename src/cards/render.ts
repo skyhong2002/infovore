@@ -1,10 +1,39 @@
 import satori from 'satori';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { config } from '../config.js';
 
-const fontDir = fileURLToPath(new URL('../../assets/fonts/', import.meta.url));
-const interRegular = readFileSync(fontDir + 'Inter-Regular.ttf');
-const interBold = readFileSync(fontDir + 'Inter-Bold.ttf');
+const assetDir = fileURLToPath(new URL('../../assets/', import.meta.url));
+
+function font(file: string): Buffer {
+  return readFileSync(assetDir + 'fonts/' + file);
+}
+
+const fonts = [
+  { name: 'Inter', data: font('Inter-Regular.ttf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Inter', data: font('Inter-Bold.ttf'), weight: 700 as const, style: 'normal' as const },
+  { name: 'Roboto', data: font('Roboto-Regular.ttf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Roboto', data: font('Roboto-Bold.ttf'), weight: 700 as const, style: 'normal' as const },
+  { name: 'Open Sans', data: font('OpenSans-Regular.ttf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Open Sans', data: font('OpenSans-Bold.ttf'), weight: 700 as const, style: 'normal' as const },
+  { name: 'Statsfm Sans', data: font('StatsfmSans-Regular.ttf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Statsfm Sans', data: font('StatsfmSans-Bold.ttf'), weight: 700 as const, style: 'normal' as const },
+  // CJK fallback for Japanese/Chinese titles.
+  { name: 'Noto Sans JP', data: font('NotoSansJP-Regular.otf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Noto Sans JP', data: font('NotoSansJP-Bold.otf'), weight: 700 as const, style: 'normal' as const },
+];
+
+// Platform logos shipped in-repo, inlined as data URIs.
+const logoCache = new Map<string, string>();
+export function logo(name: 'backloggd' | 'kitsu' | 'statsfm' | 'simkl'): string {
+  let uri = logoCache.get(name);
+  if (!uri) {
+    const buf = readFileSync(`${assetDir}logos/${name}.png`);
+    uri = `data:image/png;base64,${buf.toString('base64')}`;
+    logoCache.set(name, uri);
+  }
+  return uri;
+}
 
 // Minimal element helper — satori accepts React-shaped plain objects,
 // so we skip JSX entirely.
@@ -19,82 +48,48 @@ export function h(
   };
 }
 
-export interface Theme {
-  bg: string;
-  border: string;
-  text: string;
-  subtext: string;
-  accent: string;
+// Remote images inlined as data URIs so each SVG is self-contained.
+// Called once per refresh cycle, not per request.
+export async function toDataUri(url: string): Promise<string> {
+  if (!url) return '';
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': config.userAgent }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return '';
+    const buf = Buffer.from(await res.arrayBuffer());
+    // Sniff the real type — some CDNs answer with binary/octet-stream,
+    // which satori refuses to size.
+    let type = 'image/jpeg';
+    if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+      type = 'image/png';
+    } else if (buf.subarray(0, 4).toString('ascii') === 'GIF8') {
+      type = 'image/gif';
+    } else if (buf.subarray(8, 12).toString('ascii') === 'WEBP') {
+      return ''; // satori can't render webp
+    }
+    return `data:${type};base64,${buf.toString('base64')}`;
+  } catch {
+    return '';
+  }
 }
 
-// Palettes sampled from each site's live dark UI.
-export const themes: Record<string, Theme> = {
-  backloggd: { bg: '#16181c', border: '#2a2e35', text: '#e8eaed', subtext: '#8a939e', accent: '#ea377a' },
-  kitsu:     { bg: '#221626', border: '#3a2b3e', text: '#f5f0f5', subtext: '#a89aa8', accent: '#f75239' },
-  statsfm:   { bg: '#111112', border: '#26262b', text: '#ffffff', subtext: '#9a9aa0', accent: '#1ed761' },
-  simkl:     { bg: '#0f1214', border: '#232a2f', text: '#eef2f4', subtext: '#8b979e', accent: '#00b9ff' },
-};
-
-export function statBlock(
-  t: Theme,
-  value: string,
-  label: string,
-  size = 40
-): Record<string, unknown> {
-  return h(
-    'div',
-    { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 } },
-    h('span', { style: { fontSize: size, fontWeight: 700, color: t.text } }, value),
-    h(
-      'span',
-      { style: { fontSize: 14, color: t.subtext, marginTop: 4, whiteSpace: 'nowrap' } },
-      label
-    )
-  );
+export function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
 }
 
-export function cardShell(
-  t: Theme,
-  title: string,
-  subtitle: string,
-  body: Record<string, unknown>
-): Record<string, unknown> {
-  return h(
-    'div',
-    {
-      style: {
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: t.bg,
-        borderRadius: 12,
-        border: `1px solid ${t.border}`,
-        padding: 24,
-        fontFamily: 'Inter',
-      },
-    },
-    h(
-      'div',
-      { style: { display: 'flex', alignItems: 'baseline', marginBottom: 18 } },
-      h('span', { style: { fontSize: 20, fontWeight: 700, color: t.accent } }, title),
-      h('span', { style: { fontSize: 13, color: t.subtext, marginLeft: 10 } }, subtitle)
-    ),
-    body
-  );
+export function timeAgo(iso: string): string {
+  if (!iso) return '';
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
 }
 
 export async function renderCard(
   node: Record<string, unknown>,
-  width = 480,
-  height = 200
+  width: number,
+  height: number
 ): Promise<string> {
-  return satori(node as never, {
-    width,
-    height,
-    fonts: [
-      { name: 'Inter', data: interRegular, weight: 400, style: 'normal' },
-      { name: 'Inter', data: interBold, weight: 700, style: 'normal' },
-    ],
-  });
+  return satori(node as never, { width, height, fonts });
 }

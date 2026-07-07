@@ -1,25 +1,46 @@
 import * as cheerio from 'cheerio';
 import { config } from '../config.js';
 
+export interface BackloggdRecentGame {
+  title: string;
+  cover: string;
+  platform: string;
+  lastPlayed: string; // e.g. "Jul 6"
+}
+
 export interface BackloggdStats {
   username: string;
+  avatar: string;
   gamesPlayed: number;
   playedThisYear: number;
   backlog: number;
-  recentlyPlayed: { title: string; cover: string; gameId: string }[];
+  recent: BackloggdRecentGame[];
+}
+
+const MONTHS: Record<string, string> = {
+  January: 'Jan', February: 'Feb', March: 'Mar', April: 'Apr', May: 'May',
+  June: 'Jun', July: 'Jul', August: 'Aug', September: 'Sep', October: 'Oct',
+  November: 'Nov', December: 'Dec',
+};
+
+async function getHtml(url: string): Promise<cheerio.CheerioAPI> {
+  const res = await fetch(url, { headers: { 'User-Agent': config.userAgent }, signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`backloggd: HTTP ${res.status} for ${url}`);
+  return cheerio.load(await res.text());
 }
 
 export async function fetchBackloggd(): Promise<BackloggdStats> {
-  const url = `https://backloggd.com/u/${config.backloggd.username}/`;
-  const res = await fetch(url, { headers: { 'User-Agent': config.userAgent } });
-  if (!res.ok) throw new Error(`backloggd: HTTP ${res.status}`);
-  const $ = cheerio.load(await res.text());
+  const base = `https://backloggd.com/u/${config.backloggd.username}`;
+  const [$profile, $journal] = await Promise.all([
+    getHtml(`${base}/`),
+    getHtml(`${base}/journal/`),
+  ]);
 
-  // Profile stats are laid out as <h1>NUMBER</h1> ... <h4>Label</h4> pairs.
+  // Profile stats: <h1>NUMBER</h1> ... <h4>Label</h4> pairs.
   const stats: Record<string, number> = {};
-  $('h4').each((_, el) => {
-    const label = $(el).text().trim().toLowerCase();
-    const num = $(el).closest('div').find('h1').first().text().trim();
+  $profile('h4').each((_, el) => {
+    const label = $profile(el).text().trim().toLowerCase();
+    const num = $profile(el).closest('div').find('h1').first().text().trim();
     if (num && /^\d+$/.test(num)) stats[label] = Number(num);
   });
   const byLabel = (needle: string) => {
@@ -27,21 +48,37 @@ export async function fetchBackloggd(): Promise<BackloggdStats> {
     return key !== undefined ? stats[key] : 0;
   };
 
-  const recentlyPlayed: BackloggdStats['recentlyPlayed'] = [];
-  $('.game-cover').each((_, el) => {
-    if (recentlyPlayed.length >= 5) return;
-    const img = $(el).find('img.card-img');
+  const avatar = $profile('#profile-header .avatar img').attr('src') ?? '';
+
+  // Journal: entries in reverse-chronological order. Month headers
+  // (.month-year-date) and day numbers (.date-day) apply to following
+  // entries until the next header appears.
+  const recent: BackloggdRecentGame[] = [];
+  const seen = new Set<string>();
+  let month = '';
+  let day = '';
+  $journal('.journal_entry').each((_, entry) => {
+    if (recent.length >= 5) return;
+    const $e = $journal(entry);
+    const monthYear = $e.find('.month-year-date h4').first().text().trim();
+    if (monthYear) month = MONTHS[monthYear.split(',')[0].trim()] ?? monthYear;
+    const dayText = $e.find('.date-day').first().text().trim().replace(/^0/, '');
+    if (dayText) day = dayText;
+    const img = $e.find('img.card-img').first();
     const title = img.attr('alt') ?? '';
     const cover = img.attr('src') ?? '';
-    const gameId = $(el).attr('game_id') ?? '';
-    if (title && cover) recentlyPlayed.push({ title, cover, gameId });
+    const platform = $e.find('.journal-platform').first().text().trim();
+    if (!title || seen.has(title)) return;
+    seen.add(title);
+    recent.push({ title, cover, platform, lastPlayed: day ? `${month} ${day}` : month });
   });
 
   return {
     username: config.backloggd.username,
+    avatar,
     gamesPlayed: byLabel('games played'),
     playedThisYear: byLabel('played in'),
     backlog: byLabel('backloggd'),
-    recentlyPlayed,
+    recent,
   };
 }
