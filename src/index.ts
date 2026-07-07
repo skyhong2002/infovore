@@ -60,20 +60,30 @@ app.get('/', (c) => {
   return c.json({ name: 'status.skyhong.tw', services: status });
 });
 
-app.get('/api/:service{[a-z]+}.json', (c) => {
-  const name = c.req.param('service');
+app.get('/api/:file{[a-z]+\\.json}', (c) => {
+  const name = c.req.param('file').replace(/\.json$/, '');
   const entry = getCache(`data:${name}`);
   if (!entry || entry.data === null) return c.json({ error: entry?.error ?? 'not found' }, 404);
   return c.json({ fetchedAt: new Date(entry.fetchedAt).toISOString(), data: entry.data });
 });
 
-app.get('/card/:service{[a-z]+}.svg', (c) => {
-  const name = c.req.param('service');
+app.get('/card/:file{[a-z]+\\.svg}', (c) => {
+  const name = c.req.param('file').replace(/\.svg$/, '');
   const entry = getCache<string>(`svg:${name}`);
   if (!entry?.data) return c.text(getCache(`data:${name}`)?.error ?? 'not found', 404);
   c.header('Content-Type', 'image/svg+xml');
   c.header('Cache-Control', `public, max-age=${config.refreshMinutes * 60}`);
   return c.body(entry.data);
+});
+
+app.get('/cards', (c) => {
+  const imgs = services
+    .map((s) => `<a href="/card/${s.name}.svg"><img src="/card/${s.name}.svg" alt="${s.name}"></a>`)
+    .join('\n');
+  return c.html(
+    `<!doctype html><meta charset="utf-8"><title>status.skyhong.tw</title>` +
+      `<body style="background:#0d0e11;display:flex;flex-wrap:wrap;gap:16px;padding:24px">${imgs}</body>`
+  );
 });
 
 app.get('/healthz', (c) => c.text('ok'));

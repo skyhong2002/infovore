@@ -13,11 +13,13 @@ export async function fetchSimkl(): Promise<SimklStats> {
   const { userId, clientId } = config.simkl;
   if (!clientId) throw new Error('simkl: SIMKL_CLIENT_ID not set');
 
-  const res = await fetch(`https://api.simkl.com/users/${userId}/stats`, {
-    headers: {
-      'Content-Type': 'application/json',
-      'simkl-api-key': clientId,
-    },
+  const params = new URLSearchParams({
+    client_id: clientId,
+    'app-name': 'status.skyhong.tw',
+    'app-version': '0.1',
+  });
+  const res = await fetch(`https://api.simkl.com/users/${userId}/stats?${params}`, {
+    headers: { 'User-Agent': 'status.skyhong.tw/0.1' },
   });
   if (!res.ok) throw new Error(`simkl: HTTP ${res.status}`);
   const data: any = await res.json();
