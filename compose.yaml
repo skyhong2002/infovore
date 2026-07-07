@@ -1,0 +1,20 @@
+services:
+  status:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.status-skyhong.rule=Host(`status.skyhong.tw`)
+      - traefik.http.routers.status-skyhong.entrypoints=websecure
+      - traefik.http.routers.status-skyhong.tls.certresolver=letsencrypt
+      - traefik.http.routers.status-skyhong-web.rule=Host(`status.skyhong.tw`)
+      - traefik.http.routers.status-skyhong-web.entrypoints=web
+      - traefik.http.routers.status-skyhong-web.middlewares=redirect-to-https@file
+      - traefik.http.services.status-skyhong.loadbalancer.server.port=3000
+
+networks:
+  dokploy-network:
+    external: true
