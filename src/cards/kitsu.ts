@@ -12,6 +12,8 @@ const C = {
   border: '#3a2b3e',
 };
 
+const ROW_H = 178; // poster 118 + three text lines
+
 function statusLabel(e: KitsuEntry, unit: 'Ep' | 'Ch'): string {
   if (e.status === 'completed') return 'Completed';
   if (e.status === 'planned' || e.progress === 0) return 'Planned';
@@ -20,50 +22,50 @@ function statusLabel(e: KitsuEntry, unit: 'Ep' | 'Ch'): string {
   return `${unit} ${e.progress}`;
 }
 
-async function buildKitsuCard(
-  data: KitsuStats,
-  kind: 'anime' | 'manga'
-): Promise<string> {
-  const section = kind === 'anime' ? data.anime : data.manga;
-  const unit = kind === 'anime' ? 'Ep' : 'Ch';
-  const sectionTitle = kind === 'anime' ? 'Recent Anime' : 'Recent Manga';
-
-  const [avatar, mark, ...posters] = await Promise.all([
-    toDataUri(data.avatar),
-    Promise.resolve(logo('kitsu')),
-    ...section.recent.map((e) => toDataUri(e.poster)),
-  ]);
-
-  const tiles = section.recent.map((e, i) =>
+function tile(e: KitsuEntry, poster: string, unit: 'Ep' | 'Ch', last: boolean) {
+  return h(
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: last ? 0 : 12 } },
+    poster
+      ? h('img', { src: poster, width: 84, height: 118, style: { borderRadius: 6, objectFit: 'cover' } })
+      : h('div', { style: { width: 84, height: 118, backgroundColor: C.panel, borderRadius: 6, display: 'flex' } }),
+    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(e.title, 14)),
+    h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, statusLabel(e, unit)),
     h(
       'div',
-      { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: i < 4 ? 12 : 0 } },
-      posters[i]
-        ? h('img', {
-            src: posters[i],
-            width: 84,
-            height: 118,
-            style: { borderRadius: 6, objectFit: 'cover' },
-          })
-        : h('div', { style: { width: 84, height: 118, backgroundColor: C.panel, borderRadius: 6, display: 'flex' } }),
-      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(e.title, 14)),
-      h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, statusLabel(e, unit)),
-      h(
-        'div',
-        { style: { display: 'flex', alignItems: 'baseline', marginTop: 1 } },
-        h('span', { style: { fontSize: 10, color: C.dim } }, timeAgo(e.progressedAt)),
-        e.rating !== null
-          ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★${Math.round(e.rating * 10) / 10}`)
-          : h('div', { style: { display: 'flex' } })
-      )
+      { style: { display: 'flex', alignItems: 'baseline', marginTop: 1 } },
+      h('span', { style: { fontSize: 10, color: C.dim } }, timeAgo(e.progressedAt)),
+      e.rating !== null
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★${Math.round(e.rating * 10) / 10}`)
+        : h('div', { style: { display: 'flex' } })
     )
   );
+}
 
-  const stats =
-    kind === 'anime'
-      ? `${section.completed} completed · ${data.anime.episodes} episodes · ${data.anime.hours}h watched`
-      : `${section.completed} completed · ${data.manga.chapters} chapters read`;
+function tileRows(entries: KitsuEntry[], posters: string[], unit: 'Ep' | 'Ch') {
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < entries.length; i += 5) {
+    rows.push(
+      h(
+        'div',
+        { style: { display: 'flex', marginTop: i === 0 ? 0 : 12 } },
+        ...entries.slice(i, i + 5).map((e, j) => tile(e, posters[i + j], unit, j === 4))
+      )
+    );
+  }
+  return rows;
+}
 
+function sectionHeader(title: string, sub: string) {
+  return h(
+    'div',
+    { style: { display: 'flex', alignItems: 'baseline', marginBottom: 10 } },
+    h('span', { style: { fontSize: 15, fontWeight: 700, color: C.text } }, title),
+    h('span', { style: { fontSize: 11, color: C.dim, marginLeft: 10 } }, sub)
+  );
+}
+
+function shell(data: KitsuStats, avatar: string, mark: string, body: Record<string, unknown>[], height: number) {
   const node = h(
     'div',
     {
@@ -87,17 +89,59 @@ async function buildKitsuCard(
         h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, data.name)
       )
     ),
-    h(
-      'div',
-      { style: { display: 'flex', alignItems: 'baseline', marginBottom: 10 } },
-      h('span', { style: { fontSize: 15, fontWeight: 700, color: C.text } }, sectionTitle),
-      h('span', { style: { fontSize: 11, color: C.dim, marginLeft: 10 } }, stats)
-    ),
-    h('div', { style: { display: 'flex' } }, ...tiles)
+    ...body
   );
-
-  return renderCard(node, 520, 290);
+  return renderCard(node, 520, height);
 }
 
-export const buildKitsuAnimeCard = (d: KitsuStats) => buildKitsuCard(d, 'anime');
-export const buildKitsuMangaCard = (d: KitsuStats) => buildKitsuCard(d, 'manga');
+function animeSub(data: KitsuStats): string {
+  return `${data.anime.completed} completed · ${data.anime.episodes} episodes · ${data.anime.hours}h watched`;
+}
+function mangaSub(data: KitsuStats): string {
+  return `${data.manga.completed} completed · ${data.manga.chapters} chapters read`;
+}
+
+async function postersFor(entries: KitsuEntry[]): Promise<string[]> {
+  return Promise.all(entries.map((e) => toDataUri(e.poster)));
+}
+
+// Single-medium card: 10 recent entries in two rows.
+async function buildSingle(data: KitsuStats, kind: 'anime' | 'manga'): Promise<string> {
+  const section = kind === 'anime' ? data.anime : data.manga;
+  const entries = section.recent.slice(0, 10);
+  const [avatar, mark, posters] = await Promise.all([
+    toDataUri(data.avatar),
+    Promise.resolve(logo('kitsu')),
+    postersFor(entries),
+  ]);
+  const rows = Math.max(1, Math.ceil(entries.length / 5));
+  const body = [
+    sectionHeader(kind === 'anime' ? 'Recent Anime' : 'Recent Manga', kind === 'anime' ? animeSub(data) : mangaSub(data)),
+    ...tileRows(entries, posters, kind === 'anime' ? 'Ep' : 'Ch'),
+  ];
+  return shell(data, avatar, mark, body, 118 + rows * ROW_H + (rows - 1) * 12);
+}
+
+// Combined card: 5 recent anime + 5 recent manga.
+async function buildBoth(data: KitsuStats): Promise<string> {
+  const anime = data.anime.recent.slice(0, 5);
+  const manga = data.manga.recent.slice(0, 5);
+  const [avatar, mark, animePosters, mangaPosters] = await Promise.all([
+    toDataUri(data.avatar),
+    Promise.resolve(logo('kitsu')),
+    postersFor(anime),
+    postersFor(manga),
+  ]);
+  const body = [
+    sectionHeader('Recent Anime', animeSub(data)),
+    ...tileRows(anime, animePosters, 'Ep'),
+    h('div', { style: { display: 'flex', marginTop: 16 } }),
+    sectionHeader('Recent Manga', mangaSub(data)),
+    ...tileRows(manga, mangaPosters, 'Ch'),
+  ];
+  return shell(data, avatar, mark, body, 118 + 2 * (ROW_H + 26) + 16);
+}
+
+export const buildKitsuCard = (d: KitsuStats) => buildBoth(d);
+export const buildKitsuAnimeCard = (d: KitsuStats) => buildSingle(d, 'anime');
+export const buildKitsuMangaCard = (d: KitsuStats) => buildSingle(d, 'manga');

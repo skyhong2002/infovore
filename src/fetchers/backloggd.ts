@@ -129,7 +129,7 @@ export async function fetchBackloggd(): Promise<BackloggdStats> {
   let month = '';
   let day = '';
   $journal('.journal_entry').each((_, entry) => {
-    if (recent.length >= 5) return;
+    if (recent.length >= 10) return;
     const $e = $journal(entry);
     const monthYear = $e.find('.month-year-date h4').first().text().trim();
     if (monthYear) month = MONTHS[monthYear.split(',')[0].trim()] ?? monthYear;

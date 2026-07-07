@@ -64,7 +64,7 @@ export async function fetchSimkl(): Promise<SimklStats> {
   const recentMovies: SimklItem[] = (movies?.movies ?? [])
     .filter((m: any) => m.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
-    .slice(0, 5)
+    .slice(0, 10)
     .map((m: any) => ({
       title: m.movie?.title ?? 'Unknown',
       poster: poster(m.movie?.poster),
@@ -76,7 +76,7 @@ export async function fetchSimkl(): Promise<SimklStats> {
   const recentShows: SimklItem[] = (shows?.shows ?? [])
     .filter((s: any) => s.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
-    .slice(0, 5)
+    .slice(0, 10)
     .map((s: any) => ({
       title: s.show?.title ?? 'Unknown',
       poster: poster(s.show?.poster),

@@ -12,50 +12,59 @@ const C = {
   border: '#232a2f',
 };
 
-async function buildSimklCard(
-  data: SimklStats,
-  kind: 'movies' | 'shows'
-): Promise<string> {
-  const items = kind === 'movies' ? data.recentMovies : data.recentShows;
-  const sectionTitle = kind === 'movies' ? 'Recently Watched Movies' : 'Recently Watched TV';
-  const stats =
-    kind === 'movies'
-      ? `${data.moviesCompleted} movies watched`
-      : `${data.showsWatching} watching · ${data.showsCompleted} completed`;
+const ROW_H = 178; // poster 118 + three text lines
 
-  const [avatar, mark, ...posters] = await Promise.all([
-    toDataUri(data.avatar),
-    Promise.resolve(logo('simkl')),
-    ...items.map((it) => toDataUri(it.poster)),
-  ]);
+function detail(it: SimklItem, kind: 'movies' | 'shows'): string {
+  if (kind === 'shows' && it.watchedEpisodes && it.totalEpisodes) {
+    return `${it.watchedEpisodes}/${it.totalEpisodes} eps`;
+  }
+  return it.year ? String(it.year) : '';
+}
 
-  const detail = (it: SimklItem): string => {
-    if (kind === 'shows' && it.watchedEpisodes && it.totalEpisodes) {
-      return `${it.watchedEpisodes}/${it.totalEpisodes} eps`;
-    }
-    return it.year ? String(it.year) : '';
-  };
-
-  const tiles = items.map((it, i) =>
+function tile(it: SimklItem, poster: string, kind: 'movies' | 'shows', last: boolean) {
+  return h(
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: last ? 0 : 12 } },
+    poster
+      ? h('img', { src: poster, width: 84, height: 118, style: { borderRadius: 4, objectFit: 'cover' } })
+      : h('div', { style: { width: 84, height: 118, backgroundColor: C.panel, borderRadius: 4, display: 'flex' } }),
+    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(it.title, 14)),
     h(
       'div',
-      { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: i < 4 ? 12 : 0 } },
-      posters[i]
-        ? h('img', { src: posters[i], width: 84, height: 118, style: { borderRadius: 4, objectFit: 'cover' } })
-        : h('div', { style: { width: 84, height: 118, backgroundColor: C.panel, borderRadius: 4, display: 'flex' } }),
-      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(it.title, 14)),
+      { style: { display: 'flex', alignItems: 'baseline', marginTop: 2 } },
+      h('span', { style: { fontSize: 10, color: C.accent } }, timeAgo(it.watchedAt)),
+      it.rating !== null
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★ ${it.rating}`)
+        : h('div', { style: { display: 'flex' } })
+    ),
+    h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1 } }, detail(it, kind))
+  );
+}
+
+function tileRows(items: SimklItem[], posters: string[], kind: 'movies' | 'shows') {
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < items.length; i += 5) {
+    rows.push(
       h(
         'div',
-        { style: { display: 'flex', marginTop: 2 } },
-        h('span', { style: { fontSize: 10, color: C.accent } }, timeAgo(it.watchedAt)),
-        it.rating !== null
-          ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★ ${it.rating}`)
-          : h('div', { style: { display: 'flex' } })
-      ),
-      h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1 } }, detail(it))
-    )
-  );
+        { style: { display: 'flex', marginTop: i === 0 ? 0 : 12 } },
+        ...items.slice(i, i + 5).map((it, j) => tile(it, posters[i + j], kind, j === 4))
+      )
+    );
+  }
+  return rows;
+}
 
+function sectionHeader(title: string, sub: string) {
+  return h(
+    'div',
+    { style: { display: 'flex', alignItems: 'baseline', marginBottom: 10 } },
+    h('span', { style: { fontSize: 15, fontWeight: 700, color: C.text } }, title),
+    h('span', { style: { fontSize: 11, color: C.dim, marginLeft: 10 } }, sub)
+  );
+}
+
+function shell(data: SimklStats, avatar: string, mark: string, body: Record<string, unknown>[], height: number) {
   const node = h(
     'div',
     {
@@ -83,17 +92,61 @@ async function buildSimklCard(
         h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, data.name)
       )
     ),
-    h(
-      'div',
-      { style: { display: 'flex', alignItems: 'baseline', marginBottom: 10 } },
-      h('span', { style: { fontSize: 15, fontWeight: 700, color: C.text } }, sectionTitle),
-      h('span', { style: { fontSize: 11, color: C.dim, marginLeft: 10 } }, stats)
-    ),
-    h('div', { style: { display: 'flex' } }, ...tiles)
+    ...body
   );
-
-  return renderCard(node, 520, 290);
+  return renderCard(node, 520, height);
 }
 
-export const buildSimklMoviesCard = (d: SimklStats) => buildSimklCard(d, 'movies');
-export const buildSimklShowsCard = (d: SimklStats) => buildSimklCard(d, 'shows');
+function showsSub(data: SimklStats): string {
+  return `${data.showsWatching} watching · ${data.showsCompleted} completed`;
+}
+function moviesSub(data: SimklStats): string {
+  return `${data.moviesCompleted} movies watched`;
+}
+
+async function postersFor(items: SimklItem[]): Promise<string[]> {
+  return Promise.all(items.map((it) => toDataUri(it.poster)));
+}
+
+// Single-medium card: 10 recent items in two rows.
+async function buildSingle(data: SimklStats, kind: 'movies' | 'shows'): Promise<string> {
+  const items = (kind === 'movies' ? data.recentMovies : data.recentShows).slice(0, 10);
+  const [avatar, mark, posters] = await Promise.all([
+    toDataUri(data.avatar),
+    Promise.resolve(logo('simkl')),
+    postersFor(items),
+  ]);
+  const rows = Math.max(1, Math.ceil(items.length / 5));
+  const body = [
+    sectionHeader(
+      kind === 'movies' ? 'Recently Watched Movies' : 'Recently Watched TV',
+      kind === 'movies' ? moviesSub(data) : showsSub(data)
+    ),
+    ...tileRows(items, posters, kind),
+  ];
+  return shell(data, avatar, mark, body, 118 + rows * ROW_H + (rows - 1) * 12);
+}
+
+// Combined card: 5 recent shows + 5 recent movies.
+async function buildBoth(data: SimklStats): Promise<string> {
+  const shows = data.recentShows.slice(0, 5);
+  const movies = data.recentMovies.slice(0, 5);
+  const [avatar, mark, showPosters, moviePosters] = await Promise.all([
+    toDataUri(data.avatar),
+    Promise.resolve(logo('simkl')),
+    postersFor(shows),
+    postersFor(movies),
+  ]);
+  const body = [
+    sectionHeader('Recently Watched TV', showsSub(data)),
+    ...tileRows(shows, showPosters, 'shows'),
+    h('div', { style: { display: 'flex', marginTop: 16 } }),
+    sectionHeader('Recently Watched Movies', moviesSub(data)),
+    ...tileRows(movies, moviePosters, 'movies'),
+  ];
+  return shell(data, avatar, mark, body, 118 + 2 * (ROW_H + 26) + 16);
+}
+
+export const buildSimklCard = (d: SimklStats) => buildBoth(d);
+export const buildSimklMoviesCard = (d: SimklStats) => buildSingle(d, 'movies');
+export const buildSimklShowsCard = (d: SimklStats) => buildSingle(d, 'shows');

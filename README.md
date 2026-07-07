@@ -6,9 +6,13 @@ source site, refreshed every 30 minutes.
 | | |
 |---|---|
 | ![Backloggd](https://status.skyhong.tw/card/backloggd.svg) | ![stats.fm](https://status.skyhong.tw/card/statsfm.svg) |
-| ![Kitsu Anime](https://status.skyhong.tw/card/kitsu-anime.svg) | ![Kitsu Manga](https://status.skyhong.tw/card/kitsu-manga.svg) |
-| ![Simkl Movies](https://status.skyhong.tw/card/simkl-movies.svg) | ![Simkl Shows](https://status.skyhong.tw/card/simkl-shows.svg) |
+| ![Kitsu](https://status.skyhong.tw/card/kitsu.svg) | ![Simkl](https://status.skyhong.tw/card/simkl.svg) |
 | ![Goodreads](https://status.skyhong.tw/card/goodreads.svg) | |
+
+Eleven cards in total — combined and single-medium variants:
+`backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
+`statsfm` / `statsfm-albums` / `statsfm-artists`,
+`simkl` / `simkl-shows` / `simkl-movies`, `goodreads`.
 
 A small [Hono](https://hono.dev) (Node.js) service that scrapes/fetches each
 source on a schedule, caches results in memory, and serves SVG cards rendered
@@ -29,7 +33,7 @@ inlined as data URIs, so each card is a single self-contained image.
 
 - `GET /` — card gallery (responsive HTML)
 - `GET /status` — service status overview (JSON)
-- `GET /card/{backloggd|kitsu-anime|kitsu-manga|statsfm|simkl-movies|simkl-shows|goodreads}.svg` — SVG card
+- `GET /card/{name}.svg` — SVG card (see card list above)
 - `GET /api/{service}.json` — raw cached data
 - `GET /healthz` — health check
 

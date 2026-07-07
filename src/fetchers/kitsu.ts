@@ -60,10 +60,10 @@ export async function fetchKitsu(): Promise<KitsuStats> {
     getJson(`${API}/users/${userId}`),
     getJson(`${API}/users/${userId}/stats`),
     getJson(
-      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=anime&page[limit]=5&sort=-progressedAt&include=anime`
+      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=anime&page[limit]=10&sort=-progressedAt&include=anime`
     ),
     getJson(
-      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=manga&page[limit]=5&sort=-progressedAt&include=manga`
+      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=manga&page[limit]=10&sort=-progressedAt&include=manga`
     ),
   ]);
 

@@ -28,10 +28,10 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
     ...data.recent.map((g) => toDataUri(g.cover)),
   ]);
 
-  const tiles = data.recent.map((g, i) =>
+  const tile = (g: (typeof data.recent)[number], i: number, last: boolean) =>
     h(
       'div',
-      { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: i < 4 ? 12 : 0 } },
+      { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: last ? 0 : 12 } },
       covers[i]
         ? h('img', {
             src: covers[i],
@@ -53,8 +53,18 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
       g.rating !== null
         ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginTop: 2 } }, `★ ${g.rating}`)
         : h('div', { style: { display: 'flex' } })
-    )
-  );
+    );
+
+  const tileRows: Record<string, unknown>[] = [];
+  for (let i = 0; i < data.recent.length; i += 5) {
+    tileRows.push(
+      h(
+        'div',
+        { style: { display: 'flex', marginTop: i === 0 ? 0 : 12 } },
+        ...data.recent.slice(i, i + 5).map((g, j) => tile(g, i + j, j === 4))
+      )
+    );
+  }
 
   const node = h(
     'div',
@@ -96,9 +106,11 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
         : h('div', { style: { display: 'flex' } })
     ),
     h('span', { style: { fontSize: 14, fontWeight: 700, color: C.header, marginBottom: 8 } }, 'Recently Played'),
-    h('div', { style: { display: 'flex' } }, ...tiles)
+    ...tileRows
   );
 
-  const anyRated = data.recent.some((g) => g.rating !== null);
-  return renderCard(node, 520, anyRated ? 414 : 400);
+  // Header + stats ≈ 216; each tile row ≈ 184 (cover 112 + up to four
+  // text lines, platform may wrap to two).
+  const nRows = Math.max(1, Math.ceil(data.recent.length / 5));
+  return renderCard(node, 520, 216 + nRows * 184 + (nRows - 1) * 12);
 }

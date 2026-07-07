@@ -34,8 +34,8 @@ export async function fetchStatsfm(): Promise<StatsfmStats> {
   const [profile, weekStats, topAlbums, topArtists, current] = await Promise.all([
     getJson(`${API}/users/${user}`),
     getJson(`${API}/users/${user}/streams/stats?range=weeks`),
-    getJson(`${API}/users/${user}/top/albums?range=weeks&limit=5`),
-    getJson(`${API}/users/${user}/top/artists?range=weeks&limit=5`),
+    getJson(`${API}/users/${user}/top/albums?range=weeks&limit=10`),
+    getJson(`${API}/users/${user}/top/artists?range=weeks&limit=10`),
     getJson(`${API}/users/${user}/streams/current`).catch(() => null),
   ]);
 

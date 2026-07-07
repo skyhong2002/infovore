@@ -8,9 +8,9 @@ import { fetchStatsfm } from './fetchers/statsfm.js';
 import { fetchSimkl } from './fetchers/simkl.js';
 import { fetchGoodreads } from './fetchers/goodreads.js';
 import { buildBackloggdCard } from './cards/backloggd.js';
-import { buildKitsuAnimeCard, buildKitsuMangaCard } from './cards/kitsu.js';
-import { buildStatsfmCard } from './cards/statsfm.js';
-import { buildSimklMoviesCard, buildSimklShowsCard } from './cards/simkl.js';
+import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './cards/kitsu.js';
+import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } from './cards/statsfm.js';
+import { buildSimklCard, buildSimklMoviesCard, buildSimklShowsCard } from './cards/simkl.js';
 import { buildGoodreadsCard } from './cards/goodreads.js';
 
 const fetchers: Record<string, () => Promise<unknown>> = {
@@ -23,9 +23,13 @@ const fetchers: Record<string, () => Promise<unknown>> = {
 
 const cards: Record<string, { source: string; build: (data: never) => Promise<string> }> = {
   backloggd: { source: 'backloggd', build: buildBackloggdCard as never },
+  kitsu: { source: 'kitsu', build: buildKitsuCard as never },
   'kitsu-anime': { source: 'kitsu', build: buildKitsuAnimeCard as never },
   'kitsu-manga': { source: 'kitsu', build: buildKitsuMangaCard as never },
   statsfm: { source: 'statsfm', build: buildStatsfmCard as never },
+  'statsfm-albums': { source: 'statsfm', build: buildStatsfmAlbumsCard as never },
+  'statsfm-artists': { source: 'statsfm', build: buildStatsfmArtistsCard as never },
+  simkl: { source: 'simkl', build: buildSimklCard as never },
   'simkl-movies': { source: 'simkl', build: buildSimklMoviesCard as never },
   'simkl-shows': { source: 'simkl', build: buildSimklShowsCard as never },
   goodreads: { source: 'goodreads', build: buildGoodreadsCard as never },
@@ -64,9 +68,9 @@ const app = new Hono();
 // side when the viewport is wide enough and stack vertically otherwise.
 const sections: { title: string; url: string; cards: string[] }[] = [
   { title: 'Backloggd', url: 'https://backloggd.com/u/skychopath/', cards: ['backloggd'] },
-  { title: 'Kitsu', url: 'https://kitsu.app/users/skyhong2002', cards: ['kitsu-anime', 'kitsu-manga'] },
-  { title: 'stats.fm', url: 'https://stats.fm/skyhong2002', cards: ['statsfm'] },
-  { title: 'Simkl', url: 'https://simkl.com', cards: ['simkl-movies', 'simkl-shows'] },
+  { title: 'Kitsu', url: 'https://kitsu.app/users/skyhong2002', cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
+  { title: 'stats.fm', url: 'https://stats.fm/skyhong2002', cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
+  { title: 'Simkl', url: 'https://simkl.com/8074923/', cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
   { title: 'Goodreads', url: 'https://www.goodreads.com/user/show/160195773-skychopath', cards: ['goodreads'] },
 ];
 
@@ -86,7 +90,8 @@ app.get('/', (c) => {
             `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.svg?v=${version(n)}" alt="${n}" width="520" loading="lazy"></a>`
         )
         .join('\n');
-      return `<section><h2><a href="${s.url}">${s.title}</a></h2><div class="row">${imgs}</div></section>`;
+      const shortUrl = s.url.replace(/^https:\/\//, '').replace(/\/$/, '');
+      return `<section><h2><a href="${s.url}">${s.title}</a><a class="profile-link" href="${s.url}">${shortUrl}</a></h2><div class="row">${imgs}</div></section>`;
     })
     .join('\n');
   c.header('Cache-Control', 'no-cache');
@@ -106,6 +111,9 @@ app.get('/', (c) => {
        margin: 0 0 12px; }
   h2 a { color: inherit; text-decoration: none; }
   h2 a:hover { color: #e8eaed; }
+  h2 .profile-link { font-size: 12px; text-transform: none; letter-spacing: 0; margin-left: 12px;
+                     color: #5a626b; }
+  h2 .profile-link:hover { color: #8a939e; text-decoration: underline; }
   .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
   .row img { max-width: 100%; height: auto; display: block; }
   footer { color: #5a626b; font-size: 13px; }
@@ -146,10 +154,7 @@ app.get('/api/:file{[a-z-]+\\.json}', (c) => {
 });
 
 app.get('/card/:file{[a-z-]+\\.svg}', (c) => {
-  let name = c.req.param('file').replace(/\.svg$/, '');
-  // Old card names from v0.1.
-  if (name === 'kitsu') name = 'kitsu-anime';
-  if (name === 'simkl') name = 'simkl-shows';
+  const name = c.req.param('file').replace(/\.svg$/, '');
   const entry = getCache<string>(`svg:${name}`);
   if (!entry?.data) {
     const source = cards[name]?.source;
