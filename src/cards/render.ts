@@ -18,14 +18,18 @@ const fonts = [
   { name: 'Open Sans', data: font('OpenSans-Bold.ttf'), weight: 700 as const, style: 'normal' as const },
   { name: 'Statsfm Sans', data: font('StatsfmSans-Regular.ttf'), weight: 400 as const, style: 'normal' as const },
   { name: 'Statsfm Sans', data: font('StatsfmSans-Bold.ttf'), weight: 700 as const, style: 'normal' as const },
+  { name: 'Merriweather', data: font('Merriweather-Regular.woff'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Merriweather', data: font('Merriweather-Bold.woff'), weight: 700 as const, style: 'normal' as const },
   // CJK fallback for Japanese/Chinese titles.
   { name: 'Noto Sans JP', data: font('NotoSansJP-Regular.otf'), weight: 400 as const, style: 'normal' as const },
   { name: 'Noto Sans JP', data: font('NotoSansJP-Bold.otf'), weight: 700 as const, style: 'normal' as const },
+  { name: 'Noto Sans TC', data: font('NotoSansTC-Regular.otf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Noto Sans TC', data: font('NotoSansTC-Bold.otf'), weight: 700 as const, style: 'normal' as const },
 ];
 
 // Platform logos shipped in-repo, inlined as data URIs.
 const logoCache = new Map<string, string>();
-export function logo(name: 'backloggd' | 'kitsu' | 'statsfm' | 'simkl'): string {
+export function logo(name: 'backloggd' | 'kitsu' | 'statsfm' | 'simkl' | 'goodreads'): string {
   let uri = logoCache.get(name);
   if (!uri) {
     const buf = readFileSync(`${assetDir}logos/${name}.png`);
@@ -73,8 +77,15 @@ export async function toDataUri(url: string, attempt = 0): Promise<string> {
   }
 }
 
+// Width-aware truncation: CJK glyphs are roughly twice as wide as Latin
+// ones, so they count double against the budget.
 export function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
+  let width = 0;
+  for (let i = 0; i < s.length; i++) {
+    width += /[⺀-鿿豈-﫿＀-￯　-〿]/.test(s[i]) ? 2 : 1;
+    if (width > max) return s.slice(0, i).trimEnd() + '…';
+  }
+  return s;
 }
 
 export function timeAgo(iso: string): string {

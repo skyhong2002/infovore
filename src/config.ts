@@ -12,6 +12,7 @@ export const config = {
     clientId: process.env.SIMKL_CLIENT_ID ?? '',
     accessToken: process.env.SIMKL_ACCESS_TOKEN ?? '',
   },
+  goodreads: { userId: process.env.GOODREADS_USER_ID ?? '160195773-skychopath' },
   userAgent:
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
 };

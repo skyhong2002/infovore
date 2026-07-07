@@ -6,16 +6,19 @@ import { fetchBackloggd } from './fetchers/backloggd.js';
 import { fetchKitsu } from './fetchers/kitsu.js';
 import { fetchStatsfm } from './fetchers/statsfm.js';
 import { fetchSimkl } from './fetchers/simkl.js';
+import { fetchGoodreads } from './fetchers/goodreads.js';
 import { buildBackloggdCard } from './cards/backloggd.js';
 import { buildKitsuAnimeCard, buildKitsuMangaCard } from './cards/kitsu.js';
 import { buildStatsfmCard } from './cards/statsfm.js';
 import { buildSimklMoviesCard, buildSimklShowsCard } from './cards/simkl.js';
+import { buildGoodreadsCard } from './cards/goodreads.js';
 
 const fetchers: Record<string, () => Promise<unknown>> = {
   backloggd: fetchBackloggd,
   kitsu: fetchKitsu,
   statsfm: fetchStatsfm,
   simkl: fetchSimkl,
+  goodreads: fetchGoodreads,
 };
 
 const cards: Record<string, { source: string; build: (data: never) => Promise<string> }> = {
@@ -25,6 +28,7 @@ const cards: Record<string, { source: string; build: (data: never) => Promise<st
   statsfm: { source: 'statsfm', build: buildStatsfmCard as never },
   'simkl-movies': { source: 'simkl', build: buildSimklMoviesCard as never },
   'simkl-shows': { source: 'simkl', build: buildSimklShowsCard as never },
+  goodreads: { source: 'goodreads', build: buildGoodreadsCard as never },
 };
 
 async function refreshSource(name: string, isRetry = false): Promise<void> {
@@ -63,6 +67,7 @@ const sections: { title: string; url: string; cards: string[] }[] = [
   { title: 'Kitsu', url: 'https://kitsu.app/users/skyhong2002', cards: ['kitsu-anime', 'kitsu-manga'] },
   { title: 'stats.fm', url: 'https://stats.fm/skyhong2002', cards: ['statsfm'] },
   { title: 'Simkl', url: 'https://simkl.com', cards: ['simkl-movies', 'simkl-shows'] },
+  { title: 'Goodreads', url: 'https://www.goodreads.com/user/show/160195773-skychopath', cards: ['goodreads'] },
 ];
 
 // Cache-buster: the newest fetch timestamp, appended as ?v= so browsers
