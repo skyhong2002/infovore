@@ -5,8 +5,9 @@ source site, refreshed every 30 minutes.
 
 | | |
 |---|---|
-| ![Backloggd](https://status.skyhong.tw/card/backloggd.svg) | ![Kitsu](https://status.skyhong.tw/card/kitsu.svg) |
-| ![stats.fm](https://status.skyhong.tw/card/statsfm.svg) | ![Simkl](https://status.skyhong.tw/card/simkl.svg) |
+| ![Backloggd](https://status.skyhong.tw/card/backloggd.svg) | ![stats.fm](https://status.skyhong.tw/card/statsfm.svg) |
+| ![Kitsu Anime](https://status.skyhong.tw/card/kitsu-anime.svg) | ![Kitsu Manga](https://status.skyhong.tw/card/kitsu-manga.svg) |
+| ![Simkl Movies](https://status.skyhong.tw/card/simkl-movies.svg) | ![Simkl Shows](https://status.skyhong.tw/card/simkl-shows.svg) |
 
 A small [Hono](https://hono.dev) (Node.js) service that scrapes/fetches each
 source on a schedule, caches results in memory, and serves SVG cards rendered
@@ -20,13 +21,13 @@ inlined as data URIs, so each card is a single self-contained image.
 | [Backloggd](https://backloggd.com/u/skychopath/) | HTML scrape (no public API) |
 | [Kitsu](https://kitsu.app/users/skyhong2002) | Official JSON:API |
 | [stats.fm](https://stats.fm/skyhong2002) | Public API |
-| [Simkl](https://simkl.com) | Official API (requires client ID) |
+| [Simkl](https://simkl.com) | Official API (client ID + OAuth token via PIN flow) |
 
 ## Endpoints
 
 - `GET /` — service status overview (JSON)
 - `GET /cards` — HTML preview of all cards
-- `GET /card/{backloggd|kitsu|statsfm|simkl}.svg` — SVG card
+- `GET /card/{backloggd|kitsu-anime|kitsu-manga|statsfm|simkl-movies|simkl-shows}.svg` — SVG card
 - `GET /api/{service}.json` — raw cached data
 - `GET /healthz` — health check
 
@@ -39,7 +40,9 @@ npm run dev   # http://localhost:3000
 
 Configuration via env vars — see `.env.example`. Everything has a working
 default except `SIMKL_CLIENT_ID` (create an app at
-https://simkl.com/settings/developer/).
+https://simkl.com/settings/developer/) and `SIMKL_ACCESS_TOKEN` (device PIN
+flow: `GET https://api.simkl.com/oauth/pin?client_id=...`, enter the code at
+https://simkl.com/pin, then poll `GET /oauth/pin/{user_code}?client_id=...`).
 
 ## Deployment
 
