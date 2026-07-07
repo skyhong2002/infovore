@@ -27,7 +27,7 @@ const cards: Record<string, { source: string; build: (data: never) => Promise<st
   'simkl-shows': { source: 'simkl', build: buildSimklShowsCard as never },
 };
 
-async function refreshSource(name: string): Promise<void> {
+async function refreshSource(name: string, isRetry = false): Promise<void> {
   try {
     const data = await fetchers[name]();
     setCache(`data:${name}`, data);
@@ -44,11 +44,14 @@ async function refreshSource(name: string): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     setCacheError(`data:${name}`, msg);
     console.error(`[refresh] ${name} failed: ${msg}`);
+    if (!isRetry) {
+      setTimeout(() => refreshSource(name, true), 2 * 60 * 1000);
+    }
   }
 }
 
 async function refreshAll(): Promise<void> {
-  await Promise.allSettled(Object.keys(fetchers).map(refreshSource));
+  await Promise.allSettled(Object.keys(fetchers).map((n) => refreshSource(n)));
 }
 
 const app = new Hono();

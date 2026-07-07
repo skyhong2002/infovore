@@ -26,10 +26,18 @@ const MONTHS: Record<string, string> = {
   November: 'Nov', December: 'Dec',
 };
 
-async function getHtml(url: string): Promise<cheerio.CheerioAPI> {
-  const res = await fetch(url, { headers: { 'User-Agent': config.userAgent }, signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`backloggd: HTTP ${res.status} for ${url}`);
-  return cheerio.load(await res.text());
+async function getHtml(url: string, attempt = 0): Promise<cheerio.CheerioAPI> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': config.userAgent }, signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new Error(`backloggd: HTTP ${res.status} for ${url}`);
+    return cheerio.load(await res.text());
+  } catch (err) {
+    if (attempt < 1) {
+      await new Promise((r) => setTimeout(r, 3000));
+      return getHtml(url, attempt + 1);
+    }
+    throw err;
+  }
 }
 
 function shortDate(full: string): string {
@@ -142,8 +150,13 @@ export async function fetchBackloggd(): Promise<BackloggdStats> {
     });
   });
 
-  // Enrich each recent game from its log page.
-  const logs = await Promise.all(recent.map((g) => (g.slug ? fetchLog(g.slug) : {})));
+  // Enrich each recent game from its log page — sequentially, since
+  // parallel bursts trip Cloudflare's rate limiting.
+  const logs: Partial<BackloggdRecentGame>[] = [];
+  for (const g of recent) {
+    logs.push(g.slug ? await fetchLog(g.slug) : {});
+    await new Promise((r) => setTimeout(r, 500));
+  }
   const enriched = recent.map((g, i) => {
     const { slug: _slug, ...rest } = { ...g, ...logs[i] };
     return rest;
