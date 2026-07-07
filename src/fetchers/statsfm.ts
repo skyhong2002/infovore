@@ -8,7 +8,7 @@ export interface StatsfmStats {
   weeklyUniqueTracks: number;
   weeklyUniqueArtists: number;
   topArtists: { name: string; image: string }[];
-  currentTrack: { name: string; artist: string } | null;
+  currentTrack: { name: string; artist: string; albumImage: string } | null;
 }
 
 const API = 'https://api.stats.fm/api/v1';
@@ -44,7 +44,11 @@ export async function fetchStatsfm(): Promise<StatsfmStats> {
       image: it.artist?.image ?? '',
     })),
     currentTrack: track
-      ? { name: track.name, artist: track.artists?.[0]?.name ?? '' }
+      ? {
+          name: track.name,
+          artist: track.artists?.[0]?.name ?? '',
+          albumImage: track.albums?.[0]?.image ?? '',
+        }
       : null,
   };
 }

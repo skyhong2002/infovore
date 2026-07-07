@@ -16,6 +16,7 @@
     "tsx": "^4.23.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.1.0",
     "typescript": "^6.0.3"
   }

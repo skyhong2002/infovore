@@ -19,24 +19,42 @@ export function h(
   };
 }
 
-export const theme = {
-  bg: '#16181c',
-  panel: '#1f2228',
-  text: '#e8eaed',
-  subtext: '#9aa0a8',
-  accent: '#ea377a',
+export interface Theme {
+  bg: string;
+  border: string;
+  text: string;
+  subtext: string;
+  accent: string;
+}
+
+// Palettes sampled from each site's live dark UI.
+export const themes: Record<string, Theme> = {
+  backloggd: { bg: '#16181c', border: '#2a2e35', text: '#e8eaed', subtext: '#8a939e', accent: '#ea377a' },
+  kitsu:     { bg: '#221626', border: '#3a2b3e', text: '#f5f0f5', subtext: '#a89aa8', accent: '#f75239' },
+  statsfm:   { bg: '#111112', border: '#26262b', text: '#ffffff', subtext: '#9a9aa0', accent: '#1ed761' },
+  simkl:     { bg: '#0f1214', border: '#232a2f', text: '#eef2f4', subtext: '#8b979e', accent: '#00b9ff' },
 };
 
-export function statBlock(value: string, label: string): Record<string, unknown> {
+export function statBlock(
+  t: Theme,
+  value: string,
+  label: string,
+  size = 40
+): Record<string, unknown> {
   return h(
     'div',
     { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 } },
-    h('span', { style: { fontSize: 40, fontWeight: 700, color: theme.text } }, value),
-    h('span', { style: { fontSize: 14, color: theme.subtext, marginTop: 4 } }, label)
+    h('span', { style: { fontSize: size, fontWeight: 700, color: t.text } }, value),
+    h(
+      'span',
+      { style: { fontSize: 14, color: t.subtext, marginTop: 4, whiteSpace: 'nowrap' } },
+      label
+    )
   );
 }
 
 export function cardShell(
+  t: Theme,
   title: string,
   subtitle: string,
   body: Record<string, unknown>
@@ -49,9 +67,9 @@ export function cardShell(
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: theme.bg,
+        backgroundColor: t.bg,
         borderRadius: 12,
-        border: `1px solid #2a2e35`,
+        border: `1px solid ${t.border}`,
         padding: 24,
         fontFamily: 'Inter',
       },
@@ -59,8 +77,8 @@ export function cardShell(
     h(
       'div',
       { style: { display: 'flex', alignItems: 'baseline', marginBottom: 18 } },
-      h('span', { style: { fontSize: 20, fontWeight: 700, color: theme.accent } }, title),
-      h('span', { style: { fontSize: 13, color: theme.subtext, marginLeft: 10 } }, subtitle)
+      h('span', { style: { fontSize: 20, fontWeight: 700, color: t.accent } }, title),
+      h('span', { style: { fontSize: 13, color: t.subtext, marginLeft: 10 } }, subtitle)
     ),
     body
   );
