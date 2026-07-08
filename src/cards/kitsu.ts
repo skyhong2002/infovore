@@ -16,7 +16,6 @@ const ROW_H = 178; // poster 118 + three text lines
 
 function statusLabel(e: KitsuEntry, unit: 'Ep' | 'Ch'): string {
   if (e.status === 'completed') return 'Completed';
-  if (e.status === 'planned' || e.progress === 0) return 'Planned';
   if (e.status === 'on_hold') return 'On Hold';
   if (e.status === 'dropped') return 'Dropped';
   return `${unit} ${e.progress}`;
@@ -36,7 +35,7 @@ function tile(e: KitsuEntry, poster: string, unit: 'Ep' | 'Ch', last: boolean) {
       { style: { display: 'flex', alignItems: 'baseline', marginTop: 1 } },
       h('span', { style: { fontSize: 10, color: C.dim } }, timeAgo(e.progressedAt)),
       e.rating !== null
-        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★${Math.round(e.rating * 10) / 10}`)
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★ ${Math.round(e.rating * 10) / 10}`)
         : h('div', { style: { display: 'flex' } })
     )
   );

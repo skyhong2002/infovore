@@ -6,7 +6,7 @@ export interface KitsuEntry {
   progress: number;
   status: string;
   progressedAt: string; // ISO date
-  rating: number | null; // out of 5 (ratingTwenty / 4)
+  rating: number | null; // out of 10 (ratingTwenty / 2)
 }
 
 export interface KitsuStats {
@@ -48,7 +48,7 @@ function parseEntries(doc: any, kind: 'anime' | 'manga'): KitsuEntry[] {
       progress: entry.attributes?.progress ?? 0,
       status: entry.attributes?.status ?? '',
       progressedAt: entry.attributes?.progressedAt ?? '',
-      rating: entry.attributes?.ratingTwenty ? entry.attributes.ratingTwenty / 4 : null,
+      rating: entry.attributes?.ratingTwenty ? entry.attributes.ratingTwenty / 2 : null,
     };
   });
 }
@@ -60,10 +60,10 @@ export async function fetchKitsu(): Promise<KitsuStats> {
     getJson(`${API}/users/${userId}`),
     getJson(`${API}/users/${userId}/stats`),
     getJson(
-      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=anime&page[limit]=10&sort=-progressedAt&include=anime`
+      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=anime&filter[status]=current,completed,on_hold,dropped&page[limit]=10&sort=-progressedAt&include=anime`
     ),
     getJson(
-      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=manga&page[limit]=10&sort=-progressedAt&include=manga`
+      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=manga&filter[status]=current,completed,on_hold,dropped&page[limit]=10&sort=-progressedAt&include=manga`
     ),
   ]);
 
