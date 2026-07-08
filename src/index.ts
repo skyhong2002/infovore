@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
-import { getCache, setCache, setCacheError } from './cache.js';
+import { getCache, setCache, setCacheError } from './data/cache.js';
 import { fetchBackloggd } from './fetchers/backloggd.js';
 import { fetchKitsu } from './fetchers/kitsu.js';
 import { fetchStatsfm } from './fetchers/statsfm.js';
