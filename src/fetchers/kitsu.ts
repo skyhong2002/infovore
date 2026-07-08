@@ -42,8 +42,10 @@ function parseEntries(doc: any, kind: 'anime' | 'manga'): KitsuEntry[] {
   return (doc.data ?? []).map((entry: any) => {
     const media = mediaById.get(entry.relationships?.[kind]?.data?.id);
     const attrs = media?.attributes ?? {};
+    // Prefer the English title; fall back to the canonical (usually romaji)
+    // when no English one exists.
     return {
-      title: attrs.canonicalTitle ?? 'Unknown',
+      title: attrs.titles?.en || attrs.canonicalTitle || 'Unknown',
       poster: attrs.posterImage?.small ?? '',
       progress: entry.attributes?.progress ?? 0,
       status: entry.attributes?.status ?? '',
