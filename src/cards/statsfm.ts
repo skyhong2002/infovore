@@ -13,7 +13,7 @@ const C = {
 };
 
 const ALBUM_ROW_H = 140; // 84 cover + three text lines
-const ARTIST_ROW_H = 118; // 64 avatar + two text lines
+const ARTIST_ROW_H = 140; // 84 avatar + two text lines, same footprint as an album tile
 
 function albumTile(a: StatsfmAlbum, img: string, rank: number, last: boolean) {
   return h(
@@ -38,15 +38,15 @@ function artistTile(a: { name: string; streams: number }, img: string, rank: num
     'div',
     { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: 84, marginRight: last ? 0 : 12 } },
     img
-      ? h('img', { src: img, width: 64, height: 64, style: { borderRadius: 32, objectFit: 'cover' } })
-      : h('div', { style: { width: 64, height: 64, backgroundColor: C.panel, borderRadius: 32, display: 'flex' } }),
+      ? h('img', { src: img, width: 84, height: 84, style: { borderRadius: 42, objectFit: 'cover' } })
+      : h('div', { style: { width: 84, height: 84, backgroundColor: C.panel, borderRadius: 42, display: 'flex' } }),
     h(
       'div',
       { style: { display: 'flex', alignItems: 'baseline', marginTop: 6 } },
       h('span', { style: { fontSize: 12, fontWeight: 700, color: C.accent } }, `#${rank}`),
-      h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `${a.streams}`)
+      h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `${a.streams} streams`)
     ),
-    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: 84 } }, truncate(a.name, 14))
+    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.name, 14))
   );
 }
 
@@ -70,29 +70,6 @@ function sectionLabel(title: string, sub: string) {
     { style: { display: 'flex', alignItems: 'baseline', marginBottom: 10 } },
     h('span', { style: { fontSize: 12, fontWeight: 700, color: C.dim, letterSpacing: 1.5 } }, title),
     h('span', { style: { fontSize: 11, color: C.dim, marginLeft: 10 } }, sub)
-  );
-}
-
-function nowPlayingBar(data: StatsfmStats, nowImg: string) {
-  if (!data.currentTrack) return null;
-  return h(
-    'div',
-    {
-      style: {
-        display: 'flex', alignItems: 'center', marginTop: 14,
-        backgroundColor: C.panel, borderRadius: 10, padding: '8px 12px',
-      },
-    },
-    nowImg
-      ? h('img', { src: nowImg, width: 36, height: 36, style: { borderRadius: 6, marginRight: 10 } })
-      : h('span', { style: { fontSize: 13, color: C.accent, marginRight: 8 } }, '▶'),
-    h(
-      'div',
-      { style: { display: 'flex', flexDirection: 'column' } },
-      h('span', { style: { fontSize: 12, fontWeight: 700, color: C.text } }, truncate(data.currentTrack.name, 40)),
-      h('span', { style: { fontSize: 11, color: C.dim } }, data.currentTrack.artist)
-    ),
-    h('span', { style: { fontSize: 10, fontWeight: 700, color: C.accent, marginLeft: 'auto', letterSpacing: 1 } }, 'NOW PLAYING')
   );
 }
 
@@ -133,10 +110,9 @@ function statsSub(data: StatsfmStats): string {
 async function buildCombined(data: StatsfmStats): Promise<string> {
   const albums = data.topAlbums.slice(0, 5);
   const artists = data.topArtists.slice(0, 5);
-  const [avatar, mark, nowImg, albumImgs, artistImgs] = await Promise.all([
+  const [avatar, mark, albumImgs, artistImgs] = await Promise.all([
     toDataUri(data.avatar),
     Promise.resolve(logo('statsfm')),
-    data.currentTrack ? toDataUri(data.currentTrack.albumImage) : Promise.resolve(''),
     Promise.all(albums.map((a) => toDataUri(a.image))),
     Promise.all(artists.map((a) => toDataUri(a.image))),
   ]);
@@ -146,28 +122,25 @@ async function buildCombined(data: StatsfmStats): Promise<string> {
     h('div', { style: { display: 'flex', marginTop: 16 } }),
     sectionLabel('TOP ARTISTS', 'last 4 weeks'),
     ...rows(artists, (a, i, last) => artistTile(a, artistImgs[i], i + 1, last)),
-    nowPlayingBar(data, nowImg),
   ];
-  const height = 112 + ALBUM_ROW_H + 26 + 16 + ARTIST_ROW_H + 26 + (data.currentTrack ? 66 : 0);
+  const height = 112 + ALBUM_ROW_H + 26 + 16 + ARTIST_ROW_H + 26;
   return shell(data, avatar, mark, body, height);
 }
 
 // Top 10 albums, two rows.
 async function buildAlbums(data: StatsfmStats): Promise<string> {
   const albums = data.topAlbums.slice(0, 10);
-  const [avatar, mark, nowImg, albumImgs] = await Promise.all([
+  const [avatar, mark, albumImgs] = await Promise.all([
     toDataUri(data.avatar),
     Promise.resolve(logo('statsfm')),
-    data.currentTrack ? toDataUri(data.currentTrack.albumImage) : Promise.resolve(''),
     Promise.all(albums.map((a) => toDataUri(a.image))),
   ]);
   const nRows = Math.max(1, Math.ceil(albums.length / 5));
   const body = [
     sectionLabel('TOP ALBUMS', statsSub(data)),
     ...rows(albums, (a, i, last) => albumTile(a, albumImgs[i], i + 1, last)),
-    nowPlayingBar(data, nowImg),
   ];
-  const height = 112 + nRows * ALBUM_ROW_H + (nRows - 1) * 12 + 26 + (data.currentTrack ? 66 : 0);
+  const height = 112 + nRows * ALBUM_ROW_H + (nRows - 1) * 12 + 26;
   return shell(data, avatar, mark, body, height);
 }
 
