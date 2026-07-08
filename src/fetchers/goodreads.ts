@@ -19,13 +19,23 @@ export interface GoodreadsStats {
   recentlyRead: GoodreadsBook[];
 }
 
-async function getText(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': config.userAgent },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!res.ok) throw new Error(`goodreads: HTTP ${res.status} for ${url}`);
-  return res.text();
+async function getText(url: string, attempt = 0): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': config.userAgent },
+      signal: AbortSignal.timeout(25000),
+    });
+    if (!res.ok) throw new Error(`goodreads: HTTP ${res.status} for ${url}`);
+    return res.text();
+  } catch (err) {
+    // Goodreads occasionally stalls a request from datacenter IPs; one retry
+    // clears the transient timeout that would otherwise blank the card.
+    if (attempt < 1) {
+      await new Promise((r) => setTimeout(r, 2000));
+      return getText(url, attempt + 1);
+    }
+    throw err;
+  }
 }
 
 function field(item: string, tag: string): string {

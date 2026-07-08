@@ -1,5 +1,7 @@
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
+import encodeWebp, { init as initWebp } from '@jsquash/webp/encode.js';
+import { simd } from 'wasm-feature-detect';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
@@ -188,4 +190,34 @@ export async function renderCard(
   const bottom = contentBottom(Buffer.from(img.pixels), img.width, img.height);
   const trimmed = Math.min(draftHeight, bottom + BOTTOM_PAD);
   return satori(node as never, { width, height: trimmed, fonts });
+}
+
+// Lazily compile the WebP encoder's wasm once (its default fetch()-based
+// loader doesn't work under Node).
+let webpReady: Promise<unknown> | null = null;
+function ensureWebp(): Promise<unknown> {
+  if (!webpReady) {
+    webpReady = simd().then(async (useSimd) => {
+      const file = useSimd ? 'webp_enc_simd.wasm' : 'webp_enc.wasm';
+      const path = fileURLToPath(new URL(`../../node_modules/@jsquash/webp/codec/enc/${file}`, import.meta.url));
+      return initWebp(await WebAssembly.compile(readFileSync(path)));
+    });
+  }
+  return webpReady;
+}
+
+// WebAssembly is a Node/V8 global but isn't in the ES2022 lib types.
+declare const WebAssembly: { compile(bytes: Uint8Array): Promise<unknown> };
+
+export type RasterFormat = 'png' | 'webp';
+
+// Rasterize a card SVG to PNG or WebP at `scale`× the card's native width.
+export async function rasterize(svg: string, format: RasterFormat, scale = 2): Promise<Buffer> {
+  const width = 520 * scale;
+  const img = new Resvg(svg, { fitTo: { mode: 'width', value: width } }).render();
+  if (format === 'png') return Buffer.from(img.asPng());
+  await ensureWebp();
+  const data = new Uint8ClampedArray(img.pixels.buffer, img.pixels.byteOffset, img.pixels.byteLength);
+  const webp = await encodeWebp({ data, width: img.width, height: img.height }, { quality: 82 });
+  return Buffer.from(webp);
 }

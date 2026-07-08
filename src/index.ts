@@ -8,6 +8,7 @@ import { fetchKitsu } from './fetchers/kitsu.js';
 import { fetchStatsfm } from './fetchers/statsfm.js';
 import { fetchSimkl } from './fetchers/simkl.js';
 import { fetchGoodreads } from './fetchers/goodreads.js';
+import { rasterize } from './cards/render.js';
 import { buildBackloggdCard } from './cards/backloggd.js';
 import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './cards/kitsu.js';
 import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } from './cards/statsfm.js';
@@ -88,10 +89,12 @@ function version(cardName: string): string {
 app.get('/', (c) => {
   const body = sections
     .map((s) => {
+      // Home page uses WebP (≈10× smaller than the SVG for photo-heavy cards,
+      // still retina-crisp at 2×); the .svg vector stays available via the link.
       const imgs = s.cards
         .map(
           (n) =>
-            `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.svg?v=${version(n)}" alt="${n}" width="520" loading="lazy"></a>`
+            `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.webp?v=${version(n)}" alt="${n}" width="520" loading="lazy"></a>`
         )
         .join('\n');
       const shortUrl = s.url.replace(/^https:\/\//, '').replace(/\/$/, '');
@@ -157,22 +160,47 @@ app.get('/api/:file{[a-z-]+\\.json}', (c) => {
   return c.json({ fetchedAt: new Date(entry.fetchedAt).toISOString(), data: entry.data });
 });
 
-app.get('/card/:file{[a-z-]+\\.svg}', (c) => {
-  const name = c.req.param('file').replace(/\.svg$/, '');
-  const entry = getCache<string>(`svg:${name}`);
-  if (!entry?.data) {
+const MIME: Record<string, string> = {
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+
+// Cache rasterized (png/webp) card bodies keyed by content, so we only encode
+// once per unique card render + scale.
+const rasterCache = new Map<string, Buffer>();
+
+app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
+  const file = c.req.param('file');
+  const dot = file.lastIndexOf('.');
+  const name = file.slice(0, dot);
+  const ext = file.slice(dot + 1);
+
+  const svg = getCache<string>(`svg:${name}`)?.data;
+  if (!svg) {
     const source = cards[name]?.source;
     return c.text(getCache(`data:${source ?? name}`)?.error ?? 'not found', 404);
   }
-  c.header('Content-Type', 'image/svg+xml');
-  // Requests from the home page carry a content-hash ?v=, so a cached copy is
-  // always valid until the content (and thus the URL) changes. Also expose an
-  // ETag so bare (?v=-less) requests can revalidate cheaply with a 304.
-  const etag = `"${createHash('sha1').update(entry.data).digest('hex').slice(0, 16)}"`;
+
+  const hash = createHash('sha1').update(svg).digest('hex').slice(0, 16);
+  const etag = `"${ext}-${hash}"`;
   if (c.req.header('if-none-match') === etag) return c.body(null, 304);
+  c.header('Content-Type', MIME[ext]);
   c.header('ETag', etag);
+  // Home-page requests carry a content-hash ?v=, so the URL changes whenever
+  // the card does — cache hard. Bare requests revalidate cheaply via ETag.
   c.header('Cache-Control', c.req.query('v') ? 'public, max-age=604800, immutable' : 'public, max-age=300');
-  return c.body(entry.data);
+
+  if (ext === 'svg') return c.body(svg);
+
+  const scale = Math.min(3, Math.max(1, Number(c.req.query('scale')) || 2));
+  const key = `${name}:${ext}:${scale}:${hash}`;
+  let buf = rasterCache.get(key);
+  if (!buf) {
+    buf = await rasterize(svg, ext as 'png' | 'webp', scale);
+    rasterCache.set(key, buf);
+  }
+  return c.body(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
 });
 
 app.get('/cards', (c) => c.redirect('/', 301));
