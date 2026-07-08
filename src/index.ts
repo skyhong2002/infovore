@@ -98,6 +98,26 @@ function version(cardName: string): string {
   return createHash('sha1').update(svg).digest('hex').slice(0, 12);
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const GMT8_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+function formatGmt8(ts: number): string {
+  const d = new Date(ts + GMT8_OFFSET_MS); // shift to GMT+8 wall time, read via UTC getters
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${hh}:${mm} GMT+8`;
+}
+
+// The most recent successful fetch across active sources — refreshes now
+// happen twice a day rather than every 30 minutes, so it's worth showing
+// how fresh the data actually is instead of implying it's always current.
+function lastUpdatedLabel(): string | null {
+  const timestamps = activeSources
+    .map((name) => getCache(`data:${name}`)?.fetchedAt)
+    .filter((t): t is number => typeof t === 'number');
+  return timestamps.length ? formatGmt8(Math.max(...timestamps)) : null;
+}
+
 app.get('/', (c) => {
   const body = sections
     .map((s) => {
@@ -113,6 +133,7 @@ app.get('/', (c) => {
       return `<section><h2><a href="${s.url}">${s.title}</a><a class="profile-link" href="${s.url}">${shortUrl}</a></h2><div class="row">${imgs}</div></section>`;
     })
     .join('\n');
+  const updated = lastUpdatedLabel();
   c.header('Cache-Control', 'no-cache');
   return c.html(`<!doctype html>
 <html lang="en">
@@ -141,7 +162,7 @@ app.get('/', (c) => {
 </head>
 <body>
 <h1>status</h1>
-<p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8).</p>
+<p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8)${updated ? ` · last updated ${updated}` : ''}.</p>
 ${body}
 <footer><a href="https://github.com/skyhong2002/status.skyhong.tw">source</a> · <a href="/status">json</a></footer>
 </body>
@@ -225,7 +246,6 @@ serve({ fetch: app.fetch, port: config.port }, (info) => {
 
 // Refresh immediately on startup, then on the fixed daily GMT+8 schedule in
 // config.refreshTimes (default 06:00 & 18:00) rather than a fixed interval.
-const GMT8_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function nextRunAt(): number {
