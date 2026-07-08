@@ -1,6 +1,15 @@
+// Which sources to enable. Empty = all. e.g. SOURCES=kitsu,statsfm
+const sources = (process.env.SOURCES ?? '')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   refreshMinutes: Number(process.env.REFRESH_MINUTES ?? 30),
+  ownerName: process.env.OWNER_NAME ?? 'Sky Hong',
+  sources,
+  sourceEnabled: (name: string) => sources.length === 0 || sources.includes(name),
   backloggd: { username: process.env.BACKLOGGD_USERNAME ?? 'skychopath' },
   kitsu: {
     slug: process.env.KITSU_SLUG ?? 'skyhong2002',

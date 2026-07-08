@@ -1,0 +1,22 @@
+# Overlay for a Traefik reverse proxy (e.g. a Dokploy stack). Joins the shared
+# proxy network and drops the published port (Traefik routes internally). Set
+# DOMAIN in .env. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
+services:
+  status:
+    ports: !reset []
+    networks:
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.status.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.status.entrypoints=websecure
+      - traefik.http.routers.status.tls.certresolver=letsencrypt
+      - traefik.http.routers.status-web.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.status-web.entrypoints=web
+      - traefik.http.routers.status-web.middlewares=redirect-to-https@file
+      - traefik.http.services.status.loadbalancer.server.port=3000
+
+networks:
+  dokploy-network:
+    external: true

@@ -60,21 +60,27 @@ async function refreshSource(name: string, isRetry = false): Promise<void> {
   }
 }
 
+const activeSources = Object.keys(fetchers).filter((n) => config.sourceEnabled(n));
+
 async function refreshAll(): Promise<void> {
-  await Promise.allSettled(Object.keys(fetchers).map((n) => refreshSource(n)));
+  await Promise.allSettled(activeSources.map((n) => refreshSource(n)));
 }
 
 const app = new Hono();
 
 // Platform sections for the home page. Cards in one section sit side by
 // side when the viewport is wide enough and stack vertically otherwise.
-const sections: { title: string; url: string; cards: string[] }[] = [
-  { title: 'Backloggd', url: 'https://backloggd.com/u/skychopath/', cards: ['backloggd'] },
-  { title: 'Kitsu', url: 'https://kitsu.app/users/skyhong2002', cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
-  { title: 'stats.fm', url: 'https://stats.fm/skyhong2002', cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
-  { title: 'Simkl', url: 'https://simkl.com/8074923/', cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
-  { title: 'Goodreads', url: 'https://www.goodreads.com/user/show/160195773-skychopath', cards: ['goodreads'] },
+// URLs derive from config so a self-hosted instance links to its own profiles;
+// only sections whose source is enabled are shown.
+const allSections: { source: string; title: string; url: string; cards: string[] }[] = [
+  { source: 'backloggd', title: 'Backloggd', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'] },
+  { source: 'kitsu', title: 'Kitsu', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
+  { source: 'statsfm', title: 'stats.fm', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
+  { source: 'simkl', title: 'Simkl', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
+  { source: 'goodreads', title: 'Goodreads', url: `https://www.goodreads.com/user/show/${config.goodreads.userId}`, cards: ['goodreads'] },
 ];
+
+const sections = allSections.filter((s) => config.sourceEnabled(s.source));
 
 // Cache-buster: a short hash of the card's SVG content, so the URL only
 // changes when the rendered card actually changes. Unchanged data across
@@ -107,7 +113,7 @@ app.get('/', (c) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>status · Sky Hong</title>
+<title>status · ${config.ownerName}</title>
 <style>
   body { background: #0d0e11; color: #e8eaed; margin: 0 auto; padding: 32px 16px 48px;
          max-width: 1100px; font-family: system-ui, -apple-system, sans-serif; }
@@ -129,7 +135,7 @@ app.get('/', (c) => {
 </head>
 <body>
 <h1>status</h1>
-<p class="sub">What Sky Hong is playing, watching, reading and listening to — refreshed every 30 minutes.</p>
+<p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed every ${config.refreshMinutes} minutes.</p>
 ${body}
 <footer><a href="https://github.com/skyhong2002/status.skyhong.tw">source</a> · <a href="/status">json</a></footer>
 </body>
@@ -137,7 +143,7 @@ ${body}
 });
 
 app.get('/status', (c) => {
-  const sources = Object.keys(fetchers).map((name) => {
+  const sources = activeSources.map((name) => {
     const entry = getCache(`data:${name}`);
     return {
       source: name,
@@ -147,8 +153,8 @@ app.get('/status', (c) => {
     };
   });
   return c.json({
-    name: 'status.skyhong.tw',
-    cards: Object.keys(cards).map((n) => `/card/${n}.svg`),
+    owner: config.ownerName,
+    cards: sections.flatMap((s) => s.cards).map((n) => `/card/${n}.svg`),
     sources,
   });
 });

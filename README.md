@@ -33,9 +33,38 @@ inlined as data URIs, so each card is a single self-contained image.
 
 - `GET /` — card gallery (responsive HTML)
 - `GET /status` — service status overview (JSON)
-- `GET /card/{name}.svg` — SVG card (see card list above)
+- `GET /card/{name}.{svg,png,webp}` — a card; `?scale=1..3` for raster (default 2)
 - `GET /api/{service}.json` — raw cached data
 - `GET /healthz` — health check
+
+Each card comes in three formats: **svg** (vector, sharpest), **png** (lossless
+raster), and **webp** (smallest — ~10× smaller than the SVG, what the home page
+uses). Embed anywhere with `<img src="…/card/kitsu.webp">`.
+
+## Run it yourself (Docker)
+
+```sh
+git clone https://github.com/skyhong2002/status.skyhong.tw.git
+cd status.skyhong.tw
+cp .env.example .env      # then edit .env with YOUR accounts
+docker compose up -d --build
+```
+
+Open <http://localhost:3000>. That's it — no other services required.
+
+Set only the sources you use via `SOURCES` in `.env` (e.g. `SOURCES=kitsu,statsfm`);
+the rest are hidden. Every account id/username is an env var — see the comments
+in `.env.example`, including how to get a Simkl client id + OAuth token.
+
+### Behind a reverse proxy
+
+For TLS + a custom domain via [Traefik](https://traefik.io) (e.g. a
+[Dokploy](https://dokploy.com) stack sharing a `dokploy-network`), set `DOMAIN`
+in `.env` and add the overlay:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
+```
 
 ## Development
 
@@ -43,23 +72,3 @@ inlined as data URIs, so each card is a single self-contained image.
 npm install
 npm run dev   # http://localhost:3000
 ```
-
-Configuration via env vars — see `.env.example`. Everything has a working
-default except `SIMKL_CLIENT_ID` (create an app at
-https://simkl.com/settings/developer/) and `SIMKL_ACCESS_TOKEN` (device PIN
-flow: `GET https://api.simkl.com/oauth/pin?client_id=...`, enter the code at
-https://simkl.com/pin, then poll `GET /oauth/pin/{user_code}?client_id=...`).
-
-## Deployment
-
-Runs on my Oracle Cloud VM alongside a [Dokploy](https://dokploy.com) stack,
-sharing its Traefik ingress via labels in `compose.yaml`:
-
-```sh
-git clone https://github.com/skyhong2002/status.skyhong.tw.git
-cd status.skyhong.tw
-echo "SIMKL_CLIENT_ID=..." > .env
-docker compose up -d --build
-```
-
-TLS certificates are issued automatically by Traefik (Let's Encrypt).
