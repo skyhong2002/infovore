@@ -164,7 +164,7 @@ app.get('/', (c) => {
 <h1>status</h1>
 <p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8)${updated ? ` · last updated ${updated}` : ''}.</p>
 ${body}
-<footer><a href="https://github.com/skyhong2002/status.skyhong.tw">source</a> · <a href="/status">json</a></footer>
+<footer><a href="https://github.com/skyhong2002/infovore">source</a> · <a href="/status">json</a></footer>
 </body>
 </html>`);
 });

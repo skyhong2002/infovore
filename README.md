@@ -2,19 +2,19 @@
 
 A personal media lifelog — aggregating what I play, watch, read, and listen
 to, rendered as live status cards (and more to come).
-**[See the cards live →](https://status.skyhong.tw)**
+**[See the cards live →](https://infovore.skyhong.tw)**
 
 <table>
   <tr>
-    <td width="50%" valign="top"><a href="https://status.skyhong.tw"><img width="100%" alt="Backloggd" src="https://status.skyhong.tw/card/backloggd.webp"></a></td>
-    <td width="50%" valign="top"><a href="https://status.skyhong.tw"><img width="100%" alt="stats.fm" src="https://status.skyhong.tw/card/statsfm.webp"></a></td>
+    <td width="50%" valign="top"><a href="https://infovore.skyhong.tw"><img width="100%" alt="Backloggd" src="https://infovore.skyhong.tw/card/backloggd.webp"></a></td>
+    <td width="50%" valign="top"><a href="https://infovore.skyhong.tw"><img width="100%" alt="stats.fm" src="https://infovore.skyhong.tw/card/statsfm.webp"></a></td>
   </tr>
   <tr>
-    <td width="50%" valign="top"><a href="https://status.skyhong.tw"><img width="100%" alt="Kitsu" src="https://status.skyhong.tw/card/kitsu.webp"></a></td>
-    <td width="50%" valign="top"><a href="https://status.skyhong.tw"><img width="100%" alt="Simkl" src="https://status.skyhong.tw/card/simkl.webp"></a></td>
+    <td width="50%" valign="top"><a href="https://infovore.skyhong.tw"><img width="100%" alt="Kitsu" src="https://infovore.skyhong.tw/card/kitsu.webp"></a></td>
+    <td width="50%" valign="top"><a href="https://infovore.skyhong.tw"><img width="100%" alt="Simkl" src="https://infovore.skyhong.tw/card/simkl.webp"></a></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><a href="https://status.skyhong.tw"><img width="50%" alt="Goodreads" src="https://status.skyhong.tw/card/goodreads.webp"></a></td>
+    <td colspan="2" align="center"><a href="https://infovore.skyhong.tw"><img width="50%" alt="Goodreads" src="https://infovore.skyhong.tw/card/goodreads.webp"></a></td>
   </tr>
 </table>
 
@@ -95,8 +95,8 @@ Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
 ## Run it yourself (Docker)
 
 ```sh
-git clone https://github.com/skyhong2002/status.skyhong.tw.git
-cd status.skyhong.tw
+git clone https://github.com/skyhong2002/infovore.git
+cd infovore
 cp .env.example .env      # then edit .env with YOUR accounts
 docker compose up -d --build
 ```
@@ -111,7 +111,8 @@ in `.env.example`, including how to get a Simkl client id + OAuth token.
 
 For TLS + a custom domain via [Traefik](https://traefik.io) (e.g. a
 [Dokploy](https://dokploy.com) stack sharing a `dokploy-network`), set `DOMAIN`
-in `.env` and add the overlay:
+in `.env` (and optionally `LEGACY_DOMAIN` for an old domain that now CNAMEs
+here, to keep both working during a migration) and add the overlay:
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build

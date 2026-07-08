@@ -1,6 +1,8 @@
 # Overlay for a Traefik reverse proxy (e.g. a Dokploy stack). Joins the shared
 # proxy network and drops the published port (Traefik routes internally). Set
-# DOMAIN in .env. Usage:
+# DOMAIN in .env (and optionally LEGACY_DOMAIN, e.g. an old domain that now
+# CNAMEs here, to keep serving both during a domain migration — it defaults
+# to DOMAIN, i.e. a harmless no-op, if unset). Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
 services:
   infovore:
@@ -9,10 +11,10 @@ services:
       - dokploy-network
     labels:
       - traefik.enable=true
-      - traefik.http.routers.infovore.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.infovore.rule=Host(`${DOMAIN}`) || Host(`${LEGACY_DOMAIN:-${DOMAIN}}`)
       - traefik.http.routers.infovore.entrypoints=websecure
       - traefik.http.routers.infovore.tls.certresolver=letsencrypt
-      - traefik.http.routers.infovore-web.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.infovore-web.rule=Host(`${DOMAIN}`) || Host(`${LEGACY_DOMAIN:-${DOMAIN}}`)
       - traefik.http.routers.infovore-web.entrypoints=web
       - traefik.http.routers.infovore-web.middlewares=redirect-to-https@file
       - traefik.http.services.infovore.loadbalancer.server.port=3000
