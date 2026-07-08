@@ -1,4 +1,4 @@
-import { h, logo, toDataUri, truncate, renderCard } from './render.js';
+import { h, logo, toDataUri, truncate, textFont, renderCard } from './render.js';
 import type { StatsfmStats, StatsfmAlbum } from '../fetchers/statsfm.js';
 
 // stats.fm's app UI: near-black background, soft dark panels, Spotify
@@ -28,8 +28,8 @@ function albumTile(a: StatsfmAlbum, img: string, rank: number, last: boolean) {
       h('span', { style: { fontSize: 12, fontWeight: 700, color: C.accent } }, `#${rank}`),
       h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `${a.streams} streams`)
     ),
-    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.name, 14)),
-    h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.artist, 15))
+    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2, fontFamily: textFont(a.name, 'Statsfm Sans'), whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.name, 14)),
+    h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1, fontFamily: textFont(a.artist, 'Statsfm Sans'), whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.artist, 15))
   );
 }
 
@@ -46,7 +46,7 @@ function artistTile(a: { name: string; streams: number }, img: string, rank: num
       h('span', { style: { fontSize: 12, fontWeight: 700, color: C.accent } }, `#${rank}`),
       h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `${a.streams} streams`)
     ),
-    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.name, 14))
+    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2, fontFamily: textFont(a.name, 'Statsfm Sans'), whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(a.name, 14))
   );
 }
 

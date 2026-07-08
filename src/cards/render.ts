@@ -88,6 +88,17 @@ export function truncate(s: string, max: number): string {
   return s;
 }
 
+const CJK = /[⺀-鿿豈-﫿＀-￯　-〿]/;
+
+// Satori assigns a font per whitespace-delimited word based on its first
+// character, so a Latin-prefixed word like "TVアニメ" gets the brand font
+// (which lacks kana) and the CJK tofus out. When a string contains any CJK,
+// put the Noto CJK fonts first — Noto also covers Latin, so the whole run
+// renders. Pure-Latin strings keep the brand font.
+export function textFont(text: string, brand: string): string {
+  return CJK.test(text) ? `"Noto Sans JP", "Noto Sans TC", ${brand}` : brand;
+}
+
 export function timeAgo(iso: string): string {
   if (!iso) return '';
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);

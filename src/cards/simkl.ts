@@ -1,4 +1,4 @@
-import { h, logo, toDataUri, truncate, timeAgo, renderCard } from './render.js';
+import { h, logo, toDataUri, truncate, timeAgo, renderCard, textFont } from './render.js';
 import type { SimklStats, SimklItem } from '../fetchers/simkl.js';
 
 // Simkl's dark UI: charcoal background with their sky-blue accent,
@@ -28,7 +28,7 @@ function tile(it: SimklItem, poster: string, kind: 'movies' | 'shows', last: boo
     poster
       ? h('img', { src: poster, width: 84, height: 118, style: { borderRadius: 4, objectFit: 'cover' } })
       : h('div', { style: { width: 84, height: 118, backgroundColor: C.panel, borderRadius: 4, display: 'flex' } }),
-    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(it.title, 14)),
+    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(it.title, 'Roboto') } }, truncate(it.title, 14)),
     h(
       'div',
       { style: { display: 'flex', alignItems: 'baseline', marginTop: 2 } },
