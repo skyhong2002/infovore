@@ -31,16 +31,16 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
   const tile = (g: (typeof data.recent)[number], i: number, last: boolean) =>
     h(
       'div',
-      { style: { display: 'flex', flexDirection: 'column', width: 92, marginRight: last ? 0 : 14 } },
+      { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: last ? 0 : 12 } },
       covers[i]
         ? h('img', {
             src: covers[i],
-            width: 92,
-            height: 123,
+            width: 84,
+            height: 112,
             style: { borderRadius: 4, objectFit: 'cover', border: `1px solid ${C.border}` },
           })
-        : h('div', { style: { width: 92, height: 123, backgroundColor: C.border, borderRadius: 4, display: 'flex' } }),
-      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(g.title, 15)),
+        : h('div', { style: { width: 84, height: 112, backgroundColor: C.border, borderRadius: 4, display: 'flex' } }),
+      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(g.title, 14)),
       h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, g.lastPlayed)
     );
 
@@ -98,7 +98,7 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
     ...tileRows
   );
 
-  // Header + stats ≈ 216; each tile row ≈ 160 (cover 123 + title + date).
+  // Header + stats ≈ 216; each tile row ≈ 149 (cover 112 + title + date).
   const nRows = Math.max(1, Math.ceil(data.recent.length / 5));
-  return renderCard(node, 520, 216 + nRows * 160 + (nRows - 1) * 12);
+  return renderCard(node, 520, 216 + nRows * 149 + (nRows - 1) * 12);
 }
