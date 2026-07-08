@@ -44,7 +44,7 @@ export async function buildGoodreadsCard(data: GoodreadsStats): Promise<string> 
       h(
         'div',
         { style: { display: 'flex', flexDirection: 'column' } },
-        h('span', { style: { fontSize: 13, fontWeight: 700, color: C.text, fontFamily: textFont(b.title, 'Merriweather') } }, truncate(b.title, 48)),
+        h('span', { style: { fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.3, wordBreak: 'break-word', fontFamily: textFont(b.title, 'Merriweather') } }, b.title),
         h('span', { style: { fontSize: 11, color: C.dim, marginTop: 2 } }, b.author)
       ),
       h('span', { style: { fontSize: 10, fontWeight: 700, color: C.accent, marginLeft: 'auto', letterSpacing: 1 } }, 'READING')
@@ -58,7 +58,7 @@ export async function buildGoodreadsCard(data: GoodreadsStats): Promise<string> 
       readCovers[i]
         ? h('img', { src: readCovers[i], width: 84, height: 122, style: { borderRadius: 3, objectFit: 'cover', border: `1px solid ${C.border}` } })
         : h('div', { style: { width: 84, height: 122, backgroundColor: '#e8e2d4', borderRadius: 3, display: 'flex' } }),
-      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(b.title, 'Merriweather') } }, truncate(b.title, 14)),
+      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, lineHeight: 1.25, wordBreak: 'break-word', fontFamily: textFont(b.title, 'Merriweather') } }, b.title),
       h('span', { style: { fontSize: 10, color: C.dim, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(b.author, 'Merriweather') } }, truncate(b.author, 16)),
       b.rating !== null
         ? h('span', { style: { fontSize: 10, color: C.stars, marginTop: 2, letterSpacing: 1 } }, starString(b.rating))

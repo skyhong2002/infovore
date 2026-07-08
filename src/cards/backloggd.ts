@@ -40,7 +40,7 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
             style: { borderRadius: 4, objectFit: 'cover', border: `1px solid ${C.border}` },
           })
         : h('div', { style: { width: 84, height: 112, backgroundColor: C.border, borderRadius: 4, display: 'flex' } }),
-      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(g.title, 'Roboto') } }, truncate(g.title, 14)),
+      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, lineHeight: 1.25, wordBreak: 'break-word', fontFamily: textFont(g.title, 'Roboto') } }, g.title),
       h(
         'div',
         { style: { display: 'flex', marginTop: 2 } },

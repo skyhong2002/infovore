@@ -28,7 +28,7 @@ function tile(e: KitsuEntry, poster: string, unit: 'Ep' | 'Ch', last: boolean) {
     poster
       ? h('img', { src: poster, width: 84, height: 118, style: { borderRadius: 6, objectFit: 'cover' } })
       : h('div', { style: { width: 84, height: 118, backgroundColor: C.panel, borderRadius: 6, display: 'flex' } }),
-    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(e.title, 'Open Sans') } }, truncate(e.title, 14)),
+    h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, lineHeight: 1.25, wordBreak: 'break-word', fontFamily: textFont(e.title, 'Open Sans') } }, e.title),
     h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, statusLabel(e, unit)),
     h(
       'div',

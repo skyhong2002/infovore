@@ -143,7 +143,7 @@ export async function renderCard(
   width: number,
   height: number
 ): Promise<string> {
-  const draftHeight = height + 96; // headroom so nothing is clipped pre-trim
+  const draftHeight = height + 240; // headroom so nothing is clipped pre-trim (wrapped titles can add several lines)
   const draft = await satori(node as never, { width, height: draftHeight, fonts });
   const img = new Resvg(draft).render();
   const bottom = contentBottom(Buffer.from(img.pixels), img.width, img.height);
