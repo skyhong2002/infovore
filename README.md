@@ -1,13 +1,21 @@
 # status.skyhong.tw
 
-Live SVG status cards for my media-tracking accounts — each themed after its
-source site, refreshed every 30 minutes.
+Live, self-refreshing status cards for my media-tracking accounts — each themed
+after its source site. **[See them live →](https://status.skyhong.tw)**
 
-| | |
-|---|---|
-| ![Backloggd](https://status.skyhong.tw/card/backloggd.svg) | ![stats.fm](https://status.skyhong.tw/card/statsfm.svg) |
-| ![Kitsu](https://status.skyhong.tw/card/kitsu.svg) | ![Simkl](https://status.skyhong.tw/card/simkl.svg) |
-| ![Goodreads](https://status.skyhong.tw/card/goodreads.svg) | |
+<table>
+  <tr>
+    <td width="50%" valign="top"><a href="https://status.skyhong.tw"><img width="100%" alt="Backloggd" src="https://status.skyhong.tw/card/backloggd.webp"></a></td>
+    <td width="50%" valign="top"><a href="https://status.skyhong.tw"><img width="100%" alt="stats.fm" src="https://status.skyhong.tw/card/statsfm.webp"></a></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><a href="https://status.skyhong.tw"><img width="100%" alt="Kitsu" src="https://status.skyhong.tw/card/kitsu.webp"></a></td>
+    <td width="50%" valign="top"><a href="https://status.skyhong.tw"><img width="100%" alt="Simkl" src="https://status.skyhong.tw/card/simkl.webp"></a></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><a href="https://status.skyhong.tw"><img width="50%" alt="Goodreads" src="https://status.skyhong.tw/card/goodreads.webp"></a></td>
+  </tr>
+</table>
 
 Eleven cards in total — combined and single-medium variants:
 `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
@@ -15,9 +23,10 @@ Eleven cards in total — combined and single-medium variants:
 `simkl` / `simkl-shows` / `simkl-movies`, `goodreads`.
 
 A small [Hono](https://hono.dev) (Node.js) service that scrapes/fetches each
-source on a schedule, caches results in memory, and serves SVG cards rendered
-with [Satori](https://github.com/vercel/satori) — cover art and posters are
-inlined as data URIs, so each card is a single self-contained image.
+source on a schedule, caches results in memory, and renders each card with
+[Satori](https://github.com/vercel/satori). Every card is served as **svg**
+(vector), **png**, or **webp** — the previews above use webp (≈10× smaller than
+the SVG), so this page loads fast.
 
 ## Sources
 
