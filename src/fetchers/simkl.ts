@@ -45,7 +45,8 @@ async function getJson(path: string): Promise<any> {
 }
 
 function poster(hash: string | undefined): string {
-  return hash ? `https://simkl.in/posters/${hash}_m.jpg` : '';
+  // _c is the ~170x255 variant — ample for the 84px tile, ~3x smaller than _m.
+  return hash ? `https://simkl.in/posters/${hash}_c.jpg` : '';
 }
 
 export async function fetchSimkl(): Promise<SimklStats> {

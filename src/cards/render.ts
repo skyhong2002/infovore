@@ -53,10 +53,26 @@ export function h(
   };
 }
 
+// Covers/posters are inlined at full CDN resolution but only displayed at
+// ~84px, bloating each card SVG to megabytes. Rewrite known CDN URLs to a
+// modestly-sized variant (~256-300px, crisp at 2× on the tile) before fetching.
+export function shrinkImage(url: string): string {
+  return url
+    // Apple Music artwork: .../768x768bb.jpg → 256px
+    .replace(/\/\d+x\d+bb\.jpg/, '/256x256bb.jpg')
+    // Spotify artwork: ab67616d0000b273 (640px) → ab67616d00001e02 (300px)
+    .replace(/(i\.scdn\.co\/image\/ab67616d)0000b273/, '$100001e02')
+    // IGDB game covers: t_cover_big / t_cover_big_2x → t_cover_med (264px)
+    .replace(/\/t_cover_big(_2x)?\//, '/t_cover_med/')
+    // Goodreads/Amazon covers: ._SX318_ / ._SY475_ → 160px wide
+    .replace(/\._S[XY]\d+_\.jpg/, '._SX160_.jpg');
+}
+
 // Remote images inlined as data URIs so each SVG is self-contained.
 // Called once per refresh cycle, not per request.
-export async function toDataUri(url: string, attempt = 0): Promise<string> {
-  if (!url) return '';
+export async function toDataUri(rawUrl: string, attempt = 0): Promise<string> {
+  if (!rawUrl) return '';
+  const url = shrinkImage(rawUrl);
   try {
     const res = await fetch(url, { headers: { 'User-Agent': config.userAgent }, signal: AbortSignal.timeout(15000) });
     if (!res.ok) return attempt < 1 ? toDataUri(url, attempt + 1) : '';

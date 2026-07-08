@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
@@ -74,11 +75,14 @@ const sections: { title: string; url: string; cards: string[] }[] = [
   { title: 'Goodreads', url: 'https://www.goodreads.com/user/show/160195773-skychopath', cards: ['goodreads'] },
 ];
 
-// Cache-buster: the newest fetch timestamp, appended as ?v= so browsers
-// pick up fresh renders without a hard reload.
-function version(cardName: string): number {
-  const source = cards[cardName]?.source;
-  return getCache(`data:${source}`)?.fetchedAt ?? 0;
+// Cache-buster: a short hash of the card's SVG content, so the URL only
+// changes when the rendered card actually changes. Unchanged data across
+// refreshes keeps the same URL → the browser serves it from cache instead of
+// re-downloading megabytes of identical images.
+function version(cardName: string): string {
+  const svg = getCache<string>(`svg:${cardName}`)?.data;
+  if (!svg) return '0';
+  return createHash('sha1').update(svg).digest('hex').slice(0, 12);
 }
 
 app.get('/', (c) => {
@@ -161,7 +165,13 @@ app.get('/card/:file{[a-z-]+\\.svg}', (c) => {
     return c.text(getCache(`data:${source ?? name}`)?.error ?? 'not found', 404);
   }
   c.header('Content-Type', 'image/svg+xml');
-  c.header('Cache-Control', `public, max-age=${config.refreshMinutes * 60}`);
+  // Requests from the home page carry a content-hash ?v=, so a cached copy is
+  // always valid until the content (and thus the URL) changes. Also expose an
+  // ETag so bare (?v=-less) requests can revalidate cheaply with a 304.
+  const etag = `"${createHash('sha1').update(entry.data).digest('hex').slice(0, 16)}"`;
+  if (c.req.header('if-none-match') === etag) return c.body(null, 304);
+  c.header('ETag', etag);
+  c.header('Cache-Control', c.req.query('v') ? 'public, max-age=604800, immutable' : 'public, max-age=300');
   return c.body(entry.data);
 });
 
