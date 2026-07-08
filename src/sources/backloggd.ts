@@ -1,8 +1,11 @@
 import * as cheerio from 'cheerio';
 import { config } from '../config.js';
 import { cookieHeader, isAnubisChallenge, solveAnubis, absorbCookies } from './anubis.js';
+import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 
-export interface BackloggdRecentGame {
+// Scratch shape used while parsing/enriching a game's journal + log page,
+// before it's mapped to a MediaEntry just before returning.
+interface RawRecentGame {
   title: string;
   cover: string;
   platform: string; // e.g. "Nintendo DS via Android" from the log page, '' if unavailable
@@ -11,14 +14,10 @@ export interface BackloggdRecentGame {
   rating: number | null; // out of 5, e.g. 3.5
 }
 
-export interface BackloggdStats {
-  username: string;
-  avatar: string;
-  gamesPlayed: number;
-  playedThisYear: number;
-  backlog: number;
+// Backloggd's yearExtras tooltip line has no natural fit in `entries` or
+// `stats` (it's a formatted summary, not a counter or an activity item).
+export interface BackloggdExtra {
   yearExtras: string; // e.g. "+14 extras: 10 Updates · 3 Expansions · 1 DLC"
-  recent: BackloggdRecentGame[];
 }
 
 const ORIGIN = 'https://backloggd.com';
@@ -75,10 +74,10 @@ function sumSessions(times: string[]): string {
 
 // Per-game log page: last played date, summed session time, platform,
 // and the log's star rating (stars-top width % of 5 stars).
-async function fetchLog(slug: string): Promise<Partial<BackloggdRecentGame>> {
+async function fetchLog(slug: string): Promise<Partial<RawRecentGame>> {
   try {
     const $ = await getHtml(`/u/${config.backloggd.username}/logs/${slug}/`);
-    const out: Partial<BackloggdRecentGame> = {};
+    const out: Partial<RawRecentGame> = {};
 
     $('.section-title p').each((_, el) => {
       const label = $(el).text().trim();
@@ -105,8 +104,8 @@ async function fetchLog(slug: string): Promise<Partial<BackloggdRecentGame>> {
 
 // Fallback: the profile page's own "Recently Played" grid — only 5 entries
 // with title/cover/date, but it isn't behind the Anubis gate.
-function profileRecent($profile: cheerio.CheerioAPI): BackloggdRecentGame[] {
-  const recent: BackloggdRecentGame[] = [];
+function profileRecent($profile: cheerio.CheerioAPI): RawRecentGame[] {
+  const recent: RawRecentGame[] = [];
   $profile('#profile-journal')
     .children('div')
     .each((_, col) => {
@@ -121,7 +120,24 @@ function profileRecent($profile: cheerio.CheerioAPI): BackloggdRecentGame[] {
   return recent;
 }
 
-export async function fetchBackloggd(): Promise<BackloggdStats> {
+function toEntry(g: RawRecentGame): MediaEntry {
+  const extra: Record<string, string | number> = {};
+  if (g.platform) extra.platform = g.platform;
+  if (g.playtime) extra.playtime = g.playtime;
+  return {
+    source: 'backloggd',
+    kind: 'game',
+    title: g.title,
+    image: g.cover,
+    // Backloggd exposes no ISO date for "last played" — only a short label
+    // like "Jul 7" — so that's what this carries instead of a real ISO string.
+    activityAt: g.lastPlayed,
+    rating: g.rating !== null ? { value: g.rating, scale: 5 } : null,
+    extra,
+  };
+}
+
+export async function fetchBackloggd(): Promise<SourceSnapshot<BackloggdExtra>> {
   const base = `/u/${config.backloggd.username}`;
   const $profile = await getHtml(`${base}/`);
 
@@ -153,10 +169,10 @@ export async function fetchBackloggd(): Promise<BackloggdStats> {
 
   // Try the journal (10 recent games, richer per-game detail). If the Anubis
   // gate can't be cleared, fall back to the profile's 5-game grid.
-  let recent: BackloggdRecentGame[];
+  let recent: RawRecentGame[];
   try {
     const $journal = await getHtml(`${base}/journal/`);
-    const parsed: (BackloggdRecentGame & { slug: string })[] = [];
+    const parsed: (RawRecentGame & { slug: string })[] = [];
     const seen = new Set<string>();
     let month = '';
     let day = '';
@@ -181,7 +197,7 @@ export async function fetchBackloggd(): Promise<BackloggdStats> {
 
     // Enrich each game from its log page — sequentially, so we don't hammer
     // the Anubis gate with parallel bursts.
-    const logs: Partial<BackloggdRecentGame>[] = [];
+    const logs: Partial<RawRecentGame>[] = [];
     for (const g of parsed) {
       logs.push(g.slug ? await fetchLog(g.slug) : {});
       await new Promise((r) => setTimeout(r, 500));
@@ -196,12 +212,19 @@ export async function fetchBackloggd(): Promise<BackloggdStats> {
   }
 
   return {
-    username: config.backloggd.username,
-    avatar,
-    gamesPlayed: byLabel('games played'),
-    playedThisYear: byLabel('played in'),
-    backlog: byLabel('backloggd'),
-    yearExtras,
-    recent,
+    source: 'backloggd',
+    profile: {
+      id: config.backloggd.username,
+      name: config.backloggd.username,
+      avatar,
+      url: `https://backloggd.com/u/${config.backloggd.username}/`,
+    },
+    stats: {
+      gamesPlayed: byLabel('games played'),
+      playedThisYear: byLabel('played in'),
+      backlog: byLabel('backloggd'),
+    },
+    entries: recent.map(toEntry),
+    extra: { yearExtras },
   };
 }

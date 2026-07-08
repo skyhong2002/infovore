@@ -1,5 +1,5 @@
-import { h, logo, toDataUri, truncate, timeAgo, renderCard, textFont, titleFontSize, MAX_TITLE_LINES } from './render.js';
-import type { SimklStats, SimklItem } from '../fetchers/simkl.js';
+import { h, logo, toDataUri, timeAgo, renderCard, textFont, titleFontSize, MAX_TITLE_LINES } from './render.js';
+import type { SourceSnapshot, MediaEntry } from '../data/types.js';
 
 // Simkl's dark UI: charcoal background with their sky-blue accent,
 // system-sans typography (Roboto stands in).
@@ -14,14 +14,14 @@ const C = {
 
 const ROW_H = 178; // poster 118 + three text lines
 
-function detail(it: SimklItem, kind: 'movies' | 'shows'): string {
-  if (kind === 'shows' && it.watchedEpisodes && it.totalEpisodes) {
-    return `${it.watchedEpisodes}/${it.totalEpisodes} eps`;
+function detail(it: MediaEntry, kind: 'movies' | 'shows'): string {
+  if (kind === 'shows' && it.extra.watchedEpisodes && it.extra.totalEpisodes) {
+    return `${it.extra.watchedEpisodes}/${it.extra.totalEpisodes} eps`;
   }
-  return it.year ? String(it.year) : '';
+  return it.extra.year ? String(it.extra.year) : '';
 }
 
-function tile(it: SimklItem, poster: string, kind: 'movies' | 'shows', last: boolean) {
+function tile(it: MediaEntry, poster: string, kind: 'movies' | 'shows', last: boolean) {
   return h(
     'div',
     { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: last ? 0 : 12 } },
@@ -32,16 +32,16 @@ function tile(it: SimklItem, poster: string, kind: 'movies' | 'shows', last: boo
     h(
       'div',
       { style: { display: 'flex', alignItems: 'baseline', marginTop: 2 } },
-      h('span', { style: { fontSize: 10, color: C.accent } }, timeAgo(it.watchedAt)),
+      h('span', { style: { fontSize: 10, color: C.accent } }, timeAgo(it.activityAt)),
       it.rating !== null
-        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★ ${it.rating}`)
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★ ${it.rating.value}`)
         : h('div', { style: { display: 'flex' } })
     ),
     h('span', { style: { fontSize: 10, color: C.dim, marginTop: 1 } }, detail(it, kind))
   );
 }
 
-function tileRows(items: SimklItem[], posters: string[], kind: 'movies' | 'shows') {
+function tileRows(items: MediaEntry[], posters: string[], kind: 'movies' | 'shows') {
   const rows: Record<string, unknown>[] = [];
   for (let i = 0; i < items.length; i += 5) {
     rows.push(
@@ -64,7 +64,7 @@ function sectionHeader(title: string, sub: string) {
   );
 }
 
-function shell(data: SimklStats, avatar: string, mark: string, body: Record<string, unknown>[], height: number) {
+function shell(name: string, avatar: string, mark: string, body: Record<string, unknown>[], height: number) {
   const node = h(
     'div',
     {
@@ -89,7 +89,7 @@ function shell(data: SimklStats, avatar: string, mark: string, body: Record<stri
         avatar
           ? h('img', { src: avatar, width: 30, height: 30, style: { borderRadius: 15, marginRight: 8 } })
           : h('div', { style: { display: 'flex' } }),
-        h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, data.name)
+        h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, name)
       )
     ),
     ...body
@@ -97,22 +97,23 @@ function shell(data: SimklStats, avatar: string, mark: string, body: Record<stri
   return renderCard(node, 520, height);
 }
 
-function showsSub(data: SimklStats): string {
-  return `${data.showsWatching} watching · ${data.showsCompleted} completed`;
+function showsSub(stats: Record<string, number>): string {
+  return `${stats.showsWatching} watching · ${stats.showsCompleted} completed`;
 }
-function moviesSub(data: SimklStats): string {
-  return `${data.moviesCompleted} movies watched`;
+function moviesSub(stats: Record<string, number>): string {
+  return `${stats.moviesCompleted} movies watched`;
 }
 
-async function postersFor(items: SimklItem[]): Promise<string[]> {
-  return Promise.all(items.map((it) => toDataUri(it.poster)));
+async function postersFor(items: MediaEntry[]): Promise<string[]> {
+  return Promise.all(items.map((it) => toDataUri(it.image)));
 }
 
 // Single-medium card: 10 recent items in two rows.
-async function buildSingle(data: SimklStats, kind: 'movies' | 'shows'): Promise<string> {
-  const items = (kind === 'movies' ? data.recentMovies : data.recentShows).slice(0, 10);
+async function buildSingle(data: SourceSnapshot, kind: 'movies' | 'shows'): Promise<string> {
+  const entryKind = kind === 'movies' ? 'movie' : 'show';
+  const items = data.entries.filter((e) => e.kind === entryKind).slice(0, 10);
   const [avatar, mark, posters] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('simkl')),
     postersFor(items),
   ]);
@@ -120,33 +121,33 @@ async function buildSingle(data: SimklStats, kind: 'movies' | 'shows'): Promise<
   const body = [
     sectionHeader(
       kind === 'movies' ? 'Recently Watched Movies' : 'Recently Watched TV',
-      kind === 'movies' ? moviesSub(data) : showsSub(data)
+      kind === 'movies' ? moviesSub(data.stats) : showsSub(data.stats)
     ),
     ...tileRows(items, posters, kind),
   ];
-  return shell(data, avatar, mark, body, 118 + rows * ROW_H + (rows - 1) * 12);
+  return shell(data.profile.name, avatar, mark, body, 118 + rows * ROW_H + (rows - 1) * 12);
 }
 
 // Combined card: 5 recent shows + 5 recent movies.
-async function buildBoth(data: SimklStats): Promise<string> {
-  const shows = data.recentShows.slice(0, 5);
-  const movies = data.recentMovies.slice(0, 5);
+async function buildBoth(data: SourceSnapshot): Promise<string> {
+  const shows = data.entries.filter((e) => e.kind === 'show').slice(0, 5);
+  const movies = data.entries.filter((e) => e.kind === 'movie').slice(0, 5);
   const [avatar, mark, showPosters, moviePosters] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('simkl')),
     postersFor(shows),
     postersFor(movies),
   ]);
   const body = [
-    sectionHeader('Recently Watched TV', showsSub(data)),
+    sectionHeader('Recently Watched TV', showsSub(data.stats)),
     ...tileRows(shows, showPosters, 'shows'),
     h('div', { style: { display: 'flex', marginTop: 16 } }),
-    sectionHeader('Recently Watched Movies', moviesSub(data)),
+    sectionHeader('Recently Watched Movies', moviesSub(data.stats)),
     ...tileRows(movies, moviePosters, 'movies'),
   ];
-  return shell(data, avatar, mark, body, 118 + 2 * (ROW_H + 26) + 16);
+  return shell(data.profile.name, avatar, mark, body, 118 + 2 * (ROW_H + 26) + 16);
 }
 
-export const buildSimklCard = (d: SimklStats) => buildBoth(d);
-export const buildSimklMoviesCard = (d: SimklStats) => buildSingle(d, 'movies');
-export const buildSimklShowsCard = (d: SimklStats) => buildSingle(d, 'shows');
+export const buildSimklCard = (d: SourceSnapshot) => buildBoth(d);
+export const buildSimklMoviesCard = (d: SourceSnapshot) => buildSingle(d, 'movies');
+export const buildSimklShowsCard = (d: SourceSnapshot) => buildSingle(d, 'shows');

@@ -1,23 +1,5 @@
 import { config } from '../config.js';
-
-export interface GoodreadsBook {
-  title: string;
-  author: string;
-  cover: string;
-  rating: number | null; // user rating out of 5
-  readAt: string; // ISO-ish date or ''
-}
-
-export interface GoodreadsStats {
-  userId: string;
-  name: string;
-  avatar: string;
-  readCount: number;
-  currentlyReadingCount: number;
-  toReadCount: number;
-  currentlyReading: GoodreadsBook[];
-  recentlyRead: GoodreadsBook[];
-}
+import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 
 async function getText(url: string, attempt = 0): Promise<string> {
   try {
@@ -43,22 +25,25 @@ function field(item: string, tag: string): string {
   return m ? m[1].trim() : '';
 }
 
-function parseRss(xml: string, limit: number): GoodreadsBook[] {
+function parseRss(xml: string, limit: number, status: 'reading' | 'read'): MediaEntry[] {
   const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
   return items.slice(0, limit).map((it) => {
     const rating = Number(field(it, 'user_rating'));
     const readAt = field(it, 'user_read_at') || field(it, 'pubDate');
     return {
+      source: 'goodreads',
+      kind: 'book',
       title: field(it, 'title'),
-      author: field(it, 'author_name'),
-      cover: field(it, 'book_large_image_url') || field(it, 'book_medium_image_url'),
-      rating: rating > 0 ? rating : null,
-      readAt: readAt ? new Date(readAt).toISOString() : '',
+      image: field(it, 'book_large_image_url') || field(it, 'book_medium_image_url'),
+      status,
+      activityAt: readAt ? new Date(readAt).toISOString() : '',
+      rating: rating > 0 ? { value: rating, scale: 5 } : null,
+      extra: { author: field(it, 'author_name') },
     };
   });
 }
 
-export async function fetchGoodreads(): Promise<GoodreadsStats> {
+export async function fetchGoodreads(): Promise<SourceSnapshot> {
   const { userId } = config.goodreads;
   const [profileHtml, readXml, currentXml] = await Promise.all([
     getText(`https://www.goodreads.com/user/show/${userId}`),
@@ -74,13 +59,19 @@ export async function fetchGoodreads(): Promise<GoodreadsStats> {
   };
 
   return {
-    userId,
-    name,
-    avatar,
-    readCount: shelfCount('read'),
-    currentlyReadingCount: shelfCount('currently-reading'),
-    toReadCount: shelfCount('to-read'),
-    currentlyReading: parseRss(currentXml, 2),
-    recentlyRead: parseRss(readXml, 5),
+    source: 'goodreads',
+    profile: {
+      id: userId,
+      name,
+      avatar,
+      url: `https://www.goodreads.com/user/show/${userId}`,
+    },
+    stats: {
+      readCount: shelfCount('read'),
+      currentlyReadingCount: shelfCount('currently-reading'),
+      toReadCount: shelfCount('to-read'),
+    },
+    entries: [...parseRss(currentXml, 2, 'reading'), ...parseRss(readXml, 5, 'read')],
+    extra: {},
   };
 }

@@ -1,27 +1,5 @@
 import { config } from '../config.js';
-
-export interface SimklItem {
-  title: string;
-  poster: string;
-  year: number | null;
-  watchedAt: string; // ISO date
-  rating: number | null; // user rating out of 10
-  // Shows only: watched/total episode progress.
-  watchedEpisodes?: number;
-  totalEpisodes?: number;
-}
-
-export interface SimklStats {
-  userId: string;
-  name: string;
-  avatar: string;
-  moviesCompleted: number;
-  showsWatching: number;
-  showsCompleted: number;
-  totalMinutes: number;
-  recentMovies: SimklItem[];
-  recentShows: SimklItem[];
-}
+import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 
 const API = 'https://api.simkl.com';
 
@@ -49,7 +27,7 @@ function poster(hash: string | undefined): string {
   return hash ? `https://simkl.in/posters/${hash}_c.jpg` : '';
 }
 
-export async function fetchSimkl(): Promise<SimklStats> {
+export async function fetchSimkl(): Promise<SourceSnapshot> {
   const { userId, clientId, accessToken } = config.simkl;
   if (!clientId) throw new Error('simkl: SIMKL_CLIENT_ID not set');
   if (!accessToken) throw new Error('simkl: SIMKL_ACCESS_TOKEN not set (run the PIN flow)');
@@ -62,41 +40,55 @@ export async function fetchSimkl(): Promise<SimklStats> {
     getJson(`/sync/all-items/shows`),
   ]);
 
-  const recentMovies: SimklItem[] = (movies?.movies ?? [])
+  const recentMovies: MediaEntry[] = (movies?.movies ?? [])
     .filter((m: any) => m.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
     .slice(0, 10)
     .map((m: any) => ({
+      source: 'simkl',
+      kind: 'movie',
       title: m.movie?.title ?? 'Unknown',
-      poster: poster(m.movie?.poster),
-      year: m.movie?.year ?? null,
-      watchedAt: m.last_watched_at,
-      rating: m.user_rating ?? null,
+      image: poster(m.movie?.poster),
+      activityAt: m.last_watched_at,
+      rating: m.user_rating != null ? { value: m.user_rating, scale: 10 } : null,
+      extra: m.movie?.year ? { year: m.movie.year } : {},
     }));
 
-  const recentShows: SimklItem[] = (shows?.shows ?? [])
+  const recentShows: MediaEntry[] = (shows?.shows ?? [])
     .filter((s: any) => s.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
     .slice(0, 10)
-    .map((s: any) => ({
-      title: s.show?.title ?? 'Unknown',
-      poster: poster(s.show?.poster),
-      year: s.show?.year ?? null,
-      watchedAt: s.last_watched_at,
-      rating: s.user_rating ?? null,
-      watchedEpisodes: s.watched_episodes_count ?? undefined,
-      totalEpisodes: s.total_episodes_count ?? undefined,
-    }));
+    .map((s: any) => {
+      const extra: Record<string, string | number> = {};
+      if (s.show?.year) extra.year = s.show.year;
+      if (s.watched_episodes_count != null) extra.watchedEpisodes = s.watched_episodes_count;
+      if (s.total_episodes_count != null) extra.totalEpisodes = s.total_episodes_count;
+      return {
+        source: 'simkl',
+        kind: 'show',
+        title: s.show?.title ?? 'Unknown',
+        image: poster(s.show?.poster),
+        activityAt: s.last_watched_at,
+        rating: s.user_rating != null ? { value: s.user_rating, scale: 10 } : null,
+        extra,
+      };
+    });
 
   return {
-    userId,
-    name: settings?.user?.name ?? `#${userId}`,
-    avatar: settings?.user?.avatar ?? '',
-    moviesCompleted: stats?.movies?.completed?.count ?? 0,
-    showsWatching: stats?.tv?.watching?.count ?? 0,
-    showsCompleted: stats?.tv?.completed?.count ?? 0,
-    totalMinutes: stats?.total_mins ?? 0,
-    recentMovies,
-    recentShows,
+    source: 'simkl',
+    profile: {
+      id: userId,
+      name: settings?.user?.name ?? `#${userId}`,
+      avatar: settings?.user?.avatar ?? '',
+      url: `https://simkl.com/${userId}/`,
+    },
+    stats: {
+      moviesCompleted: stats?.movies?.completed?.count ?? 0,
+      showsWatching: stats?.tv?.watching?.count ?? 0,
+      showsCompleted: stats?.tv?.completed?.count ?? 0,
+      totalMinutes: stats?.total_mins ?? 0,
+    },
+    entries: [...recentMovies, ...recentShows],
+    extra: {},
   };
 }

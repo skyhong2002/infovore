@@ -1,30 +1,5 @@
 import { config } from '../config.js';
-
-export interface KitsuEntry {
-  title: string;
-  poster: string;
-  progress: number;
-  status: string;
-  progressedAt: string; // ISO date
-  rating: number | null; // out of 10 (ratingTwenty / 2)
-}
-
-export interface KitsuStats {
-  slug: string;
-  name: string;
-  avatar: string;
-  anime: {
-    completed: number;
-    episodes: number;
-    hours: number;
-    recent: KitsuEntry[];
-  };
-  manga: {
-    completed: number;
-    chapters: number;
-    recent: KitsuEntry[];
-  };
-}
+import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 
 const API = 'https://kitsu.app/api/edge';
 const headers = { Accept: 'application/vnd.api+json' };
@@ -35,27 +10,30 @@ async function getJson(url: string): Promise<any> {
   return res.json();
 }
 
-function parseEntries(doc: any, kind: 'anime' | 'manga'): KitsuEntry[] {
+function parseEntries(doc: any, kind: 'anime' | 'manga'): MediaEntry[] {
   const mediaById = new Map<string, any>(
     (doc.included ?? []).map((m: any) => [m.id, m])
   );
   return (doc.data ?? []).map((entry: any) => {
     const media = mediaById.get(entry.relationships?.[kind]?.data?.id);
     const attrs = media?.attributes ?? {};
+    const ratingTwenty = entry.attributes?.ratingTwenty;
     // Prefer the English title; fall back to the canonical (usually romaji)
     // when no English one exists.
     return {
+      source: 'kitsu',
+      kind,
       title: attrs.titles?.en || attrs.canonicalTitle || 'Unknown',
-      poster: attrs.posterImage?.small ?? '',
-      progress: entry.attributes?.progress ?? 0,
+      image: attrs.posterImage?.small ?? '',
       status: entry.attributes?.status ?? '',
-      progressedAt: entry.attributes?.progressedAt ?? '',
-      rating: entry.attributes?.ratingTwenty ? entry.attributes.ratingTwenty / 2 : null,
+      activityAt: entry.attributes?.progressedAt ?? '',
+      rating: ratingTwenty ? { value: ratingTwenty / 2, scale: 10 } : null,
+      extra: { progress: entry.attributes?.progress ?? 0 },
     };
   });
 }
 
-export async function fetchKitsu(): Promise<KitsuStats> {
+export async function fetchKitsu(): Promise<SourceSnapshot> {
   const { userId, slug } = config.kitsu;
 
   const [userDoc, statsDoc, animeDoc, mangaDoc] = await Promise.all([
@@ -78,19 +56,21 @@ export async function fetchKitsu(): Promise<KitsuStats> {
   const manga = statsByKind['manga-amount-consumed'] ?? {};
 
   return {
-    slug,
-    name: user.name ?? slug,
-    avatar: user.avatar?.medium ?? user.avatar?.small ?? '',
-    anime: {
-      completed: anime.completed ?? 0,
-      episodes: anime.units ?? 0,
-      hours: Math.round((anime.time ?? 0) / 3600),
-      recent: parseEntries(animeDoc, 'anime'),
+    source: 'kitsu',
+    profile: {
+      id: slug,
+      name: user.name ?? slug,
+      avatar: user.avatar?.medium ?? user.avatar?.small ?? '',
+      url: `https://kitsu.app/users/${slug}`,
     },
-    manga: {
-      completed: manga.completed ?? 0,
-      chapters: manga.units ?? 0,
-      recent: parseEntries(mangaDoc, 'manga'),
+    stats: {
+      animeCompleted: anime.completed ?? 0,
+      animeEpisodes: anime.units ?? 0,
+      animeHours: Math.round((anime.time ?? 0) / 3600),
+      mangaCompleted: manga.completed ?? 0,
+      mangaChapters: manga.units ?? 0,
     },
+    entries: [...parseEntries(animeDoc, 'anime'), ...parseEntries(mangaDoc, 'manga')],
+    extra: {},
   };
 }

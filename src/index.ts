@@ -3,19 +3,25 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { getCache, setCache, setCacheError } from './data/cache.js';
-import { fetchBackloggd } from './fetchers/backloggd.js';
-import { fetchKitsu } from './fetchers/kitsu.js';
-import { fetchStatsfm } from './fetchers/statsfm.js';
-import { fetchSimkl } from './fetchers/simkl.js';
-import { fetchGoodreads } from './fetchers/goodreads.js';
-import { rasterize } from './cards/render.js';
-import { buildBackloggdCard } from './cards/backloggd.js';
-import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './cards/kitsu.js';
-import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } from './cards/statsfm.js';
-import { buildSimklCard, buildSimklMoviesCard, buildSimklShowsCard } from './cards/simkl.js';
-import { buildGoodreadsCard } from './cards/goodreads.js';
+import type { SourceSnapshot } from './data/types.js';
+import { fetchBackloggd } from './sources/backloggd.js';
+import { fetchKitsu } from './sources/kitsu.js';
+import { fetchStatsfm } from './sources/statsfm.js';
+import { fetchSimkl } from './sources/simkl.js';
+import { fetchGoodreads } from './sources/goodreads.js';
+import { rasterize } from './output/render.js';
+import { buildBackloggdCard } from './output/backloggd.js';
+import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './output/kitsu.js';
+import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } from './output/statsfm.js';
+import { buildSimklCard, buildSimklMoviesCard, buildSimklShowsCard } from './output/simkl.js';
+import { buildGoodreadsCard } from './output/goodreads.js';
 
-const fetchers: Record<string, () => Promise<unknown>> = {
+// Registration point: a new source module goes in `src/sources/`, returns a
+// `SourceSnapshot`, and gets one entry here. A new output module goes in
+// `src/output/`, takes a `SourceSnapshot`, and gets one entry in `cards`
+// below (or its own registry, for a non-card output like a feed) — neither
+// registration touches any other source or output module.
+const fetchers: Record<string, () => Promise<SourceSnapshot<any>>> = {
   backloggd: fetchBackloggd,
   kitsu: fetchKitsu,
   statsfm: fetchStatsfm,
@@ -23,18 +29,18 @@ const fetchers: Record<string, () => Promise<unknown>> = {
   goodreads: fetchGoodreads,
 };
 
-const cards: Record<string, { source: string; build: (data: never) => Promise<string> }> = {
-  backloggd: { source: 'backloggd', build: buildBackloggdCard as never },
-  kitsu: { source: 'kitsu', build: buildKitsuCard as never },
-  'kitsu-anime': { source: 'kitsu', build: buildKitsuAnimeCard as never },
-  'kitsu-manga': { source: 'kitsu', build: buildKitsuMangaCard as never },
-  statsfm: { source: 'statsfm', build: buildStatsfmCard as never },
-  'statsfm-albums': { source: 'statsfm', build: buildStatsfmAlbumsCard as never },
-  'statsfm-artists': { source: 'statsfm', build: buildStatsfmArtistsCard as never },
-  simkl: { source: 'simkl', build: buildSimklCard as never },
-  'simkl-movies': { source: 'simkl', build: buildSimklMoviesCard as never },
-  'simkl-shows': { source: 'simkl', build: buildSimklShowsCard as never },
-  goodreads: { source: 'goodreads', build: buildGoodreadsCard as never },
+const cards: Record<string, { source: string; build: (data: SourceSnapshot<any>) => Promise<string> }> = {
+  backloggd: { source: 'backloggd', build: buildBackloggdCard },
+  kitsu: { source: 'kitsu', build: buildKitsuCard },
+  'kitsu-anime': { source: 'kitsu', build: buildKitsuAnimeCard },
+  'kitsu-manga': { source: 'kitsu', build: buildKitsuMangaCard },
+  statsfm: { source: 'statsfm', build: buildStatsfmCard },
+  'statsfm-albums': { source: 'statsfm', build: buildStatsfmAlbumsCard },
+  'statsfm-artists': { source: 'statsfm', build: buildStatsfmArtistsCard },
+  simkl: { source: 'simkl', build: buildSimklCard },
+  'simkl-movies': { source: 'simkl', build: buildSimklMoviesCard },
+  'simkl-shows': { source: 'simkl', build: buildSimklShowsCard },
+  goodreads: { source: 'goodreads', build: buildGoodreadsCard },
 };
 
 async function refreshSource(name: string, isRetry = false): Promise<void> {

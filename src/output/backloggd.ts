@@ -1,5 +1,6 @@
-import { h, logo, toDataUri, truncate, renderCard, textFont, titleFontSize, MAX_TITLE_LINES } from './render.js';
-import type { BackloggdStats } from '../fetchers/backloggd.js';
+import { h, logo, toDataUri, renderCard, textFont, titleFontSize, MAX_TITLE_LINES } from './render.js';
+import type { SourceSnapshot, MediaEntry } from '../data/types.js';
+import type { BackloggdExtra } from '../sources/backloggd.js';
 
 // Backloggd's dark UI: near-black navy, pale periwinkle section headers,
 // pink accent, system-sans typography (Roboto stands in).
@@ -21,14 +22,14 @@ function stat(value: number, label: string) {
   );
 }
 
-export async function buildBackloggdCard(data: BackloggdStats): Promise<string> {
+export async function buildBackloggdCard(data: SourceSnapshot<BackloggdExtra>): Promise<string> {
   const [avatar, wordmark, ...covers] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('backloggd')),
-    ...data.recent.map((g) => toDataUri(g.cover)),
+    ...data.entries.map((g) => toDataUri(g.image)),
   ]);
 
-  const tile = (g: (typeof data.recent)[number], i: number, last: boolean) =>
+  const tile = (g: MediaEntry, i: number, last: boolean) =>
     h(
       'div',
       { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: last ? 0 : 12 } },
@@ -44,26 +45,26 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
       h(
         'div',
         { style: { display: 'flex', marginTop: 2 } },
-        h('span', { style: { fontSize: 10, color: C.accent } }, g.lastPlayed),
-        g.playtime
-          ? h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `· ${g.playtime}`)
+        h('span', { style: { fontSize: 10, color: C.accent } }, g.activityAt),
+        g.extra.playtime
+          ? h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `· ${g.extra.playtime}`)
           : h('div', { style: { display: 'flex' } })
       ),
-      g.platform
-        ? h('span', { style: { fontSize: 9, color: C.dim, marginTop: 2, lineHeight: 1.3 } }, g.platform)
+      g.extra.platform
+        ? h('span', { style: { fontSize: 9, color: C.dim, marginTop: 2, lineHeight: 1.3 } }, g.extra.platform)
         : h('div', { style: { display: 'flex' } }),
       g.rating !== null
-        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginTop: 2 } }, `★ ${g.rating}`)
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginTop: 2 } }, `★ ${g.rating.value}`)
         : h('div', { style: { display: 'flex' } })
     );
 
   const tileRows: Record<string, unknown>[] = [];
-  for (let i = 0; i < data.recent.length; i += 5) {
+  for (let i = 0; i < data.entries.length; i += 5) {
     tileRows.push(
       h(
         'div',
         { style: { display: 'flex', marginTop: i === 0 ? 0 : 12 } },
-        ...data.recent.slice(i, i + 5).map((g, j) => tile(g, i + j, j === 4))
+        ...data.entries.slice(i, i + 5).map((g, j) => tile(g, i + j, j === 4))
       )
     );
   }
@@ -89,22 +90,22 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
         avatar
           ? h('img', { src: avatar, width: 30, height: 30, style: { borderRadius: 4, marginRight: 8 } })
           : h('div', { style: { display: 'flex' } }),
-        h('span', { style: { fontSize: 14, fontWeight: 700, color: '#ffffff' } }, data.username)
+        h('span', { style: { fontSize: 14, fontWeight: 700, color: '#ffffff' } }, data.profile.name)
       )
     ),
     // Stats row, big white numbers like the profile page.
     h(
       'div',
       { style: { display: 'flex' } },
-      stat(data.gamesPlayed, 'Games Played'),
-      stat(data.playedThisYear, `Played in ${new Date().getFullYear()}`),
-      stat(data.backlog, 'Backlog')
+      stat(data.stats.gamesPlayed, 'Games Played'),
+      stat(data.stats.playedThisYear, `Played in ${new Date().getFullYear()}`),
+      stat(data.stats.backlog, 'Backlog')
     ),
     h(
       'div',
       { style: { display: 'flex', justifyContent: 'center', paddingBottom: 10, borderBottom: `1px solid ${C.border}`, marginBottom: 12 } },
-      data.yearExtras
-        ? h('span', { style: { fontSize: 10, color: C.dim, marginTop: 6 } }, data.yearExtras)
+      data.extra.yearExtras
+        ? h('span', { style: { fontSize: 10, color: C.dim, marginTop: 6 } }, data.extra.yearExtras)
         : h('div', { style: { display: 'flex' } })
     ),
     h('span', { style: { fontSize: 14, fontWeight: 700, color: C.header, marginBottom: 8 } }, 'Recently Played'),
@@ -113,6 +114,6 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
 
   // Header + stats ≈ 216; each tile row ≈ 184 (cover 112 + up to four text
   // lines, platform may wrap to two).
-  const nRows = Math.max(1, Math.ceil(data.recent.length / 5));
+  const nRows = Math.max(1, Math.ceil(data.entries.length / 5));
   return renderCard(node, 520, 216 + nRows * 184 + (nRows - 1) * 12);
 }

@@ -1,5 +1,6 @@
 import { h, logo, toDataUri, truncate, textFont, renderCard, titleFontSize, MAX_TITLE_LINES } from './render.js';
-import type { StatsfmStats, StatsfmAlbum } from '../fetchers/statsfm.js';
+import type { SourceSnapshot } from '../data/types.js';
+import type { StatsfmAlbum, StatsfmArtist, StatsfmExtra } from '../sources/statsfm.js';
 
 // stats.fm's app UI: near-black background, soft dark panels, Spotify
 // green, uppercase gray section labels, their own Statsfm Sans typeface.
@@ -33,7 +34,7 @@ function albumTile(a: StatsfmAlbum, img: string, rank: number, last: boolean) {
   );
 }
 
-function artistTile(a: { name: string; streams: number }, img: string, rank: number, last: boolean) {
+function artistTile(a: StatsfmArtist, img: string, rank: number, last: boolean) {
   return h(
     'div',
     { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: 84, marginRight: last ? 0 : 12 } },
@@ -73,7 +74,7 @@ function sectionLabel(title: string, sub: string) {
   );
 }
 
-function shell(data: StatsfmStats, avatar: string, mark: string, body: unknown[], height: number) {
+function shell(name: string, avatar: string, mark: string, body: unknown[], height: number) {
   const node = h(
     'div',
     {
@@ -94,7 +95,7 @@ function shell(data: StatsfmStats, avatar: string, mark: string, body: unknown[]
         avatar
           ? h('img', { src: avatar, width: 30, height: 30, style: { borderRadius: 15, marginRight: 8 } })
           : h('div', { style: { display: 'flex' } }),
-        h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, data.displayName)
+        h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, name)
       )
     ),
     ...body.filter(Boolean)
@@ -102,65 +103,65 @@ function shell(data: StatsfmStats, avatar: string, mark: string, body: unknown[]
   return renderCard(node, 520, height);
 }
 
-function statsSub(data: StatsfmStats): string {
-  return `last 4 weeks · ${data.weeklyStreams} streams · ${Math.round(data.weeklyMinutes / 60)}h`;
+function statsSub(stats: Record<string, number>): string {
+  return `last 4 weeks · ${stats.weeklyStreams} streams · ${Math.round(stats.weeklyMinutes / 60)}h`;
 }
 
 // Combined card: top 5 albums + top 5 artists.
-async function buildCombined(data: StatsfmStats): Promise<string> {
-  const albums = data.topAlbums.slice(0, 5);
-  const artists = data.topArtists.slice(0, 5);
+async function buildCombined(data: SourceSnapshot<StatsfmExtra>): Promise<string> {
+  const albums = data.extra.topAlbums.slice(0, 5);
+  const artists = data.extra.topArtists.slice(0, 5);
   const [avatar, mark, albumImgs, artistImgs] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('statsfm')),
     Promise.all(albums.map((a) => toDataUri(a.image))),
     Promise.all(artists.map((a) => toDataUri(a.image))),
   ]);
   const body = [
-    sectionLabel('TOP ALBUMS', statsSub(data)),
+    sectionLabel('TOP ALBUMS', statsSub(data.stats)),
     ...rows(albums, (a, i, last) => albumTile(a, albumImgs[i], i + 1, last)),
     h('div', { style: { display: 'flex', marginTop: 16 } }),
     sectionLabel('TOP ARTISTS', 'last 4 weeks'),
     ...rows(artists, (a, i, last) => artistTile(a, artistImgs[i], i + 1, last)),
   ];
   const height = 112 + ALBUM_ROW_H + 26 + 16 + ARTIST_ROW_H + 26;
-  return shell(data, avatar, mark, body, height);
+  return shell(data.profile.name, avatar, mark, body, height);
 }
 
 // Top 10 albums, two rows.
-async function buildAlbums(data: StatsfmStats): Promise<string> {
-  const albums = data.topAlbums.slice(0, 10);
+async function buildAlbums(data: SourceSnapshot<StatsfmExtra>): Promise<string> {
+  const albums = data.extra.topAlbums.slice(0, 10);
   const [avatar, mark, albumImgs] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('statsfm')),
     Promise.all(albums.map((a) => toDataUri(a.image))),
   ]);
   const nRows = Math.max(1, Math.ceil(albums.length / 5));
   const body = [
-    sectionLabel('TOP ALBUMS', statsSub(data)),
+    sectionLabel('TOP ALBUMS', statsSub(data.stats)),
     ...rows(albums, (a, i, last) => albumTile(a, albumImgs[i], i + 1, last)),
   ];
   const height = 112 + nRows * ALBUM_ROW_H + (nRows - 1) * 12 + 26;
-  return shell(data, avatar, mark, body, height);
+  return shell(data.profile.name, avatar, mark, body, height);
 }
 
 // Top 10 artists, two rows.
-async function buildArtists(data: StatsfmStats): Promise<string> {
-  const artists = data.topArtists.slice(0, 10);
+async function buildArtists(data: SourceSnapshot<StatsfmExtra>): Promise<string> {
+  const artists = data.extra.topArtists.slice(0, 10);
   const [avatar, mark, artistImgs] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('statsfm')),
     Promise.all(artists.map((a) => toDataUri(a.image))),
   ]);
   const nRows = Math.max(1, Math.ceil(artists.length / 5));
   const body = [
-    sectionLabel('TOP ARTISTS', statsSub(data)),
+    sectionLabel('TOP ARTISTS', statsSub(data.stats)),
     ...rows(artists, (a, i, last) => artistTile(a, artistImgs[i], i + 1, last)),
   ];
   const height = 112 + nRows * ARTIST_ROW_H + (nRows - 1) * 12 + 26;
-  return shell(data, avatar, mark, body, height);
+  return shell(data.profile.name, avatar, mark, body, height);
 }
 
-export const buildStatsfmCard = (d: StatsfmStats) => buildCombined(d);
-export const buildStatsfmAlbumsCard = (d: StatsfmStats) => buildAlbums(d);
-export const buildStatsfmArtistsCard = (d: StatsfmStats) => buildArtists(d);
+export const buildStatsfmCard = (d: SourceSnapshot<StatsfmExtra>) => buildCombined(d);
+export const buildStatsfmAlbumsCard = (d: SourceSnapshot<StatsfmExtra>) => buildAlbums(d);
+export const buildStatsfmArtistsCard = (d: SourceSnapshot<StatsfmExtra>) => buildArtists(d);

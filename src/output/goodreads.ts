@@ -1,5 +1,5 @@
 import { h, logo, toDataUri, truncate, timeAgo, renderCard, textFont, titleFontSize, MAX_TITLE_LINES } from './render.js';
-import type { GoodreadsStats, GoodreadsBook } from '../fetchers/goodreads.js';
+import type { SourceSnapshot } from '../data/types.js';
 
 // Goodreads' signature light UI: warm beige paper, dark brown ink,
 // teal links, orange rating stars, Merriweather serif headings.
@@ -17,18 +17,20 @@ function starString(rating: number): string {
   return '★'.repeat(rating) + '☆'.repeat(5 - rating);
 }
 
-export async function buildGoodreadsCard(data: GoodreadsStats): Promise<string> {
-  const nCurrent = data.currentlyReading.length;
+export async function buildGoodreadsCard(data: SourceSnapshot): Promise<string> {
+  const currentlyReading = data.entries.filter((e) => e.status === 'reading');
+  const recentlyRead = data.entries.filter((e) => e.status === 'read');
+  const nCurrent = currentlyReading.length;
   const [avatar, mark, ...covers] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('goodreads')),
-    ...data.currentlyReading.map((b) => toDataUri(b.cover)),
-    ...data.recentlyRead.map((b) => toDataUri(b.cover)),
+    ...currentlyReading.map((b) => toDataUri(b.image)),
+    ...recentlyRead.map((b) => toDataUri(b.image)),
   ]);
   const currentCovers = covers.slice(0, nCurrent);
   const readCovers = covers.slice(nCurrent);
 
-  const currentRows = data.currentlyReading.map((b, i) =>
+  const currentRows = currentlyReading.map((b, i) =>
     h(
       'div',
       {
@@ -45,13 +47,13 @@ export async function buildGoodreadsCard(data: GoodreadsStats): Promise<string> 
         'div',
         { style: { display: 'flex', flexDirection: 'column' } },
         h('span', { style: { fontSize: titleFontSize(b.title, 13), fontWeight: 700, color: C.text, lineHeight: 1.3, wordBreak: 'break-word', display: 'block', lineClamp: MAX_TITLE_LINES, fontFamily: textFont(b.title, 'Merriweather') } }, b.title),
-        h('span', { style: { fontSize: 11, color: C.dim, marginTop: 2 } }, b.author)
+        h('span', { style: { fontSize: 11, color: C.dim, marginTop: 2 } }, b.extra.author)
       ),
       h('span', { style: { fontSize: 10, fontWeight: 700, color: C.accent, marginLeft: 'auto', letterSpacing: 1 } }, 'READING')
     )
   );
 
-  const tiles = data.recentlyRead.map((b, i) =>
+  const tiles = recentlyRead.map((b, i) =>
     h(
       'div',
       { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: i < 4 ? 12 : 0 } },
@@ -59,10 +61,10 @@ export async function buildGoodreadsCard(data: GoodreadsStats): Promise<string> 
         ? h('img', { src: readCovers[i], width: 84, height: 122, style: { borderRadius: 3, objectFit: 'cover', border: `1px solid ${C.border}` } })
         : h('div', { style: { width: 84, height: 122, backgroundColor: '#e8e2d4', borderRadius: 3, display: 'flex' } }),
       h('span', { style: { fontSize: titleFontSize(b.title), fontWeight: 700, color: C.text, marginTop: 6, lineHeight: 1.25, wordBreak: 'break-word', display: 'block', lineClamp: MAX_TITLE_LINES, fontFamily: textFont(b.title, 'Merriweather') } }, b.title),
-      h('span', { style: { fontSize: 10, color: C.dim, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(b.author, 'Merriweather') } }, truncate(b.author, 16)),
+      h('span', { style: { fontSize: 10, color: C.dim, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(String(b.extra.author), 'Merriweather') } }, truncate(String(b.extra.author), 16)),
       b.rating !== null
-        ? h('span', { style: { fontSize: 10, color: C.stars, marginTop: 2, letterSpacing: 1 } }, starString(b.rating))
-        : h('span', { style: { fontSize: 10, color: C.dim, marginTop: 2 } }, b.readAt ? timeAgo(b.readAt) : '')
+        ? h('span', { style: { fontSize: 10, color: C.stars, marginTop: 2, letterSpacing: 1 } }, starString(b.rating.value))
+        : h('span', { style: { fontSize: 10, color: C.dim, marginTop: 2 } }, b.activityAt ? timeAgo(b.activityAt) : '')
     )
   );
 
@@ -86,19 +88,19 @@ export async function buildGoodreadsCard(data: GoodreadsStats): Promise<string> 
         avatar
           ? h('img', { src: avatar, width: 30, height: 30, style: { borderRadius: 15, marginRight: 8 } })
           : h('div', { style: { display: 'flex' } }),
-        h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, data.name)
+        h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, data.profile.name)
       )
     ),
     h(
       'span',
       { style: { fontSize: 11, color: C.dim, marginBottom: 12 } },
-      `${data.readCount} read · ${data.currentlyReadingCount} reading · ${data.toReadCount} to-read`
+      `${data.stats.readCount} read · ${data.stats.currentlyReadingCount} reading · ${data.stats.toReadCount} to-read`
     ),
     ...currentRows,
     h('span', { style: { fontSize: 13, fontWeight: 700, color: C.text, marginTop: 6, marginBottom: 8 } }, 'Recently Read'),
     h('div', { style: { display: 'flex' } }, ...tiles)
   );
 
-  const height = 320 + data.currentlyReading.length * 74;
+  const height = 320 + currentlyReading.length * 74;
   return renderCard(node, 520, height);
 }

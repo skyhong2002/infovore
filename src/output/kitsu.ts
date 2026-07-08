@@ -1,5 +1,5 @@
-import { h, logo, toDataUri, truncate, timeAgo, renderCard, textFont, titleFontSize, MAX_TITLE_LINES } from './render.js';
-import type { KitsuStats, KitsuEntry } from '../fetchers/kitsu.js';
+import { h, logo, toDataUri, timeAgo, renderCard, textFont, titleFontSize, MAX_TITLE_LINES } from './render.js';
+import type { SourceSnapshot, MediaEntry } from '../data/types.js';
 
 // Kitsu's dark UI: deep aubergine background with their signature
 // orange-red, Open Sans typography.
@@ -14,14 +14,14 @@ const C = {
 
 const ROW_H = 178; // poster 118 + three text lines
 
-function statusLabel(e: KitsuEntry, unit: 'Ep' | 'Ch'): string {
+function statusLabel(e: MediaEntry, unit: 'Ep' | 'Ch'): string {
   if (e.status === 'completed') return 'Completed';
   if (e.status === 'on_hold') return 'On Hold';
   if (e.status === 'dropped') return 'Dropped';
-  return `${unit} ${e.progress}`;
+  return `${unit} ${e.extra.progress}`;
 }
 
-function tile(e: KitsuEntry, poster: string, unit: 'Ep' | 'Ch', last: boolean) {
+function tile(e: MediaEntry, poster: string, unit: 'Ep' | 'Ch', last: boolean) {
   return h(
     'div',
     { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: last ? 0 : 12 } },
@@ -33,15 +33,15 @@ function tile(e: KitsuEntry, poster: string, unit: 'Ep' | 'Ch', last: boolean) {
     h(
       'div',
       { style: { display: 'flex', alignItems: 'baseline', marginTop: 1 } },
-      h('span', { style: { fontSize: 10, color: C.dim } }, timeAgo(e.progressedAt)),
+      h('span', { style: { fontSize: 10, color: C.dim } }, timeAgo(e.activityAt)),
       e.rating !== null
-        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★ ${Math.round(e.rating * 10) / 10}`)
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginLeft: 5 } }, `★ ${Math.round(e.rating.value * 10) / 10}`)
         : h('div', { style: { display: 'flex' } })
     )
   );
 }
 
-function tileRows(entries: KitsuEntry[], posters: string[], unit: 'Ep' | 'Ch') {
+function tileRows(entries: MediaEntry[], posters: string[], unit: 'Ep' | 'Ch') {
   const rows: Record<string, unknown>[] = [];
   for (let i = 0; i < entries.length; i += 5) {
     rows.push(
@@ -64,7 +64,7 @@ function sectionHeader(title: string, sub: string) {
   );
 }
 
-function shell(data: KitsuStats, avatar: string, mark: string, body: Record<string, unknown>[], height: number) {
+function shell(name: string, avatar: string, mark: string, body: Record<string, unknown>[], height: number) {
   const node = h(
     'div',
     {
@@ -85,7 +85,7 @@ function shell(data: KitsuStats, avatar: string, mark: string, body: Record<stri
         avatar
           ? h('img', { src: avatar, width: 30, height: 30, style: { borderRadius: 15, marginRight: 8 } })
           : h('div', { style: { display: 'flex' } }),
-        h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, data.name)
+        h('span', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, name)
       )
     ),
     ...body
@@ -93,54 +93,53 @@ function shell(data: KitsuStats, avatar: string, mark: string, body: Record<stri
   return renderCard(node, 520, height);
 }
 
-function animeSub(data: KitsuStats): string {
-  return `${data.anime.completed} completed · ${data.anime.episodes} episodes · ${data.anime.hours}h watched`;
+function animeSub(stats: Record<string, number>): string {
+  return `${stats.animeCompleted} completed · ${stats.animeEpisodes} episodes · ${stats.animeHours}h watched`;
 }
-function mangaSub(data: KitsuStats): string {
-  return `${data.manga.completed} completed · ${data.manga.chapters} chapters read`;
+function mangaSub(stats: Record<string, number>): string {
+  return `${stats.mangaCompleted} completed · ${stats.mangaChapters} chapters read`;
 }
 
-async function postersFor(entries: KitsuEntry[]): Promise<string[]> {
-  return Promise.all(entries.map((e) => toDataUri(e.poster)));
+async function postersFor(entries: MediaEntry[]): Promise<string[]> {
+  return Promise.all(entries.map((e) => toDataUri(e.image)));
 }
 
 // Single-medium card: 10 recent entries in two rows.
-async function buildSingle(data: KitsuStats, kind: 'anime' | 'manga'): Promise<string> {
-  const section = kind === 'anime' ? data.anime : data.manga;
-  const entries = section.recent.slice(0, 10);
+async function buildSingle(data: SourceSnapshot, kind: 'anime' | 'manga'): Promise<string> {
+  const entries = data.entries.filter((e) => e.kind === kind).slice(0, 10);
   const [avatar, mark, posters] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('kitsu')),
     postersFor(entries),
   ]);
   const rows = Math.max(1, Math.ceil(entries.length / 5));
   const body = [
-    sectionHeader(kind === 'anime' ? 'Recent Anime' : 'Recent Manga', kind === 'anime' ? animeSub(data) : mangaSub(data)),
+    sectionHeader(kind === 'anime' ? 'Recent Anime' : 'Recent Manga', kind === 'anime' ? animeSub(data.stats) : mangaSub(data.stats)),
     ...tileRows(entries, posters, kind === 'anime' ? 'Ep' : 'Ch'),
   ];
-  return shell(data, avatar, mark, body, 118 + rows * ROW_H + (rows - 1) * 12);
+  return shell(data.profile.name, avatar, mark, body, 118 + rows * ROW_H + (rows - 1) * 12);
 }
 
 // Combined card: 5 recent anime + 5 recent manga.
-async function buildBoth(data: KitsuStats): Promise<string> {
-  const anime = data.anime.recent.slice(0, 5);
-  const manga = data.manga.recent.slice(0, 5);
+async function buildBoth(data: SourceSnapshot): Promise<string> {
+  const anime = data.entries.filter((e) => e.kind === 'anime').slice(0, 5);
+  const manga = data.entries.filter((e) => e.kind === 'manga').slice(0, 5);
   const [avatar, mark, animePosters, mangaPosters] = await Promise.all([
-    toDataUri(data.avatar),
+    toDataUri(data.profile.avatar),
     Promise.resolve(logo('kitsu')),
     postersFor(anime),
     postersFor(manga),
   ]);
   const body = [
-    sectionHeader('Recent Anime', animeSub(data)),
+    sectionHeader('Recent Anime', animeSub(data.stats)),
     ...tileRows(anime, animePosters, 'Ep'),
     h('div', { style: { display: 'flex', marginTop: 16 } }),
-    sectionHeader('Recent Manga', mangaSub(data)),
+    sectionHeader('Recent Manga', mangaSub(data.stats)),
     ...tileRows(manga, mangaPosters, 'Ch'),
   ];
-  return shell(data, avatar, mark, body, 118 + 2 * (ROW_H + 26) + 16);
+  return shell(data.profile.name, avatar, mark, body, 118 + 2 * (ROW_H + 26) + 16);
 }
 
-export const buildKitsuCard = (d: KitsuStats) => buildBoth(d);
-export const buildKitsuAnimeCard = (d: KitsuStats) => buildSingle(d, 'anime');
-export const buildKitsuMangaCard = (d: KitsuStats) => buildSingle(d, 'manga');
+export const buildKitsuCard = (d: SourceSnapshot) => buildBoth(d);
+export const buildKitsuAnimeCard = (d: SourceSnapshot) => buildSingle(d, 'anime');
+export const buildKitsuMangaCard = (d: SourceSnapshot) => buildSingle(d, 'manga');
