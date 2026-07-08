@@ -141,7 +141,7 @@ app.get('/', (c) => {
 </head>
 <body>
 <h1>status</h1>
-<p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed every ${config.refreshMinutes} minutes.</p>
+<p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8).</p>
 ${body}
 <footer><a href="https://github.com/skyhong2002/status.skyhong.tw">source</a> · <a href="/status">json</a></footer>
 </body>
@@ -223,5 +223,30 @@ serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`listening on :${info.port}`);
 });
 
+// Refresh immediately on startup, then on the fixed daily GMT+8 schedule in
+// config.refreshTimes (default 06:00 & 18:00) rather than a fixed interval.
+const GMT8_OFFSET_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function nextRunAt(): number {
+  const now = Date.now();
+  let next = Infinity;
+  for (const time of config.refreshTimes) {
+    const [hour, minute] = time.split(':').map(Number);
+    const d = new Date(now);
+    d.setUTCHours(hour, minute, 0, 0);
+    let t = d.getTime() - GMT8_OFFSET_MS; // shift UTC HH:MM to GMT+8 HH:MM
+    while (t <= now) t += DAY_MS;
+    if (t < next) next = t;
+  }
+  return next;
+}
+
+function scheduleNextRefresh(): void {
+  setTimeout(() => {
+    refreshAll().finally(scheduleNextRefresh);
+  }, nextRunAt() - Date.now());
+}
+
 refreshAll();
-setInterval(refreshAll, config.refreshMinutes * 60 * 1000);
+scheduleNextRefresh();

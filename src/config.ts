@@ -4,9 +4,16 @@ const sources = (process.env.SOURCES ?? '')
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
+// Daily refresh schedule, as HH:MM in GMT+8 (fixed offset, no DST). e.g.
+// REFRESH_TIMES=06:00,18:00
+const refreshTimes = (process.env.REFRESH_TIMES ?? '06:00,18:00')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
-  refreshMinutes: Number(process.env.REFRESH_MINUTES ?? 30),
+  refreshTimes,
   ownerName: process.env.OWNER_NAME ?? 'Sky Hong',
   sources,
   sourceEnabled: (name: string) => sources.length === 0 || sources.includes(name),
