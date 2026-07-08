@@ -91,6 +91,29 @@ export function truncate(s: string, max: number): string {
 
 const CJK = /[⺀-鿿豈-﫿＀-￯　-〿]/;
 
+// Max lines a wrapped tile title may occupy before it's clamped with an
+// ellipsis. Pair with `display: 'block'` + `lineClamp: MAX_TITLE_LINES` on the
+// title span (satori's line-clamp path).
+export const MAX_TITLE_LINES = 5;
+
+// CJK-weighted display length (CJK glyphs count as 2, matching `truncate`).
+function displayWidth(text: string): number {
+  let w = 0;
+  for (const ch of text) w += CJK.test(ch) ? 2 : 1;
+  return w;
+}
+
+// Scale a tile title's font size down as it gets longer so most titles stay
+// ~2-3 lines and only genuinely long ones shrink. Height is absorbed by the
+// auto-trim in renderCard; a line clamp caps the pathological cases.
+export function titleFontSize(text: string, base = 11, min = 8): number {
+  const w = displayWidth(text);
+  if (w <= 26) return base;
+  if (w <= 40) return base - 1;
+  if (w <= 58) return base - 2;
+  return min;
+}
+
 // Satori assigns a font per whitespace-delimited word based on its first
 // character, so a Latin-prefixed word like "TVアニメ" gets the brand font
 // (which lacks kana) and the CJK tofus out. When a string contains any CJK,
