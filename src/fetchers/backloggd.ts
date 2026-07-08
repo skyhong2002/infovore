@@ -1,10 +1,14 @@
 import * as cheerio from 'cheerio';
 import { config } from '../config.js';
+import { cookieHeader, isAnubisChallenge, solveAnubis, clearAnubisCookie } from './anubis.js';
 
 export interface BackloggdRecentGame {
   title: string;
   cover: string;
-  lastPlayed: string; // e.g. "Jul 07"
+  platform: string; // e.g. "Nintendo DS via Android" from the log page, '' if unavailable
+  lastPlayed: string; // e.g. "Jul 7"
+  playtime: string; // e.g. "1h 0m", '' if no sessions logged
+  rating: number | null; // out of 5, e.g. 3.5
 }
 
 export interface BackloggdStats {
@@ -17,26 +21,102 @@ export interface BackloggdStats {
   recent: BackloggdRecentGame[];
 }
 
-async function getHtml(url: string, attempt = 0): Promise<cheerio.CheerioAPI> {
+const ORIGIN = 'https://backloggd.com';
+
+const MONTHS: Record<string, string> = {
+  January: 'Jan', February: 'Feb', March: 'Mar', April: 'Apr', May: 'May',
+  June: 'Jun', July: 'Jul', August: 'Aug', September: 'Sep', October: 'Oct',
+  November: 'Nov', December: 'Dec',
+};
+
+// Fetch a Backloggd page, transparently solving the Anubis proof-of-work
+// challenge (and caching its cookie) if the journal/log pages are gated.
+async function getHtml(path: string, allowSolve = true): Promise<cheerio.CheerioAPI> {
+  const res = await fetch(`${ORIGIN}${path}`, {
+    headers: { 'User-Agent': config.userAgent, Cookie: cookieHeader(ORIGIN) },
+    signal: AbortSignal.timeout(20000),
+  });
+  const html = await res.text();
+  if (isAnubisChallenge(html)) {
+    if (!allowSolve) throw new Error(`backloggd: Anubis challenge unsolved for ${path}`);
+    clearAnubisCookie(ORIGIN);
+    const solved = await solveAnubis(res, html, ORIGIN, path);
+    if (!solved) throw new Error(`backloggd: failed to solve Anubis for ${path}`);
+    return getHtml(path, false); // retry once with the auth cookie
+  }
+  if (!res.ok) throw new Error(`backloggd: HTTP ${res.status} for ${path}`);
+  return cheerio.load(html);
+}
+
+function shortDate(full: string): string {
+  // "July  7, 2026" -> "Jul 7"
+  const m = full.match(/([A-Z][a-z]+)\s+(\d{1,2})/);
+  return m ? `${MONTHS[m[1]] ?? m[1]} ${m[2]}` : full;
+}
+
+function sumSessions(times: string[]): string {
+  let mins = 0;
+  for (const t of times) {
+    const h = t.match(/(\d+)h/);
+    const m = t.match(/(\d+)m/);
+    mins += (h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0);
+  }
+  if (mins === 0) return '';
+  const h = Math.floor(mins / 60);
+  return h > 0 ? `${h}h ${mins % 60}m` : `${mins}m`;
+}
+
+// Per-game log page: last played date, summed session time, platform,
+// and the log's star rating (stars-top width % of 5 stars).
+async function fetchLog(slug: string): Promise<Partial<BackloggdRecentGame>> {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': config.userAgent }, signal: AbortSignal.timeout(20000) });
-    if (!res.ok) throw new Error(`backloggd: HTTP ${res.status} for ${url}`);
-    return cheerio.load(await res.text());
-  } catch (err) {
-    if (attempt < 1) {
-      await new Promise((r) => setTimeout(r, 3000));
-      return getHtml(url, attempt + 1);
-    }
-    throw err;
+    const $ = await getHtml(`/u/${config.backloggd.username}/logs/${slug}/`);
+    const out: Partial<BackloggdRecentGame> = {};
+
+    $('.section-title p').each((_, el) => {
+      const label = $(el).text().trim();
+      const section = $(el).closest('.section-title').next();
+      if (label === 'Last played') {
+        out.lastPlayed = shortDate(section.find('p').first().text().trim());
+      } else if (label === 'Platforms Played') {
+        out.platform = section.find('.game-page-platform').first().text().trim();
+      } else if (label === 'Rating') {
+        const width = section.find('.stars-top').attr('style') ?? '';
+        const pct = width.match(/width:\s*(\d+)%/);
+        if (pct) out.rating = Math.round((Number(pct[1]) / 20) * 10) / 10;
+      }
+    });
+
+    const times: string[] = [];
+    $('.time-played p').each((_, el) => { times.push($(el).text().trim()); });
+    out.playtime = sumSessions(times);
+    return out;
+  } catch {
+    return {};
   }
 }
 
-// The journal and per-game log pages are now gated behind an Anubis
-// proof-of-work challenge that a plain fetch can't solve, so recent
-// activity comes from the profile page's own "Recently Played" grid
-// instead — fewer entries (5, no platform/playtime/rating) but reliable.
+// Fallback: the profile page's own "Recently Played" grid — only 5 entries
+// with title/cover/date, but it isn't behind the Anubis gate.
+function profileRecent($profile: cheerio.CheerioAPI): BackloggdRecentGame[] {
+  const recent: BackloggdRecentGame[] = [];
+  $profile('#profile-journal')
+    .children('div')
+    .each((_, col) => {
+      const $c = $profile(col);
+      const img = $c.find('img.card-img').first();
+      const title = img.attr('alt') ?? '';
+      const cover = img.attr('data-src') || img.attr('src') || '';
+      const lastPlayed = shortDate($c.find('.played-date').first().text().trim());
+      if (!title) return;
+      recent.push({ title, cover, platform: '', lastPlayed, playtime: '', rating: null });
+    });
+  return recent;
+}
+
 export async function fetchBackloggd(): Promise<BackloggdStats> {
-  const $profile = await getHtml(`https://backloggd.com/u/${config.backloggd.username}/`);
+  const base = `/u/${config.backloggd.username}`;
+  const $profile = await getHtml(`${base}/`);
 
   // Profile stats: <h1>NUMBER</h1> ... <h4>Label</h4> pairs.
   const stats: Record<string, number> = {};
@@ -64,18 +144,49 @@ export async function fetchBackloggd(): Promise<BackloggdStats> {
 
   const avatar = $profile('#profile-header .avatar img').attr('src') ?? '';
 
-  const recent: BackloggdRecentGame[] = [];
-  $profile('#profile-journal')
-    .children('div')
-    .each((_, col) => {
-      const $c = $profile(col);
-      const img = $c.find('img.card-img').first();
+  // Try the journal (10 recent games, richer per-game detail). If the Anubis
+  // gate can't be cleared, fall back to the profile's 5-game grid.
+  let recent: BackloggdRecentGame[];
+  try {
+    const $journal = await getHtml(`${base}/journal/`);
+    const parsed: (BackloggdRecentGame & { slug: string })[] = [];
+    const seen = new Set<string>();
+    let month = '';
+    let day = '';
+    $journal('.journal_entry').each((_, entry) => {
+      if (parsed.length >= 10) return;
+      const $e = $journal(entry);
+      const monthYear = $e.find('.month-year-date h4').first().text().trim();
+      if (monthYear) month = MONTHS[monthYear.split(',')[0].trim()] ?? monthYear;
+      const dayText = $e.find('.date-day').first().text().trim().replace(/^0/, '');
+      if (dayText) day = dayText;
+      const img = $e.find('img.card-img').first();
       const title = img.attr('alt') ?? '';
-      const cover = img.attr('data-src') || img.attr('src') || '';
-      const lastPlayed = $c.find('.played-date').first().text().trim();
-      if (!title) return;
-      recent.push({ title, cover, lastPlayed });
+      const cover = img.attr('src') ?? '';
+      const slug = ($e.find('.game-name a').attr('href') ?? '').match(/\/games\/([^/]+)/)?.[1] ?? '';
+      const platform = $e.find('.journal-platform').first().text().trim();
+      if (!title || seen.has(title)) return;
+      seen.add(title);
+      parsed.push({ title, cover, platform, slug, lastPlayed: day ? `${month} ${day}` : month, playtime: '', rating: null });
     });
+
+    if (parsed.length === 0) throw new Error('backloggd: no journal entries parsed');
+
+    // Enrich each game from its log page — sequentially, so we don't hammer
+    // the Anubis gate with parallel bursts.
+    const logs: Partial<BackloggdRecentGame>[] = [];
+    for (const g of parsed) {
+      logs.push(g.slug ? await fetchLog(g.slug) : {});
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    recent = parsed.map((g, i) => {
+      const { slug: _slug, ...rest } = { ...g, ...logs[i] };
+      return rest;
+    });
+  } catch (err) {
+    console.error(`[backloggd] journal unavailable, using profile fallback: ${err instanceof Error ? err.message : err}`);
+    recent = profileRecent($profile);
+  }
 
   return {
     username: config.backloggd.username,

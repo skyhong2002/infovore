@@ -41,7 +41,20 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
           })
         : h('div', { style: { width: 84, height: 112, backgroundColor: C.border, borderRadius: 4, display: 'flex' } }),
       h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(g.title, 14)),
-      h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, g.lastPlayed)
+      h(
+        'div',
+        { style: { display: 'flex', marginTop: 2 } },
+        h('span', { style: { fontSize: 10, color: C.accent } }, g.lastPlayed),
+        g.playtime
+          ? h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `· ${g.playtime}`)
+          : h('div', { style: { display: 'flex' } })
+      ),
+      g.platform
+        ? h('span', { style: { fontSize: 9, color: C.dim, marginTop: 2, lineHeight: 1.3 } }, g.platform)
+        : h('div', { style: { display: 'flex' } }),
+      g.rating !== null
+        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginTop: 2 } }, `★ ${g.rating}`)
+        : h('div', { style: { display: 'flex' } })
     );
 
   const tileRows: Record<string, unknown>[] = [];
@@ -98,7 +111,8 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
     ...tileRows
   );
 
-  // Header + stats ≈ 216; each tile row ≈ 149 (cover 112 + title + date).
+  // Header + stats ≈ 216; each tile row ≈ 184 (cover 112 + up to four text
+  // lines, platform may wrap to two).
   const nRows = Math.max(1, Math.ceil(data.recent.length / 5));
-  return renderCard(node, 520, 216 + nRows * 149 + (nRows - 1) * 12);
+  return renderCard(node, 520, 216 + nRows * 184 + (nRows - 1) * 12);
 }
