@@ -31,28 +31,17 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
   const tile = (g: (typeof data.recent)[number], i: number, last: boolean) =>
     h(
       'div',
-      { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: last ? 0 : 12 } },
+      { style: { display: 'flex', flexDirection: 'column', width: 92, marginRight: last ? 0 : 14 } },
       covers[i]
         ? h('img', {
             src: covers[i],
-            width: 84,
-            height: 112,
+            width: 92,
+            height: 123,
             style: { borderRadius: 4, objectFit: 'cover', border: `1px solid ${C.border}` },
           })
-        : h('div', { style: { width: 84, height: 112, backgroundColor: C.border, borderRadius: 4, display: 'flex' } }),
-      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(g.title, 14)),
-      h(
-        'div',
-        { style: { display: 'flex', marginTop: 2 } },
-        h('span', { style: { fontSize: 10, color: C.accent } }, g.lastPlayed),
-        g.playtime
-          ? h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `· ${g.playtime}`)
-          : h('div', { style: { display: 'flex' } })
-      ),
-      h('span', { style: { fontSize: 9, color: C.dim, marginTop: 2, lineHeight: 1.3 } }, g.platform),
-      g.rating !== null
-        ? h('span', { style: { fontSize: 10, fontWeight: 700, color: '#e9b873', marginTop: 2 } }, `★ ${g.rating}`)
-        : h('div', { style: { display: 'flex' } })
+        : h('div', { style: { width: 92, height: 123, backgroundColor: C.border, borderRadius: 4, display: 'flex' } }),
+      h('span', { style: { fontSize: 11, fontWeight: 700, color: C.text, marginTop: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } }, truncate(g.title, 15)),
+      h('span', { style: { fontSize: 10, color: C.accent, marginTop: 2 } }, g.lastPlayed)
     );
 
   const tileRows: Record<string, unknown>[] = [];
@@ -109,8 +98,7 @@ export async function buildBackloggdCard(data: BackloggdStats): Promise<string> 
     ...tileRows
   );
 
-  // Header + stats ≈ 216; each tile row ≈ 184 (cover 112 + up to four
-  // text lines, platform may wrap to two).
+  // Header + stats ≈ 216; each tile row ≈ 160 (cover 123 + title + date).
   const nRows = Math.max(1, Math.ceil(data.recent.length / 5));
-  return renderCard(node, 520, 216 + nRows * 184 + (nRows - 1) * 12);
+  return renderCard(node, 520, 216 + nRows * 160 + (nRows - 1) * 12);
 }
