@@ -140,7 +140,7 @@ app.get('/', (c) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>status · ${config.ownerName}</title>
+<title>infovore · ${config.ownerName}</title>
 <style>
   body { background: #0d0e11; color: #e8eaed; margin: 0 auto; padding: 32px 16px 48px;
          max-width: 1100px; font-family: system-ui, -apple-system, sans-serif; }
@@ -161,7 +161,7 @@ app.get('/', (c) => {
 </style>
 </head>
 <body>
-<h1>status</h1>
+<h1>infovore</h1>
 <p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8)${updated ? ` · last updated ${updated}` : ''}.</p>
 ${body}
 <footer><a href="https://github.com/skyhong2002/infovore">source</a> · <a href="/status">json</a></footer>
