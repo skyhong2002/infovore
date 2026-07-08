@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 import { config } from '../config.js';
-import { cookieHeader, isAnubisChallenge, solveAnubis, clearAnubisCookie } from './anubis.js';
+import { cookieHeader, isAnubisChallenge, solveAnubis, absorbCookies } from './anubis.js';
 
 export interface BackloggdRecentGame {
   title: string;
@@ -31,21 +31,28 @@ const MONTHS: Record<string, string> = {
 
 // Fetch a Backloggd page, transparently solving the Anubis proof-of-work
 // challenge (and caching its cookie) if the journal/log pages are gated.
-async function getHtml(path: string, allowSolve = true): Promise<cheerio.CheerioAPI> {
-  const res = await fetch(`${ORIGIN}${path}`, {
-    headers: { 'User-Agent': config.userAgent, Cookie: cookieHeader(ORIGIN) },
-    signal: AbortSignal.timeout(20000),
-  });
-  const html = await res.text();
-  if (isAnubisChallenge(html)) {
-    if (!allowSolve) throw new Error(`backloggd: Anubis challenge unsolved for ${path}`);
-    clearAnubisCookie(ORIGIN);
-    const solved = await solveAnubis(res, html, ORIGIN, path);
-    if (!solved) throw new Error(`backloggd: failed to solve Anubis for ${path}`);
-    return getHtml(path, false); // retry once with the auth cookie
+async function getHtml(path: string): Promise<cheerio.CheerioAPI> {
+  // On datacenter IPs the pass-challenge can still hand back a fresh
+  // challenge (Bunny CDN edge propagation / stricter policy), so solve in a
+  // loop rather than once.
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(`${ORIGIN}${path}`, {
+      headers: { 'User-Agent': config.userAgent, Cookie: cookieHeader(ORIGIN) },
+      signal: AbortSignal.timeout(20000),
+    });
+    const html = await res.text();
+    absorbCookies(ORIGIN, res); // keep bunny_shield etc. fresh
+    if (isAnubisChallenge(html)) {
+      if (attempt === maxAttempts) throw new Error(`backloggd: Anubis unsolved after ${maxAttempts} tries for ${path}`);
+      const solved = await solveAnubis(res, html, ORIGIN, path);
+      if (!solved) await new Promise((r) => setTimeout(r, 1500));
+      continue; // re-fetch with whatever cookie we now hold
+    }
+    if (!res.ok) throw new Error(`backloggd: HTTP ${res.status} for ${path}`);
+    return cheerio.load(html);
   }
-  if (!res.ok) throw new Error(`backloggd: HTTP ${res.status} for ${path}`);
-  return cheerio.load(html);
+  throw new Error(`backloggd: exhausted attempts for ${path}`);
 }
 
 function shortDate(full: string): string {
