@@ -1,4 +1,5 @@
 import satori from 'satori';
+import { Resvg } from '@resvg/resvg-js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
@@ -109,10 +110,43 @@ export function timeAgo(iso: string): string {
   return `${Math.floor(days / 365)}y ago`;
 }
 
+// Bottom padding (px) left below the last rendered content when auto-trimming.
+const BOTTOM_PAD = 22;
+
+// Find the last row (from the top) that contains non-background content,
+// ignoring the card's rounded border frame. Cards are laid out top-anchored,
+// so everything below this row is empty background we can trim away.
+function contentBottom(pixels: Buffer, width: number, height: number): number {
+  const at = (x: number, y: number) => {
+    const i = (y * width + x) * 4;
+    return [pixels[i], pixels[i + 1], pixels[i + 2]] as const;
+  };
+  const bg = at(width >> 1, height - 4); // empty background near the bottom
+  const frame = 16; // skip the border band on every edge
+  const differs = (x: number, y: number) => {
+    const [r, g, b] = at(x, y);
+    return Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]) > 30;
+  };
+  for (let y = height - frame; y >= frame; y--) {
+    for (let x = frame; x < width - frame; x += 2) {
+      if (differs(x, y)) return y;
+    }
+  }
+  return height;
+}
+
+// Render the card, then trim any empty space below the content so every card
+// ends a consistent BOTTOM_PAD below its last row regardless of how many
+// lines the data produced. `height` is treated as a generous upper bound.
 export async function renderCard(
   node: Record<string, unknown>,
   width: number,
   height: number
 ): Promise<string> {
-  return satori(node as never, { width, height, fonts });
+  const draftHeight = height + 96; // headroom so nothing is clipped pre-trim
+  const draft = await satori(node as never, { width, height: draftHeight, fonts });
+  const img = new Resvg(draft).render();
+  const bottom = contentBottom(Buffer.from(img.pixels), img.width, img.height);
+  const trimmed = Math.min(draftHeight, bottom + BOTTOM_PAD);
+  return satori(node as never, { width, height: trimmed, fonts });
 }
