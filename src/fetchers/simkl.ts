@@ -28,7 +28,7 @@ const API = 'https://api.simkl.com';
 function apiHeaders(): Record<string, string> {
   const h: Record<string, string> = {
     'Content-Type': 'application/json',
-    'User-Agent': 'status.skyhong.tw/0.1',
+    'User-Agent': 'infovore/0.1',
     'simkl-api-key': config.simkl.clientId,
   };
   if (config.simkl.accessToken) {
@@ -54,7 +54,7 @@ export async function fetchSimkl(): Promise<SimklStats> {
   if (!clientId) throw new Error('simkl: SIMKL_CLIENT_ID not set');
   if (!accessToken) throw new Error('simkl: SIMKL_ACCESS_TOKEN not set (run the PIN flow)');
 
-  const params = `?client_id=${clientId}&app-name=status.skyhong.tw&app-version=0.1`;
+  const params = `?client_id=${clientId}&app-name=infovore&app-version=0.1`;
   const [stats, settings, movies, shows] = await Promise.all([
     getJson(`/users/${userId}/stats${params}`),
     getJson(`/users/settings`),
