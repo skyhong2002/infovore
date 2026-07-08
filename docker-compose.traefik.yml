@@ -3,19 +3,19 @@
 # DOMAIN in .env. Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
 services:
-  status:
+  infovore:
     ports: !reset []
     networks:
       - dokploy-network
     labels:
       - traefik.enable=true
-      - traefik.http.routers.status.rule=Host(`${DOMAIN}`)
-      - traefik.http.routers.status.entrypoints=websecure
-      - traefik.http.routers.status.tls.certresolver=letsencrypt
-      - traefik.http.routers.status-web.rule=Host(`${DOMAIN}`)
-      - traefik.http.routers.status-web.entrypoints=web
-      - traefik.http.routers.status-web.middlewares=redirect-to-https@file
-      - traefik.http.services.status.loadbalancer.server.port=3000
+      - traefik.http.routers.infovore.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.infovore.entrypoints=websecure
+      - traefik.http.routers.infovore.tls.certresolver=letsencrypt
+      - traefik.http.routers.infovore-web.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.infovore-web.entrypoints=web
+      - traefik.http.routers.infovore-web.middlewares=redirect-to-https@file
+      - traefik.http.services.infovore.loadbalancer.server.port=3000
 
 networks:
   dokploy-network:

@@ -3,10 +3,10 @@
 # first. For a reverse-proxied setup (e.g. Traefik), add the overlay:
 #   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
 services:
-  status:
+  infovore:
     build: .
-    image: status-cards
-    container_name: status-cards
+    image: infovore
+    container_name: infovore
     restart: unless-stopped
     env_file: .env
     ports:
