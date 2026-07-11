@@ -5,28 +5,28 @@ only after tests pass and the production endpoint is verified.
 
 ## P1 — usable public lifelog
 
-- [ ] Public profile and `/now` page driven by persisted activities
-- [ ] Filterable, paginated JSON timeline
-- [ ] RSS feed with stable ids and public-only entries
-- [ ] Manual/private event ingestion with bearer authentication
-- [ ] Upcoming and recent events on `/now`
-- [ ] Public event-page metadata enrichment without ticket-wallet scraping
+- [x] Public profile and `/now` page driven by persisted activities
+- [x] Filterable, paginated JSON timeline
+- [x] RSS feed with stable ids and public-only entries
+- [x] Manual/private event ingestion with bearer authentication
+- [x] Upcoming and recent events on `/now`
+- [x] Public event-page metadata enrichment without ticket-wallet scraping
 
 ## P2 — query and recap
 
-- [ ] Production-compatible MCP Streamable HTTP endpoint
-- [ ] MCP tools for recent activity, search, current media, upcoming events,
+- [x] Production-compatible MCP Streamable HTTP endpoint
+- [x] MCP tools for recent activity, search, current media, upcoming events,
       and annual summaries
-- [ ] Annual cross-media Wrapped JSON API
-- [ ] Human-readable yearly Wrapped page
+- [x] Annual cross-media Wrapped JSON API
+- [x] Human-readable yearly Wrapped page
 
 ## P3 — reliability and delivery
 
-- [ ] Migration and query tests for every new data path
-- [ ] Endpoint, authentication, RSS, MCP, and Wrapped tests
-- [ ] README configuration and API documentation
-- [ ] CI, Docker build, persistent-volume restart, and production smoke tests
-- [ ] Commit, push, deploy, and verify every public endpoint
+- [x] Migration and query tests for every new data path
+- [x] Endpoint, authentication, RSS, MCP, and Wrapped tests
+- [x] README configuration and API documentation
+- [x] CI, Docker build, persistent-volume restart, and production smoke tests
+- [x] Commit, push, deploy, and verify every public endpoint
 
 ## Deferred by design
 
