@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
-import { getCache, setCache, setCacheError } from './data/cache.js';
+import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
+import { Repository } from './data/database.js';
 import type { SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
@@ -21,7 +22,7 @@ import { buildGoodreadsCard } from './output/goodreads.js';
 // `src/output/`, takes a `SourceSnapshot`, and gets one entry in `cards`
 // below (or its own registry, for a non-card output like a feed) — neither
 // registration touches any other source or output module.
-const fetchers: Record<string, () => Promise<SourceSnapshot<any>>> = {
+const fetchers: Record<string, () => Promise<SourceSnapshot<unknown>>> = {
   backloggd: fetchBackloggd,
   kitsu: fetchKitsu,
   statsfm: fetchStatsfm,
@@ -29,35 +30,61 @@ const fetchers: Record<string, () => Promise<SourceSnapshot<any>>> = {
   goodreads: fetchGoodreads,
 };
 
-const cards: Record<string, { source: string; build: (data: SourceSnapshot<any>) => Promise<string> }> = {
-  backloggd: { source: 'backloggd', build: buildBackloggdCard },
-  kitsu: { source: 'kitsu', build: buildKitsuCard },
-  'kitsu-anime': { source: 'kitsu', build: buildKitsuAnimeCard },
-  'kitsu-manga': { source: 'kitsu', build: buildKitsuMangaCard },
-  statsfm: { source: 'statsfm', build: buildStatsfmCard },
-  'statsfm-albums': { source: 'statsfm', build: buildStatsfmAlbumsCard },
-  'statsfm-artists': { source: 'statsfm', build: buildStatsfmArtistsCard },
-  simkl: { source: 'simkl', build: buildSimklCard },
-  'simkl-movies': { source: 'simkl', build: buildSimklMoviesCard },
-  'simkl-shows': { source: 'simkl', build: buildSimklShowsCard },
-  goodreads: { source: 'goodreads', build: buildGoodreadsCard },
+interface CardDefinition {
+  source: string;
+  build: (data: SourceSnapshot<unknown>) => Promise<string>;
+}
+
+function defineCard<T>(source: string, build: (data: SourceSnapshot<T>) => Promise<string>): CardDefinition {
+  return { source, build: (data) => build(data as SourceSnapshot<T>) };
+}
+
+const cards: Record<string, CardDefinition> = {
+  backloggd: defineCard('backloggd', buildBackloggdCard),
+  kitsu: defineCard('kitsu', buildKitsuCard),
+  'kitsu-anime': defineCard('kitsu', buildKitsuAnimeCard),
+  'kitsu-manga': defineCard('kitsu', buildKitsuMangaCard),
+  statsfm: defineCard('statsfm', buildStatsfmCard),
+  'statsfm-albums': defineCard('statsfm', buildStatsfmAlbumsCard),
+  'statsfm-artists': defineCard('statsfm', buildStatsfmArtistsCard),
+  simkl: defineCard('simkl', buildSimklCard),
+  'simkl-movies': defineCard('simkl', buildSimklMoviesCard),
+  'simkl-shows': defineCard('simkl', buildSimklShowsCard),
+  goodreads: defineCard('goodreads', buildGoodreadsCard),
 };
 
+const repository = new Repository(config.databasePath);
+
+async function renderCards(name: string, data: SourceSnapshot<unknown>): Promise<void> {
+  for (const [cardName, card] of Object.entries(cards)) {
+    if (card.source !== name) continue;
+    try {
+      setCache(`svg:${cardName}`, await card.build(data));
+    } catch (err) {
+      console.error(`[render] ${cardName} failed:`, err);
+    }
+  }
+}
+
+// Restore the last-good snapshot before making network requests. A restart
+// therefore serves data immediately and an upstream outage cannot blank the
+// site.
+for (const saved of repository.loadSnapshots()) {
+  restoreCache(`data:${saved.snapshot.source}`, saved.snapshot, Date.parse(saved.fetchedAt), saved.error ?? undefined);
+  await renderCards(saved.snapshot.source, saved.snapshot);
+}
+
 async function refreshSource(name: string, isRetry = false): Promise<void> {
+  const syncId = repository.startSync(name);
   try {
     const data = await fetchers[name]();
+    const persisted = repository.finishSync(syncId, data);
     setCache(`data:${name}`, data);
-    for (const [cardName, card] of Object.entries(cards)) {
-      if (card.source !== name) continue;
-      try {
-        setCache(`svg:${cardName}`, await card.build(data as never));
-      } catch (err) {
-        console.error(`[render] ${cardName} failed:`, err);
-      }
-    }
-    console.log(`[refresh] ${name} ok`);
+    await renderCards(name, data);
+    console.log(`[refresh] ${name} ok (${persisted.inserted} new, ${persisted.updated} seen)`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    repository.failSync(syncId, name, msg);
     setCacheError(`data:${name}`, msg);
     console.error(`[refresh] ${name} failed: ${msg}`);
     if (!isRetry) {
@@ -181,9 +208,15 @@ app.get('/status', (c) => {
   });
   return c.json({
     owner: config.ownerName,
+    database: { activities: repository.countActivities(), latestRuns: repository.latestRuns() },
     cards: sections.flatMap((s) => s.cards).map((n) => `/card/${n}.svg`),
     sources,
   });
+});
+
+app.get('/api/activities.json', (c) => {
+  const limit = Number(c.req.query('limit') ?? 100);
+  return c.json({ data: repository.listActivities(limit) });
 });
 
 app.get('/api/:file{[a-z-]+\\.json}', (c) => {
@@ -238,7 +271,18 @@ app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
 
 app.get('/cards', (c) => c.redirect('/', 301));
 
-app.get('/healthz', (c) => c.text('ok'));
+app.get('/healthz', (c) => {
+  const now = Date.now();
+  const maxAgeMs = config.maxSourceAgeHours * 60 * 60 * 1000;
+  const sources = activeSources.map((name) => {
+    const entry = getCache(`data:${name}`);
+    const ageMs = entry ? now - entry.fetchedAt : null;
+    return { source: name, fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: entry?.error ?? null };
+  });
+  const freshCount = sources.filter((source) => source.fresh).length;
+  const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';
+  return c.json({ status, maxSourceAgeHours: config.maxSourceAgeHours, sources }, status === 'unhealthy' ? 503 : 200);
+});
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`listening on :${info.port}`);

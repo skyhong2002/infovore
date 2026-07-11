@@ -40,11 +40,34 @@ export async function fetchSimkl(): Promise<SourceSnapshot> {
     getJson(`/sync/all-items/shows`),
   ]);
 
+  const entries = parseSimklEntries(movies, shows);
+
+  return {
+    source: 'simkl',
+    profile: {
+      id: userId,
+      name: settings?.user?.name ?? `#${userId}`,
+      avatar: settings?.user?.avatar ?? '',
+      url: `https://simkl.com/${userId}/`,
+    },
+    stats: {
+      moviesCompleted: stats?.movies?.completed?.count ?? 0,
+      showsWatching: stats?.tv?.watching?.count ?? 0,
+      showsCompleted: stats?.tv?.completed?.count ?? 0,
+      totalMinutes: stats?.total_mins ?? 0,
+    },
+    entries,
+    extra: {},
+  };
+}
+
+export function parseSimklEntries(movies: any, shows: any): MediaEntry[] {
   const recentMovies: MediaEntry[] = (movies?.movies ?? [])
     .filter((m: any) => m.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
     .slice(0, 10)
     .map((m: any) => ({
+      sourceItemId: String(m.movie?.ids?.simkl ?? m.movie?.ids?.imdb ?? `${m.movie?.title ?? 'unknown'}-${m.movie?.year ?? ''}`),
       source: 'simkl',
       kind: 'movie',
       title: m.movie?.title ?? 'Unknown',
@@ -64,6 +87,7 @@ export async function fetchSimkl(): Promise<SourceSnapshot> {
       if (s.watched_episodes_count != null) extra.watchedEpisodes = s.watched_episodes_count;
       if (s.total_episodes_count != null) extra.totalEpisodes = s.total_episodes_count;
       return {
+        sourceItemId: String(s.show?.ids?.simkl ?? s.show?.ids?.imdb ?? `${s.show?.title ?? 'unknown'}-${s.show?.year ?? ''}`),
         source: 'simkl',
         kind: 'show',
         title: s.show?.title ?? 'Unknown',
@@ -74,21 +98,5 @@ export async function fetchSimkl(): Promise<SourceSnapshot> {
       };
     });
 
-  return {
-    source: 'simkl',
-    profile: {
-      id: userId,
-      name: settings?.user?.name ?? `#${userId}`,
-      avatar: settings?.user?.avatar ?? '',
-      url: `https://simkl.com/${userId}/`,
-    },
-    stats: {
-      moviesCompleted: stats?.movies?.completed?.count ?? 0,
-      showsWatching: stats?.tv?.watching?.count ?? 0,
-      showsCompleted: stats?.tv?.completed?.count ?? 0,
-      totalMinutes: stats?.total_mins ?? 0,
-    },
-    entries: [...recentMovies, ...recentShows],
-    extra: {},
-  };
+  return [...recentMovies, ...recentShows];
 }

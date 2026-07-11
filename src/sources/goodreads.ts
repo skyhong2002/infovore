@@ -25,12 +25,13 @@ function field(item: string, tag: string): string {
   return m ? m[1].trim() : '';
 }
 
-function parseRss(xml: string, limit: number, status: 'reading' | 'read'): MediaEntry[] {
+export function parseGoodreadsRss(xml: string, limit: number, status: 'reading' | 'read'): MediaEntry[] {
   const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
   return items.slice(0, limit).map((it) => {
     const rating = Number(field(it, 'user_rating'));
     const readAt = field(it, 'user_read_at') || field(it, 'pubDate');
     return {
+      sourceItemId: field(it, 'book_id') || field(it, 'guid'),
       source: 'goodreads',
       kind: 'book',
       title: field(it, 'title'),
@@ -71,7 +72,7 @@ export async function fetchGoodreads(): Promise<SourceSnapshot> {
       currentlyReadingCount: shelfCount('currently-reading'),
       toReadCount: shelfCount('to-read'),
     },
-    entries: [...parseRss(currentXml, 2, 'reading'), ...parseRss(readXml, 5, 'read')],
+    entries: [...parseGoodreadsRss(currentXml, 2, 'reading'), ...parseGoodreadsRss(readXml, 5, 'read')],
     extra: {},
   };
 }

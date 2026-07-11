@@ -10,6 +10,10 @@ export function setCache<T>(key: string, data: T): void {
   store.set(key, { data, fetchedAt: Date.now() });
 }
 
+export function restoreCache<T>(key: string, data: T, fetchedAt: number, error?: string): void {
+  store.set(key, { data, fetchedAt, ...(error ? { error } : {}) });
+}
+
 export function setCacheError(key: string, error: string): void {
   const prev = store.get(key);
   // Keep stale data if we have it; only record the error.

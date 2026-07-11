@@ -33,10 +33,10 @@ sources/  ──fetch + normalize──▶  data/  ──read-only──▶  out
   source and normalizes the result into a `SourceSnapshot` (see below). All
   the platform-specific mess (HTML scraping, Anubis proof-of-work solving,
   OAuth, JSON:API quirks) is contained here and never leaks past this layer.
-- **`src/data/`** — `types.ts` defines the unified model every source
-  produces and every output consumes; `cache.ts` is the in-memory store
-  (keyed by source/card name, refreshed on a timer, holds the last-good
-  value on fetch errors).
+- **`src/data/`** — `types.ts` defines the snapshot and durable Activity v2
+  models; SQLite stores last-good snapshots, sync runs, and the deduplicated
+  activity timeline. The in-memory cache is restored from SQLite at startup,
+  so an upstream outage or restart does not blank the site.
 - **`src/output/`** — one module per rendered format. Today that's Satori
   SVG/PNG/WebP cards; each card reads only `SourceSnapshot` fields, never a
   source's raw shape.
@@ -88,7 +88,8 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /status` — service status overview (JSON)
 - `GET /card/{name}.{svg,png,webp}` — a card; `?scale=1..3` for raster (default 2)
 - `GET /api/{source}.json` — a source's normalized `SourceSnapshot` (raw cached data)
-- `GET /healthz` — health check
+- `GET /api/activities.json?limit=100` — persisted, deduplicated public activity timeline
+- `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
 
 Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
 
@@ -102,6 +103,10 @@ docker compose up -d --build
 ```
 
 Open <http://localhost:3000>. That's it — no other services required.
+
+The Compose setup mounts a named `infovore-data` volume at `/data`; activity
+history survives image rebuilds and container replacement. For a non-Docker
+run, `DATABASE_PATH` defaults to `./data/infovore.sqlite`.
 
 Set only the sources you use via `SOURCES` in `.env` (e.g. `SOURCES=kitsu,statsfm`);
 the rest are hidden. Every account id/username is an env var — see the comments
@@ -123,6 +128,7 @@ docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
 ```sh
 npm install
 npm run dev   # http://localhost:3000
+npm run check # typecheck + fixture/unit/integration tests
 ```
 
 ## Roadmap

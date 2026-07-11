@@ -40,8 +40,13 @@ export async function fetchStatsfm(): Promise<SourceSnapshot<StatsfmExtra>> {
     getJson(`${API}/users/${user}/top/artists?range=weeks&limit=10`),
   ]);
 
-  const s = weekStats.items ?? {};
+  return normalizeStatsfm(user, profile, weekStats, topAlbums, topArtists);
+}
 
+export function normalizeStatsfm(
+  user: string, profile: any, weekStats: any, topAlbums: any, topArtists: any
+): SourceSnapshot<StatsfmExtra> {
+  const s = weekStats.items ?? {};
   return {
     source: 'statsfm',
     profile: {

@@ -6,6 +6,7 @@ import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 // Scratch shape used while parsing/enriching a game's journal + log page,
 // before it's mapped to a MediaEntry just before returning.
 interface RawRecentGame {
+  sourceItemId?: string;
   title: string;
   cover: string;
   platform: string; // e.g. "Nintendo DS via Android" from the log page, '' if unavailable
@@ -115,9 +116,14 @@ function profileRecent($profile: cheerio.CheerioAPI): RawRecentGame[] {
       const cover = img.attr('data-src') || img.attr('src') || '';
       const lastPlayed = shortDate($c.find('.played-date').first().text().trim());
       if (!title) return;
-      recent.push({ title, cover, platform: '', lastPlayed, playtime: '', rating: null });
+      const sourceItemId = ($c.find('a').first().attr('href') ?? '').match(/\/games\/([^/]+)/)?.[1];
+      recent.push({ sourceItemId, title, cover, platform: '', lastPlayed, playtime: '', rating: null });
     });
   return recent;
+}
+
+export function parseBackloggdRecentFixture(html: string): MediaEntry[] {
+  return profileRecent(cheerio.load(html)).map(toEntry);
 }
 
 function toEntry(g: RawRecentGame): MediaEntry {
@@ -125,6 +131,7 @@ function toEntry(g: RawRecentGame): MediaEntry {
   if (g.platform) extra.platform = g.platform;
   if (g.playtime) extra.playtime = g.playtime;
   return {
+    sourceItemId: g.sourceItemId,
     source: 'backloggd',
     kind: 'game',
     title: g.title,
@@ -190,7 +197,7 @@ export async function fetchBackloggd(): Promise<SourceSnapshot<BackloggdExtra>> 
       const platform = $e.find('.journal-platform').first().text().trim();
       if (!title || seen.has(title)) return;
       seen.add(title);
-      parsed.push({ title, cover, platform, slug, lastPlayed: day ? `${month} ${day}` : month, playtime: '', rating: null });
+      parsed.push({ sourceItemId: slug || undefined, title, cover, platform, slug, lastPlayed: day ? `${month} ${day}` : month, playtime: '', rating: null });
     });
 
     if (parsed.length === 0) throw new Error('backloggd: no journal entries parsed');

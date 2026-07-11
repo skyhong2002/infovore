@@ -11,6 +11,10 @@ export interface Rating {
 }
 
 export interface MediaEntry {
+  // Stable id from the upstream service when one is available. Persistence
+  // falls back to a deterministic content key for sources that do not expose
+  // ids (for example Backloggd's public profile grid).
+  sourceItemId?: string;
   source: string;
   kind: MediaKind;
   title: string;
@@ -24,6 +28,30 @@ export interface MediaEntry {
   // Long-tail per-entry display bits that don't generalize across sources
   // (platform/playtime, episode counts, author, ...).
   extra: Record<string, string | number>;
+}
+
+export type ActivityVisibility = 'public' | 'private';
+export type ActivityTimePrecision = 'exact' | 'day' | 'label' | 'unknown';
+
+// Durable v2 model. SourceSnapshot remains the source/output interchange
+// format; Activity is the append-only normalized history derived from it.
+export interface Activity {
+  id: string;
+  dedupeKey: string;
+  source: string;
+  sourceItemId: string | null;
+  type: string;
+  mediaKind: MediaKind;
+  title: string;
+  image: string;
+  status: string | null;
+  occurredAt: string | null;
+  occurredAtPrecision: ActivityTimePrecision;
+  rating: Rating | null;
+  visibility: ActivityVisibility;
+  extra: Record<string, string | number>;
+  firstSeenAt: string;
+  lastSeenAt: string;
 }
 
 export interface SourceProfile {

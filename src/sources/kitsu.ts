@@ -10,7 +10,7 @@ async function getJson(url: string): Promise<any> {
   return res.json();
 }
 
-function parseEntries(doc: any, kind: 'anime' | 'manga'): MediaEntry[] {
+export function parseKitsuEntries(doc: any, kind: 'anime' | 'manga'): MediaEntry[] {
   const mediaById = new Map<string, any>(
     (doc.included ?? []).map((m: any) => [m.id, m])
   );
@@ -21,6 +21,7 @@ function parseEntries(doc: any, kind: 'anime' | 'manga'): MediaEntry[] {
     // Prefer the English title; fall back to the canonical (usually romaji)
     // when no English one exists.
     return {
+      sourceItemId: String(entry.id),
       source: 'kitsu',
       kind,
       title: attrs.titles?.en || attrs.canonicalTitle || 'Unknown',
@@ -70,7 +71,7 @@ export async function fetchKitsu(): Promise<SourceSnapshot> {
       mangaCompleted: manga.completed ?? 0,
       mangaChapters: manga.units ?? 0,
     },
-    entries: [...parseEntries(animeDoc, 'anime'), ...parseEntries(mangaDoc, 'manga')],
+    entries: [...parseKitsuEntries(animeDoc, 'anime'), ...parseKitsuEntries(mangaDoc, 'manga')],
     extra: {},
   };
 }

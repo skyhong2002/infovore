@@ -13,3 +13,9 @@ services:
       - "${PORT:-3000}:3000"
     environment:
       - PORT=3000
+      - DATABASE_PATH=/data/infovore.sqlite
+    volumes:
+      - infovore-data:/data
+
+volumes:
+  infovore-data:
