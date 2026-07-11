@@ -16,6 +16,20 @@ services:
       - DATABASE_PATH=/data/infovore.sqlite
     volumes:
       - infovore-data:/data
+  ingest:
+    build: .
+    image: infovore
+    container_name: infovore-ingest
+    command: ["npx", "tsx", "src/ingest.ts"]
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${INGEST_PORT:-3001}:3001"
+    environment:
+      - PORT=3001
+      - DATABASE_PATH=/data/infovore.sqlite
+    volumes:
+      - infovore-data:/data
 
 volumes:
   infovore-data:

@@ -40,7 +40,7 @@ export function activityFromEntry(entry: MediaEntry, seenAt = new Date().toISOSt
     occurredAt: occurred.value,
     occurredAtPrecision: occurred.precision,
     rating: entry.rating,
-    visibility: 'public',
+    visibility: entry.visibility ?? 'public',
     extra: entry.extra,
     firstSeenAt: seenAt,
     lastSeenAt: seenAt,

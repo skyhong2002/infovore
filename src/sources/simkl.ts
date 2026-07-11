@@ -65,7 +65,6 @@ export function parseSimklEntries(movies: any, shows: any): MediaEntry[] {
   const recentMovies: MediaEntry[] = (movies?.movies ?? [])
     .filter((m: any) => m.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
-    .slice(0, 10)
     .map((m: any) => ({
       sourceItemId: String(m.movie?.ids?.simkl ?? m.movie?.ids?.imdb ?? `${m.movie?.title ?? 'unknown'}-${m.movie?.year ?? ''}`),
       source: 'simkl',
@@ -80,7 +79,6 @@ export function parseSimklEntries(movies: any, shows: any): MediaEntry[] {
   const recentShows: MediaEntry[] = (shows?.shows ?? [])
     .filter((s: any) => s.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
-    .slice(0, 10)
     .map((s: any) => {
       const extra: Record<string, string | number> = {};
       if (s.show?.year) extra.year = s.show.year;

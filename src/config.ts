@@ -14,6 +14,7 @@ const refreshTimes = (process.env.REFRESH_TIMES ?? '06:00,18:00')
 const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'goodreads'] as const;
 const port = Number(process.env.PORT ?? 3000);
 const maxSourceAgeHours = Number(process.env.MAX_SOURCE_AGE_HOURS ?? 36);
+const ingestToken = process.env.INGEST_TOKEN ?? '';
 
 const invalidSources = sources.filter((source) => !knownSources.includes(source as typeof knownSources[number]));
 if (invalidSources.length) throw new Error(`Unknown SOURCES: ${invalidSources.join(', ')}`);
@@ -22,10 +23,13 @@ if (!refreshTimes.length || refreshTimes.some((time) => !/^(?:[01]\d|2[0-3]):[0-
 }
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be an integer from 1 to 65535');
 if (!Number.isFinite(maxSourceAgeHours) || maxSourceAgeHours <= 0) throw new Error('MAX_SOURCE_AGE_HOURS must be positive');
+if (ingestToken && ingestToken.length < 32) throw new Error('INGEST_TOKEN must contain at least 32 characters');
 
 export const config = {
   port,
   databasePath: process.env.DATABASE_PATH ?? './data/infovore.sqlite',
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? (process.env.DOMAIN ? `https://${process.env.DOMAIN}` : 'http://localhost:3000')).replace(/\/$/, ''),
+  ingestToken,
   maxSourceAgeHours,
   refreshTimes,
   ownerName: process.env.OWNER_NAME ?? 'Sky Hong',

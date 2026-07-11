@@ -45,7 +45,7 @@ export async function buildBackloggdCard(data: SourceSnapshot<BackloggdExtra>): 
       h(
         'div',
         { style: { display: 'flex', marginTop: 2 } },
-        h('span', { style: { fontSize: 10, color: C.accent } }, g.activityAt),
+        h('span', { style: { fontSize: 10, color: C.accent } }, String(g.extra.displayDate ?? g.activityAt)),
         g.extra.playtime
           ? h('span', { style: { fontSize: 10, color: C.dim, marginLeft: 5 } }, `· ${g.extra.playtime}`)
           : h('div', { style: { display: 'flex' } })

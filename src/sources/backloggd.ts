@@ -11,6 +11,7 @@ interface RawRecentGame {
   cover: string;
   platform: string; // e.g. "Nintendo DS via Android" from the log page, '' if unavailable
   lastPlayed: string; // e.g. "Jul 7"
+  activityAt: string; // ISO date when Backloggd exposes a year
   playtime: string; // e.g. "1h 0m", '' if no sessions logged
   rating: number | null; // out of 5, e.g. 3.5
 }
@@ -61,6 +62,13 @@ function shortDate(full: string): string {
   return m ? `${MONTHS[m[1]] ?? m[1]} ${m[2]}` : full;
 }
 
+function isoDate(full: string): string {
+  const m = full.match(/([A-Z][a-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+  if (!m) return '';
+  const month = Object.keys(MONTHS).indexOf(m[1]) + 1;
+  return month > 0 ? `${m[3]}-${String(month).padStart(2, '0')}-${String(Number(m[2])).padStart(2, '0')}` : '';
+}
+
 function sumSessions(times: string[]): string {
   let mins = 0;
   for (const t of times) {
@@ -84,7 +92,9 @@ async function fetchLog(slug: string): Promise<Partial<RawRecentGame>> {
       const label = $(el).text().trim();
       const section = $(el).closest('.section-title').next();
       if (label === 'Last played') {
-        out.lastPlayed = shortDate(section.find('p').first().text().trim());
+        const full = section.find('p').first().text().trim();
+        out.lastPlayed = shortDate(full);
+        out.activityAt = isoDate(full);
       } else if (label === 'Platforms Played') {
         out.platform = section.find('.game-page-platform').first().text().trim();
       } else if (label === 'Rating') {
@@ -117,7 +127,8 @@ function profileRecent($profile: cheerio.CheerioAPI): RawRecentGame[] {
       const lastPlayed = shortDate($c.find('.played-date').first().text().trim());
       if (!title) return;
       const sourceItemId = ($c.find('a').first().attr('href') ?? '').match(/\/games\/([^/]+)/)?.[1];
-      recent.push({ sourceItemId, title, cover, platform: '', lastPlayed, playtime: '', rating: null });
+      const fullDate = $c.find('.played-date').first().text().trim();
+      recent.push({ sourceItemId, title, cover, platform: '', lastPlayed, activityAt: isoDate(fullDate), playtime: '', rating: null });
     });
   return recent;
 }
@@ -130,15 +141,17 @@ function toEntry(g: RawRecentGame): MediaEntry {
   const extra: Record<string, string | number> = {};
   if (g.platform) extra.platform = g.platform;
   if (g.playtime) extra.playtime = g.playtime;
+  if (g.lastPlayed) extra.displayDate = g.lastPlayed;
   return {
     sourceItemId: g.sourceItemId,
     source: 'backloggd',
     kind: 'game',
     title: g.title,
     image: g.cover,
-    // Backloggd exposes no ISO date for "last played" — only a short label
-    // like "Jul 7" — so that's what this carries instead of a real ISO string.
-    activityAt: g.lastPlayed,
+    // Journal/log pages expose a year, while the profile fallback sometimes
+    // only exposes a display label. Preserve the label for cards and use the
+    // ISO value for the durable timeline whenever available.
+    activityAt: g.activityAt || g.lastPlayed,
     rating: g.rating !== null ? { value: g.rating, scale: 5 } : null,
     extra,
   };
@@ -182,12 +195,19 @@ export async function fetchBackloggd(): Promise<SourceSnapshot<BackloggdExtra>> 
     const parsed: (RawRecentGame & { slug: string })[] = [];
     const seen = new Set<string>();
     let month = '';
+    let monthNumber = '';
+    let year = '';
     let day = '';
     $journal('.journal_entry').each((_, entry) => {
       if (parsed.length >= 10) return;
       const $e = $journal(entry);
       const monthYear = $e.find('.month-year-date h4').first().text().trim();
-      if (monthYear) month = MONTHS[monthYear.split(',')[0].trim()] ?? monthYear;
+      if (monthYear) {
+        const fullMonth = monthYear.split(',')[0].trim();
+        month = MONTHS[fullMonth] ?? fullMonth;
+        monthNumber = String(Object.keys(MONTHS).indexOf(fullMonth) + 1).padStart(2, '0');
+        year = monthYear.match(/(\d{4})/)?.[1] ?? year;
+      }
       const dayText = $e.find('.date-day').first().text().trim().replace(/^0/, '');
       if (dayText) day = dayText;
       const img = $e.find('img.card-img').first();
@@ -197,7 +217,8 @@ export async function fetchBackloggd(): Promise<SourceSnapshot<BackloggdExtra>> 
       const platform = $e.find('.journal-platform').first().text().trim();
       if (!title || seen.has(title)) return;
       seen.add(title);
-      parsed.push({ sourceItemId: slug || undefined, title, cover, platform, slug, lastPlayed: day ? `${month} ${day}` : month, playtime: '', rating: null });
+      const activityAt = year && monthNumber && day ? `${year}-${monthNumber}-${String(Number(day)).padStart(2, '0')}` : '';
+      parsed.push({ sourceItemId: slug || undefined, title, cover, platform, slug, lastPlayed: day ? `${month} ${day}` : month, activityAt, playtime: '', rating: null });
     });
 
     if (parsed.length === 0) throw new Error('backloggd: no journal entries parsed');

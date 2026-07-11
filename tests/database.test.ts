@@ -52,3 +52,19 @@ test('failed sync records error while retaining last-good snapshot', () => {
   assert.equal(repository.latestRuns()[0].status, 'error');
   repository.close();
 });
+
+test('query filters, privacy, pagination and Wrapped use persisted history', () => {
+  const repository = new Repository(':memory:');
+  repository.ingestEntries([
+    { source: 'events', sourceItemId: 'public', visibility: 'public', kind: 'event', title: 'Public Concert', image: '', status: 'attended', activityAt: '2026-05-01T12:00:00Z', rating: null, extra: { venue: 'Hall' } },
+    { source: 'events', sourceItemId: 'private', visibility: 'private', kind: 'event', title: 'Secret Event', image: '', status: 'attended', activityAt: '2026-05-02T12:00:00Z', rating: null, extra: {} },
+  ]);
+  const page = repository.queryActivities({ kind: 'event', query: 'Concert', limit: 1, offset: 0 });
+  assert.equal(page.total, 1);
+  assert.equal(page.data[0].title, 'Public Concert');
+  assert.equal(repository.queryActivities().total, 1);
+  const wrapped = repository.wrapped(2026);
+  assert.equal(wrapped.totalActivities, 1);
+  assert.deepEqual(wrapped.byKind, { event: 1 });
+  repository.close();
+});

@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import type { SourceSnapshot } from '../data/types.js';
+import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 
 export interface StatsfmAlbum {
   name: string;
@@ -33,20 +33,31 @@ async function getJson(url: string): Promise<any> {
 export async function fetchStatsfm(): Promise<SourceSnapshot<StatsfmExtra>> {
   const user = config.statsfm.username;
 
-  const [profile, weekStats, topAlbums, topArtists] = await Promise.all([
+  const [profile, weekStats, topAlbums, topArtists, recentStreams] = await Promise.all([
     getJson(`${API}/users/${user}`),
     getJson(`${API}/users/${user}/streams/stats?range=weeks`),
     getJson(`${API}/users/${user}/top/albums?range=weeks&limit=10`),
     getJson(`${API}/users/${user}/top/artists?range=weeks&limit=10`),
+    getJson(`${API}/users/${user}/streams/recent?limit=50`),
   ]);
 
-  return normalizeStatsfm(user, profile, weekStats, topAlbums, topArtists);
+  return normalizeStatsfm(user, profile, weekStats, topAlbums, topArtists, recentStreams);
 }
 
 export function normalizeStatsfm(
-  user: string, profile: any, weekStats: any, topAlbums: any, topArtists: any
+  user: string, profile: any, weekStats: any, topAlbums: any, topArtists: any, recentStreams: any = { items: [] }
 ): SourceSnapshot<StatsfmExtra> {
   const s = weekStats.items ?? {};
+  const entries: MediaEntry[] = (recentStreams.items ?? []).map((stream: any) => ({
+    sourceItemId: String(stream.track?.id ?? stream.track?.externalIds?.spotify?.[0] ?? stream.track?.name ?? ''),
+    source: 'statsfm', kind: 'music', title: stream.track?.name ?? 'Unknown track',
+    image: stream.track?.albums?.[0]?.image ?? '', status: 'listened', activityAt: stream.endTime ?? '', rating: null,
+    extra: {
+      artist: stream.track?.artists?.map((artist: any) => artist.name).filter(Boolean).join(', ') ?? '',
+      album: stream.track?.albums?.[0]?.name ?? '', platform: stream.platform ?? '',
+      durationMs: stream.durationMs ?? stream.track?.durationMs ?? 0,
+    },
+  }));
   return {
     source: 'statsfm',
     profile: {
@@ -61,7 +72,7 @@ export function normalizeStatsfm(
       weeklyUniqueTracks: s.cardinality?.tracks ?? 0,
       weeklyUniqueArtists: s.cardinality?.artists ?? 0,
     },
-    entries: [],
+    entries,
     extra: {
       topAlbums: (topAlbums.items ?? []).map((it: any) => ({
         name: it.album?.name ?? '',

@@ -3,7 +3,7 @@
 // the other exists. This is the actual asset: a persistent, cross-platform
 // media consumption log, of which cards are just the first rendering.
 
-export type MediaKind = 'game' | 'anime' | 'manga' | 'movie' | 'show' | 'book' | 'music';
+export type MediaKind = 'game' | 'anime' | 'manga' | 'movie' | 'show' | 'book' | 'music' | 'event';
 
 export interface Rating {
   value: number;
@@ -15,6 +15,7 @@ export interface MediaEntry {
   // falls back to a deterministic content key for sources that do not expose
   // ids (for example Backloggd's public profile grid).
   sourceItemId?: string;
+  visibility?: ActivityVisibility;
   source: string;
   kind: MediaKind;
   title: string;

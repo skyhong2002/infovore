@@ -5,6 +5,7 @@ import { parseGoodreadsRss } from '../src/sources/goodreads.js';
 import { parseKitsuEntries } from '../src/sources/kitsu.js';
 import { parseSimklEntries } from '../src/sources/simkl.js';
 import { normalizeStatsfm } from '../src/sources/statsfm.js';
+import { enrichPublicEvent, normalizeEvent, parseEventMetadata } from '../src/sources/events.js';
 
 test('Backloggd profile fixture normalizes a recent game', () => {
   const entries = parseBackloggdRecentFixture(`
@@ -12,7 +13,7 @@ test('Backloggd profile fixture normalizes a recent game', () => {
   `);
   assert.deepEqual(entries[0], {
     sourceItemId: 'chrono-trigger', source: 'backloggd', kind: 'game', title: 'Chrono Trigger', image: 'cover.jpg',
-    activityAt: 'Jul 7', rating: null, extra: {},
+    activityAt: '2026-07-07', rating: null, extra: { displayDate: 'Jul 7' },
   });
 });
 
@@ -53,8 +54,27 @@ test('stats.fm fixture keeps leaderboard data outside dated activities', () => {
     { items: { count: 12, durationMs: 120000, cardinality: { tracks: 5, artists: 3 } } },
     { items: [{ album: { name: 'Album', artists: [{ name: 'Artist' }], image: 'album.jpg' }, streams: 4 }] },
     { items: [{ artist: { name: 'Artist', image: 'artist.jpg' }, streams: 6 }] },
+    { items: [{ platform: 'SPOTIFY', endTime: '2026-07-11T12:00:00Z', durationMs: 180000, track: { id: 42, name: 'Song', albums: [{ name: 'Album', image: 'album.jpg' }], artists: [{ name: 'Artist' }] } }] },
   );
-  assert.equal(snapshot.entries.length, 0);
+  assert.equal(snapshot.entries.length, 1);
+  assert.equal(snapshot.entries[0].sourceItemId, '42');
+  assert.equal(snapshot.entries[0].kind, 'music');
   assert.equal(snapshot.stats.weeklyMinutes, 2);
   assert.equal(snapshot.extra.topAlbums[0].name, 'Album');
+});
+
+test('event normalization keeps only public-safe metadata and rejects arbitrary enrichment hosts', async () => {
+  const event = normalizeEvent({ title: 'Concert', startAt: '2099-01-01T12:00:00Z', venue: 'Hall', organizer: 'Orchestra', platform: 'KKTIX' });
+  assert.equal(event.kind, 'event');
+  assert.equal(event.status, 'upcoming');
+  assert.deepEqual(event.extra, { venue: 'Hall', organizer: 'Orchestra', platform: 'KKTIX' });
+  await assert.rejects(() => enrichPublicEvent('https://127.0.0.1/private'), /supported public/);
+});
+
+test('public event-page fixture enriches safe schema.org metadata', () => {
+  const metadata = parseEventMetadata(`<html><head><meta property="og:title" content="Festival"><meta property="og:image" content="cover.jpg"><script type="application/ld+json">{"@type":"Event","startDate":"2099-03-02T19:30:00+08:00","location":{"name":"Arts Center"},"organizer":{"name":"Orchestra"}}</script></head></html>`, 'https://kktix.com/events/festival');
+  assert.equal(metadata.title, 'Festival');
+  assert.equal(metadata.startAt, '2099-03-02T19:30:00+08:00');
+  assert.equal(metadata.venue, 'Arts Center');
+  assert.equal(metadata.platform, 'kktix.com');
 });

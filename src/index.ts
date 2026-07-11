@@ -11,6 +11,9 @@ import { fetchStatsfm } from './sources/statsfm.js';
 import { fetchSimkl } from './sources/simkl.js';
 import { fetchGoodreads } from './sources/goodreads.js';
 import { rasterize } from './output/render.js';
+import { activityRss } from './output/feed.js';
+import { nowPage, profilePage, wrappedPage } from './output/pages.js';
+import { handleMcpRequest } from './mcp.js';
 import { buildBackloggdCard } from './output/backloggd.js';
 import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './output/kitsu.js';
 import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } from './output/statsfm.js';
@@ -167,6 +170,7 @@ app.get('/', (c) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="alternate" type="application/rss+xml" title="${config.ownerName} · infovore" href="/feed.xml">
 <title>infovore · ${config.ownerName}</title>
 <style>
   body { background: #0d0e11; color: #e8eaed; margin: 0 auto; padding: 32px 16px 48px;
@@ -191,7 +195,7 @@ app.get('/', (c) => {
 <h1>infovore</h1>
 <p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8)${updated ? ` · last updated ${updated}` : ''}.</p>
 ${body}
-<footer><a href="https://github.com/skyhong2002/infovore">source</a> · <a href="/status">json</a></footer>
+<footer><a href="/profile">profile</a> · <a href="/now">now</a> · <a href="/wrapped">wrapped</a> · <a href="/feed.xml">rss</a> · <a href="/status">status</a> · <a href="https://github.com/skyhong2002/infovore">source</a></footer>
 </body>
 </html>`);
 });
@@ -208,15 +212,86 @@ app.get('/status', (c) => {
   });
   return c.json({
     owner: config.ownerName,
-    database: { activities: repository.countActivities(), latestRuns: repository.latestRuns() },
+    database: { activities: repository.countPublicActivities(), latestRuns: repository.latestRuns() },
     cards: sections.flatMap((s) => s.cards).map((n) => `/card/${n}.svg`),
     sources,
   });
 });
 
 app.get('/api/activities.json', (c) => {
-  const limit = Number(c.req.query('limit') ?? 100);
-  return c.json({ data: repository.listActivities(limit) });
+  const page = repository.queryActivities({
+    limit: Number(c.req.query('limit') ?? 100), offset: Number(c.req.query('offset') ?? 0),
+    source: c.req.query('source'), kind: c.req.query('kind'), status: c.req.query('status'),
+    query: c.req.query('q'), since: c.req.query('since'), until: c.req.query('until'),
+  });
+  return c.json(page);
+});
+
+app.get('/feed.json', (c) => c.json(repository.queryActivities({ limit: Number(c.req.query('limit') ?? 100) })));
+
+app.get('/feed.xml', (c) => {
+  c.header('Content-Type', 'application/rss+xml; charset=UTF-8');
+  return c.body(activityRss(repository.listActivities(100), config.publicBaseUrl, config.ownerName));
+});
+
+app.get('/profile', (c) => c.html(profilePage(
+  config.ownerName, repository.countPublicActivities(), repository.countBySource(), repository.listActivities(12)
+)));
+
+function uniqueItems<T extends { source: string; sourceItemId: string | null; title: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.source}:${item.sourceItemId ?? item.title.toLocaleLowerCase('en-US')}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+app.get('/now', (c) => {
+  const now = new Date().toISOString();
+  const current = uniqueItems(repository.listActivities(500).filter((item) => ['current', 'reading', 'watching', 'playing'].includes(item.status ?? ''))).slice(0, 12);
+  const upcoming = uniqueItems(repository.queryActivities({ kind: 'event', since: now, limit: 100 }).data).slice(0, 12);
+  const recent = repository.queryActivities({ until: now, limit: 24 }).data;
+  return c.html(nowPage(config.ownerName, current, upcoming, recent));
+});
+
+function requestedYear(value: string | undefined): number {
+  const year = Number(value ?? new Date().getUTCFullYear());
+  if (!Number.isInteger(year) || year < 2000 || year > 2200) throw new Error('year must be between 2000 and 2200');
+  return year;
+}
+
+app.get('/api/wrapped/:file{[0-9]{4}\\.json}', (c) => {
+  try { return c.json(repository.wrapped(requestedYear(c.req.param('file').replace(/\.json$/, '')))); }
+  catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 400); }
+});
+
+app.get('/wrapped', (c) => c.redirect(`/wrapped/${new Date().getUTCFullYear()}`));
+app.get('/wrapped/:year', (c) => {
+  try { return c.html(wrappedPage(config.ownerName, repository.wrapped(requestedYear(c.req.param('year'))))); }
+  catch (error) { return c.text(error instanceof Error ? error.message : String(error), 400); }
+});
+
+app.options('/mcp', (c) => {
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id, Last-Event-ID');
+  c.header('Access-Control-Expose-Headers', 'MCP-Session-Id, MCP-Protocol-Version');
+  return c.body(null, 204);
+});
+
+app.all('/mcp', async (c) => {
+  const expectedHost = new URL(config.publicBaseUrl).host;
+  const host = c.req.header('host') ?? '';
+  if (host !== expectedHost && !/^localhost:\d+$/.test(host) && !/^127\.0\.0\.1:\d+$/.test(host)) {
+    return c.json({ error: 'Invalid Host header' }, 421);
+  }
+  const response = await handleMcpRequest(repository, c.req.raw);
+  const headers = new Headers(response.headers);
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('Access-Control-Expose-Headers', 'MCP-Session-Id, MCP-Protocol-Version');
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 });
 
 app.get('/api/:file{[a-z-]+\\.json}', (c) => {
@@ -284,9 +359,11 @@ app.get('/healthz', (c) => {
   return c.json({ status, maxSourceAgeHours: config.maxSourceAgeHours, sources }, status === 'unhealthy' ? 503 : 200);
 });
 
-serve({ fetch: app.fetch, port: config.port }, (info) => {
-  console.log(`listening on :${info.port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  serve({ fetch: app.fetch, port: config.port }, (info) => {
+    console.log(`listening on :${info.port}`);
+  });
+}
 
 // Refresh immediately on startup, then on the fixed daily GMT+8 schedule in
 // config.refreshTimes (default 06:00 & 18:00) rather than a fixed interval.
@@ -312,5 +389,9 @@ function scheduleNextRefresh(): void {
   }, nextRunAt() - Date.now());
 }
 
-refreshAll();
-scheduleNextRefresh();
+if (process.env.NODE_ENV !== 'test') {
+  refreshAll();
+  scheduleNextRefresh();
+}
+
+export { app, repository };

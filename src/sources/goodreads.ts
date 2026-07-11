@@ -72,7 +72,7 @@ export async function fetchGoodreads(): Promise<SourceSnapshot> {
       currentlyReadingCount: shelfCount('currently-reading'),
       toReadCount: shelfCount('to-read'),
     },
-    entries: [...parseGoodreadsRss(currentXml, 2, 'reading'), ...parseGoodreadsRss(readXml, 5, 'read')],
+    entries: [...parseGoodreadsRss(currentXml, 20, 'reading'), ...parseGoodreadsRss(readXml, 100, 'read')],
     extra: {},
   };
 }

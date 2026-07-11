@@ -18,8 +18,8 @@ function starString(rating: number): string {
 }
 
 export async function buildGoodreadsCard(data: SourceSnapshot): Promise<string> {
-  const currentlyReading = data.entries.filter((e) => e.status === 'reading');
-  const recentlyRead = data.entries.filter((e) => e.status === 'read');
+  const currentlyReading = data.entries.filter((e) => e.status === 'reading').slice(0, 2);
+  const recentlyRead = data.entries.filter((e) => e.status === 'read').slice(0, 5);
   const nCurrent = currentlyReading.length;
   const [avatar, mark, ...covers] = await Promise.all([
     toDataUri(data.profile.avatar),

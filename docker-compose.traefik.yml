@@ -18,6 +18,17 @@ services:
       - traefik.http.routers.infovore-web.entrypoints=web
       - traefik.http.routers.infovore-web.middlewares=redirect-to-https@file
       - traefik.http.services.infovore.loadbalancer.server.port=3000
+  ingest:
+    ports: !reset []
+    networks:
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.infovore-ingest.rule=(Host(`${DOMAIN}`) || Host(`${LEGACY_DOMAIN:-${DOMAIN}}`)) && PathPrefix(`/api/ingest/`)
+      - traefik.http.routers.infovore-ingest.priority=100
+      - traefik.http.routers.infovore-ingest.entrypoints=websecure
+      - traefik.http.routers.infovore-ingest.tls.certresolver=letsencrypt
+      - traefik.http.services.infovore-ingest.loadbalancer.server.port=3001
 
 networks:
   dokploy-network:

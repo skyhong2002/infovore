@@ -1,7 +1,8 @@
 # infovore
 
-A personal media lifelog — aggregating what I play, watch, read, and listen
-to, rendered as live status cards (and more to come).
+A durable personal lifelog — aggregating what I play, watch, read, listen to,
+and attend, with a public timeline, feeds, status cards, yearly Wrapped, and
+an MCP endpoint for AI tools.
 **[See the cards live →](https://infovore.skyhong.tw)**
 
 <table>
@@ -85,10 +86,17 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 ## Endpoints
 
 - `GET /` — card gallery (responsive HTML)
+- `GET /profile` — public cross-media profile
+- `GET /now` — current media, upcoming events, and recent activity
+- `GET /wrapped/{year}` — annual cross-media recap
 - `GET /status` — service status overview (JSON)
 - `GET /card/{name}.{svg,png,webp}` — a card; `?scale=1..3` for raster (default 2)
 - `GET /api/{source}.json` — a source's normalized `SourceSnapshot` (raw cached data)
 - `GET /api/activities.json?limit=100` — persisted, deduplicated public activity timeline
+- `GET /feed.json` / `GET /feed.xml` — JSON and RSS activity feeds
+- `GET /api/wrapped/{year}.json` — machine-readable annual recap
+- `POST /api/ingest/events` — authenticated private-ingest service (JSON)
+- `POST /mcp` — stateless MCP Streamable HTTP endpoint
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
 
 Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
@@ -107,6 +115,11 @@ Open <http://localhost:3000>. That's it — no other services required.
 The Compose setup mounts a named `infovore-data` volume at `/data`; activity
 history survives image rebuilds and container replacement. For a non-Docker
 run, `DATABASE_PATH` defaults to `./data/infovore.sqlite`.
+
+Compose runs the public app and authenticated ingest boundary as separate
+containers. They share only the SQLite WAL volume. Generate `INGEST_TOKEN`
+with at least 32 random characters before enabling ingestion. The Traefik
+overlay routes only `/api/ingest/*` to the write service.
 
 Set only the sources you use via `SOURCES` in `.env` (e.g. `SOURCES=kitsu,statsfm`);
 the rest are hidden. Every account id/username is an env var — see the comments
@@ -131,16 +144,42 @@ npm run dev   # http://localhost:3000
 npm run check # typecheck + fixture/unit/integration tests
 ```
 
-## Roadmap
+### Ingest an event
 
-Planning, not a commitment — rough order:
+The endpoint accepts one event or `{ "events": [...] }`. Only title, time,
+public event metadata, status, and visibility are persisted; ticket QR codes,
+order numbers, seats, and payment data are not part of the schema.
 
-1. **More sources.** Private sources (ones with no public API/profile) will
-   go through a separate upload/ingest service that turns them into
-   something this app can pull from, rather than baking private scraping
-   into this repo.
-2. **Public profile page and a `/now` page.**
-3. **RSS / JSON feed** of the normalized activity log.
-4. **MCP server** exposing the lifelog as queryable context for AI agents —
-   "what has Sky played/watched/read recently."
-5. **Annual cross-media Wrapped** — a yearly recap spanning every source.
+```sh
+curl -X POST https://infovore.example/api/ingest/events \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Concert",
+    "startAt": "2026-08-01T19:30:00+08:00",
+    "venue": "Concert Hall",
+    "url": "https://kktix.com/events/example",
+    "status": "upcoming"
+  }'
+```
+
+When `url` is a supported public OPENTIX, KKTIX, or Accupass event page, the
+ingest service fills missing schema.org/Open Graph metadata. It never signs in
+to a ticket wallet.
+
+### MCP
+
+Connect a Streamable HTTP MCP client to `https://infovore.example/mcp`.
+Available tools are `get_recent_activities`, `search_lifelog`,
+`get_current_media`, `get_upcoming_events`, and `get_annual_summary`.
+
+## Delivered roadmap
+
+- Separate authenticated ingestion for private/event sources
+- Public profile and `/now`
+- RSS and paginated/filterable JSON feeds
+- MCP Streamable HTTP server for AI agents
+- Annual cross-media Wrapped
+
+See [`TODO.md`](TODO.md) for the verified delivery checklist and deliberate
+external-authorization boundaries.
