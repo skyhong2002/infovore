@@ -234,8 +234,8 @@ test('YouTube keywords segment Unicode, ignore URLs, and count each video once',
   assert.equal(keywords.find((keyword) => keyword.term === 'typescript')?.videos, 2);
 
   const stopWords = extractYoutubeKeywords([
-    { title: 'My full video', description: 'Get more of that here', tags_json: '[]' },
-    { title: 'My full video', description: 'Get more of that here', tags_json: '[]' },
+    { title: 'My full video', description: 'Get more of that here. Follow my Twitter and Discord link.', tags_json: '[]' },
+    { title: 'My full video', description: 'Get more of that here. Follow my Twitter and Discord link.', tags_json: '[]' },
   ]);
   assert.deepEqual(stopWords, []);
 });
