@@ -12,7 +12,7 @@ import { fetchSimkl } from './sources/simkl.js';
 import { fetchGoodreads } from './sources/goodreads.js';
 import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
-import { nowPage, profilePage, wrappedPage } from './output/pages.js';
+import { homePage, nowPage, profilePage, wrappedPage } from './output/pages.js';
 import { handleMcpRequest } from './mcp.js';
 import { buildBackloggdCard } from './output/backloggd.js';
 import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './output/kitsu.js';
@@ -104,8 +104,7 @@ async function refreshAll(): Promise<void> {
 
 const app = new Hono();
 
-// Platform sections for the home page. Cards in one section sit side by
-// side when the viewport is wide enough and stack vertically otherwise.
+// Platform sections for the optional card gallery and status endpoint.
 // URLs derive from config so a self-hosted instance links to its own profiles;
 // only sections whose source is enabled are shown.
 const allSections: { source: string; title: string; url: string; cards: string[] }[] = [
@@ -149,9 +148,26 @@ function lastUpdatedLabel(): string | null {
 }
 
 app.get('/', (c) => {
+  const now = Date.now();
+  const recent = repository.listActivities(500)
+    .filter((activity) => {
+      if (!activity.occurredAt || !['exact', 'day'].includes(activity.occurredAtPrecision)) return true;
+      return Date.parse(activity.occurredAt) <= now;
+    })
+    .slice(0, 100);
+  c.header('Cache-Control', 'no-cache');
+  return c.html(homePage(
+    config.ownerName,
+    recent,
+    repository.countPublicActivities(),
+    lastUpdatedLabel(),
+  ));
+});
+
+app.get('/cards', (c) => {
   const body = sections
     .map((s) => {
-      // Home page uses WebP (≈10× smaller than the SVG for photo-heavy cards,
+      // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,
       // still retina-crisp at 2×); the .svg vector stays available via the link.
       const imgs = s.cards
         .map(
@@ -171,7 +187,7 @@ app.get('/', (c) => {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="alternate" type="application/rss+xml" title="${config.ownerName} · infovore" href="/feed.xml">
-<title>infovore · ${config.ownerName}</title>
+<title>cards · infovore · ${config.ownerName}</title>
 <style>
   body { background: #0d0e11; color: #e8eaed; margin: 0 auto; padding: 32px 16px 48px;
          max-width: 1100px; font-family: system-ui, -apple-system, sans-serif; }
@@ -192,8 +208,8 @@ app.get('/', (c) => {
 </style>
 </head>
 <body>
-<h1>infovore</h1>
-<p class="sub">What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8)${updated ? ` · last updated ${updated}` : ''}.</p>
+<h1>infovore cards</h1>
+<p class="sub"><a href="/">recent activity</a> · What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8)${updated ? ` · last updated ${updated}` : ''}.</p>
 ${body}
 <footer><a href="/profile">profile</a> · <a href="/now">now</a> · <a href="/wrapped">wrapped</a> · <a href="/feed.xml">rss</a> · <a href="/status">status</a> · <a href="https://github.com/skyhong2002/infovore">source</a></footer>
 </body>
@@ -343,8 +359,6 @@ app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
   }
   return c.body(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
 });
-
-app.get('/cards', (c) => c.redirect('/', 301));
 
 app.get('/healthz', (c) => {
   const now = Date.now();

@@ -26,6 +26,22 @@ test('event ingestion requires auth and never exposes private events', async () 
 });
 
 test('profile, now and Wrapped pages render from durable activities', async () => {
+  repository.ingestEntries([{
+    source: 'kitsu', sourceItemId: 'home-entry', kind: 'anime', title: 'Homepage Anime',
+    image: 'https://example.test/home.jpg', status: 'completed',
+    activityAt: '2026-07-01T12:00:00Z', rating: { value: 9, scale: 10 }, extra: { progress: 12 },
+  }], '2026-07-01T13:00:00Z');
+  const home = await app.request('/');
+  assert.equal(home.status, 200);
+  const homeHtml = await home.text();
+  assert.match(homeHtml, /Recent activity/);
+  assert.match(homeHtml, /Homepage Anime/);
+  assert.match(homeHtml, /Kitsu/);
+  assert.match(homeHtml, /every connected platform/);
+  assert.doesNotMatch(homeHtml, /src="\/card\//);
+  const cards = await app.request('/cards');
+  assert.equal(cards.status, 200);
+  assert.match(await cards.text(), /infovore cards/);
   const profile = await app.request('/profile');
   assert.equal(profile.status, 200);
   assert.match(await profile.text(), /Activity archive/);

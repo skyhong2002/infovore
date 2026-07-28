@@ -85,7 +85,8 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 
 ## Endpoints
 
-- `GET /` — card gallery (responsive HTML)
+- `GET /` — recent entries from every source in one chronological timeline
+- `GET /cards` — card gallery (responsive HTML)
 - `GET /profile` — public cross-media profile
 - `GET /now` — current media, upcoming events, and recent activity
 - `GET /wrapped/{year}` — annual cross-media recap
