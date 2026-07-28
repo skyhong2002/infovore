@@ -3,7 +3,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { config } from './config.js';
 import { Repository } from './data/database.js';
-import { enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
+import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
 
 function authorized(auth: string | undefined): boolean {
   if (!config.ingestToken || !auth?.startsWith('Bearer ')) return false;
@@ -27,7 +27,11 @@ export function createIngestApp(repository: Repository): Hono {
       if (!inputs?.length || inputs.length > 50) return c.json({ error: 'Provide between 1 and 50 events' }, 400);
       const entries = [];
       for (const input of inputs) {
-        const enriched = input.url ? await enrichPublicEvent(input.url) : {};
+        // Arbitrary public URLs are retained as references, but only the
+        // allowlisted event platforms are fetched for metadata enrichment.
+        const enriched = input.url && canEnrichPublicEvent(input.url)
+          ? await enrichPublicEvent(input.url)
+          : {};
         const merged = Object.fromEntries(
           Object.entries({ ...enriched, ...input }).filter(([, value]) => value !== undefined && value !== '')
         ) as EventInput;

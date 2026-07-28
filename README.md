@@ -45,7 +45,7 @@ sources/  ──fetch + normalize──▶  data/  ──read-only──▶  out
 The unified model (`src/data/types.ts`):
 
 - **`MediaEntry`** — one normalized activity item: `source`, `kind` (game /
-  anime / manga / movie / show / book / music), `title`, `image`, `status`,
+  anime / manga / movie / show / book / music / event), `title`, `image`, `status`,
   `activityAt`, `rating`, and a small `extra` bag for the long tail that
   doesn't generalize (platform/playtime, episode counts, author, ...).
 - **`SourceSnapshot<TExtra>`** — one refresh cycle's worth of data for a
@@ -147,9 +147,11 @@ npm run check # typecheck + fixture/unit/integration tests
 
 ### Ingest an event
 
-The endpoint accepts one event or `{ "events": [...] }`. Only title, time,
-public event metadata, status, and visibility are persisted; ticket QR codes,
-order numbers, seats, and payment data are not part of the schema.
+The endpoint accepts one manually recorded event or `{ "events": [...] }`.
+Every event requires a public HTTPS image. A stable `id` lets later edits
+(including `upcoming` → `attended`) update the same timeline entry. Free-form
+`tags` are optional manual labels, not separate event types or sources. Ticket
+QR codes, order numbers, seats, and payment data are not part of the schema.
 
 ```sh
 curl -X POST https://infovore.example/api/ingest/events \
@@ -158,6 +160,8 @@ curl -X POST https://infovore.example/api/ingest/events \
   -d '{
     "title": "Concert",
     "startAt": "2026-08-01T19:30:00+08:00",
+    "image": "https://example.com/concert-poster.webp",
+    "tags": ["音樂會"],
     "venue": "Concert Hall",
     "url": "https://kktix.com/events/example",
     "status": "upcoming"
@@ -165,8 +169,9 @@ curl -X POST https://infovore.example/api/ingest/events \
 ```
 
 When `url` is a supported public OPENTIX, KKTIX, or Accupass event page, the
-ingest service fills missing schema.org/Open Graph metadata. It never signs in
-to a ticket wallet.
+ingest service fills missing schema.org/Open Graph metadata. Other public HTTPS
+URLs are saved as references without being fetched. It never signs in to a
+ticket wallet.
 
 ### MCP
 

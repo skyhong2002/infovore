@@ -10,6 +10,8 @@ export interface Rating {
   scale: number; // e.g. {value: 3.5, scale: 5} or {value: 8, scale: 10}
 }
 
+export type ExtraValue = string | number | string[];
+
 export interface MediaEntry {
   // Stable id from the upstream service when one is available. Persistence
   // falls back to a deterministic content key for sources that do not expose
@@ -28,7 +30,7 @@ export interface MediaEntry {
   rating: Rating | null;
   // Long-tail per-entry display bits that don't generalize across sources
   // (platform/playtime, episode counts, author, ...).
-  extra: Record<string, string | number>;
+  extra: Record<string, ExtraValue>;
 }
 
 export type ActivityVisibility = 'public' | 'private';
@@ -50,7 +52,7 @@ export interface Activity {
   occurredAtPrecision: ActivityTimePrecision;
   rating: Rating | null;
   visibility: ActivityVisibility;
-  extra: Record<string, string | number>;
+  extra: Record<string, ExtraValue>;
   firstSeenAt: string;
   lastSeenAt: string;
 }

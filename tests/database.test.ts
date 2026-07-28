@@ -68,3 +68,22 @@ test('query filters, privacy, pagination and Wrapped use persisted history', () 
   assert.deepEqual(wrapped.byKind, { event: 1 });
   repository.close();
 });
+
+test('manual event edits update status and occurrence instead of duplicating', () => {
+  const repository = new Repository(':memory:');
+  const event = {
+    source: 'events', sourceItemId: 'stable-event', visibility: 'public' as const,
+    kind: 'event' as const, title: 'An event', image: 'https://example.test/event.webp',
+    status: 'upcoming', activityAt: '2026-07-29', rating: null, extra: { tags: ['活動'] },
+  };
+  assert.deepEqual(repository.ingestEntries([event], '2026-07-28T00:00:00Z'), { inserted: 1, updated: 0 });
+  assert.deepEqual(repository.ingestEntries([
+    { ...event, status: 'attended', activityAt: '2026-07-29T11:00:00Z' },
+  ], '2026-07-30T00:00:00Z'), { inserted: 0, updated: 1 });
+  const stored = repository.listActivities();
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].status, 'attended');
+  assert.equal(stored[0].type, 'event.attended');
+  assert.equal(stored[0].occurredAt, '2026-07-29T11:00:00.000Z');
+  repository.close();
+});

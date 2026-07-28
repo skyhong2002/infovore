@@ -129,9 +129,12 @@ export class Repository {
           visibility, extra_json, first_seen_at, last_seen_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
-          title=excluded.title, image=excluded.image, status=excluded.status,
+          dedupe_key=excluded.dedupe_key, type=excluded.type, title=excluded.title,
+          image=excluded.image, status=excluded.status,
+          occurred_at=excluded.occurred_at, occurred_precision=excluded.occurred_precision,
           rating_value=excluded.rating_value, rating_scale=excluded.rating_scale,
-          extra_json=excluded.extra_json, last_seen_at=excluded.last_seen_at
+          visibility=excluded.visibility, extra_json=excluded.extra_json,
+          last_seen_at=excluded.last_seen_at
       `);
       for (const entry of snapshot.entries) {
         const activity = activityFromEntry(entry, completedAt);
@@ -232,7 +235,7 @@ export class Repository {
       occurredAtPrecision: row.occurred_precision as Activity['occurredAtPrecision'],
       rating: row.rating_value === null ? null : { value: Number(row.rating_value), scale: Number(row.rating_scale) },
       visibility: row.visibility as Activity['visibility'],
-      extra: JSON.parse(String(row.extra_json)) as Record<string, string | number>,
+      extra: JSON.parse(String(row.extra_json)) as Activity['extra'],
       firstSeenAt: String(row.first_seen_at), lastSeenAt: String(row.last_seen_at),
     };
   }
@@ -248,7 +251,9 @@ export class Repository {
         visibility, extra_json, first_seen_at, last_seen_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
-        title=excluded.title, image=excluded.image, status=excluded.status,
+        dedupe_key=excluded.dedupe_key, type=excluded.type, title=excluded.title,
+        image=excluded.image, status=excluded.status,
+        occurred_at=excluded.occurred_at, occurred_precision=excluded.occurred_precision,
         rating_value=excluded.rating_value, rating_scale=excluded.rating_scale,
         visibility=excluded.visibility, extra_json=excluded.extra_json,
         last_seen_at=excluded.last_seen_at

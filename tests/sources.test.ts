@@ -67,10 +67,16 @@ test('stats.fm fixture keeps leaderboard data outside dated activities', () => {
 });
 
 test('event normalization keeps only public-safe metadata and rejects arbitrary enrichment hosts', async () => {
-  const event = normalizeEvent({ title: 'Concert', startAt: '2099-01-01T12:00:00Z', venue: 'Hall', organizer: 'Orchestra', platform: 'KKTIX' });
+  const event = normalizeEvent({
+    title: 'Concert', startAt: '2099-01-01', image: 'https://example.test/concert.webp',
+    tags: ['音樂會', '音樂會'], venue: 'Hall', organizer: 'Orchestra', platform: 'KKTIX',
+  });
   assert.equal(event.kind, 'event');
   assert.equal(event.status, 'upcoming');
-  assert.deepEqual(event.extra, { venue: 'Hall', organizer: 'Orchestra', platform: 'KKTIX' });
+  assert.equal(event.activityAt, '2099-01-01');
+  assert.equal(event.image, 'https://example.test/concert.webp');
+  assert.deepEqual(event.extra, { venue: 'Hall', organizer: 'Orchestra', platform: 'KKTIX', tags: ['音樂會'] });
+  assert.throws(() => normalizeEvent({ title: 'No poster', startAt: '2099-01-01' }), /image is required/);
   await assert.rejects(() => enrichPublicEvent('https://127.0.0.1/private'), /supported public/);
 });
 

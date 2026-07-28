@@ -23,3 +23,15 @@ test('human date labels remain queryable without inventing a year', () => {
   assert.equal(activity.occurredAt, 'Jul 7');
   assert.equal(activity.occurredAtPrecision, 'label');
 });
+
+test('manual events retain one stable id across status and date edits', () => {
+  const event: MediaEntry = {
+    source: 'events', sourceItemId: 'my-event', kind: 'event', title: 'My event',
+    image: 'https://example.test/event.webp', status: 'upcoming', activityAt: '2026-07-29',
+    rating: null, extra: { tags: ['實境遊戲'] },
+  };
+  const upcoming = activityFromEntry(event);
+  const attended = activityFromEntry({ ...event, status: 'attended', activityAt: '2026-07-29T11:00:00Z' });
+  assert.equal(upcoming.id, attended.id);
+  assert.equal(upcoming.occurredAtPrecision, 'day');
+});

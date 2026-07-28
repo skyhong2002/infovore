@@ -12,14 +12,22 @@ test('event ingestion requires auth and never exposes private events', async () 
   const ingest = async (body: Record<string, unknown>) => ingestApp.request('/api/ingest/events', {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer test-token-with-at-least-32-characters' }, body: JSON.stringify(body),
   });
-  const publicResponse = await ingest({ id: 'public-event', title: 'Future Concert', startAt: '2099-08-01T12:00:00Z', venue: 'Public Hall', status: 'upcoming' });
+  const publicResponse = await ingest({
+    id: 'public-event', title: 'Future Concert', startAt: '2099-08-01T12:00:00Z',
+    image: 'https://example.test/concert.webp', tags: ['音樂會'],
+    venue: 'Public Hall', url: 'https://example.test/events/concert', status: 'upcoming',
+  });
   assert.equal(publicResponse.status, 201);
-  const privateResponse = await ingest({ id: 'private-event', title: 'Private Ticket', startAt: '2099-09-01T12:00:00Z', visibility: 'private' });
+  const privateResponse = await ingest({
+    id: 'private-event', title: 'Private Ticket', startAt: '2099-09-01T12:00:00Z',
+    image: 'https://example.test/private.webp', visibility: 'private',
+  });
   assert.equal(privateResponse.status, 201);
 
   const timeline = await (await app.request('/api/activities.json?kind=event&limit=1&offset=0')).json() as { total: number; data: Array<{ title: string }> };
   assert.equal(timeline.total, 1);
   assert.equal(timeline.data[0].title, 'Future Concert');
+  assert.deepEqual((timeline as any).data[0].extra.tags, ['音樂會']);
   const feed = await (await app.request('/feed.xml')).text();
   assert.match(feed, /Future Concert/);
   assert.doesNotMatch(feed, /Private Ticket/);

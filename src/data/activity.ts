@@ -20,9 +20,12 @@ function parseOccurredAt(value: string): { value: string | null; precision: Acti
 
 export function activityFromEntry(entry: MediaEntry, seenAt = new Date().toISOString()): Activity {
   const occurred = parseOccurredAt(entry.activityAt);
-  // A source id identifies the work/library entry; timestamp + status retain
-  // distinct progress/completion events when a source exposes them.
-  const identity = entry.sourceItemId
+  // A manually recorded event is one durable item: editing its date or moving
+  // it from upcoming to attended updates the same entry. Synced media sources
+  // still retain distinct progress/completion moments.
+  const identity = entry.source === 'events' && entry.sourceItemId
+    ? [entry.source, entry.sourceItemId]
+    : entry.sourceItemId
     ? [entry.source, entry.sourceItemId, entry.activityAt, entry.status ?? '']
     : [entry.source, entry.kind, canonical(entry.title), entry.activityAt, entry.status ?? ''];
   const dedupeKey = identity.join('\u001f');
