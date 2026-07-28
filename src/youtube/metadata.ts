@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import type { Repository } from '../data/database.js';
-import type { YoutubeVideoMetadata } from './types.js';
+import type { YoutubeChannelMetadata, YoutubeVideoMetadata } from './types.js';
 
 interface YoutubeApiItem {
   id?: string;
@@ -16,6 +16,14 @@ interface YoutubeApiItem {
     categoryId?: string;
   };
   contentDetails?: { duration?: string };
+}
+
+interface YoutubeChannelApiItem {
+  id?: string;
+  snippet?: {
+    title?: string;
+    thumbnails?: Record<string, { url?: string }>;
+  };
 }
 
 function durationSeconds(value: string | undefined): number | null {
@@ -34,6 +42,11 @@ function thumbnail(item: YoutubeApiItem): string {
   const values = item.snippet?.thumbnails ?? {};
   return values.maxres?.url ?? values.standard?.url ?? values.high?.url
     ?? values.medium?.url ?? values.default?.url ?? '';
+}
+
+function channelThumbnail(item: YoutubeChannelApiItem): string {
+  const values = item.snippet?.thumbnails ?? {};
+  return values.high?.url ?? values.medium?.url ?? values.default?.url ?? '';
 }
 
 function metadataHash(value: Omit<YoutubeVideoMetadata, 'metadataHash'>): string {
@@ -95,5 +108,47 @@ export async function enrichYoutubeMetadata(repository: Repository, limit = 500)
   if (!ids.length || !config.youtube.apiKey) return 0;
   const metadata = await fetchYoutubeMetadata(ids);
   repository.upsertYoutubeVideoMetadata(metadata);
+  return metadata.length;
+}
+
+export async function fetchYoutubeChannelMetadata(
+  channelIds: string[],
+  apiKey = config.youtube.apiKey,
+  fetchImpl: typeof fetch = fetch,
+): Promise<YoutubeChannelMetadata[]> {
+  if (!apiKey) throw new Error('YOUTUBE_API_KEY is required for YouTube channel metadata enrichment');
+  const output: YoutubeChannelMetadata[] = [];
+  for (let index = 0; index < channelIds.length; index += 50) {
+    const batch = channelIds.slice(index, index + 50);
+    const url = new URL('https://www.googleapis.com/youtube/v3/channels');
+    url.searchParams.set('part', 'snippet');
+    url.searchParams.set('id', batch.join(','));
+    url.searchParams.set('key', apiKey);
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) {
+      throw new Error(`YouTube Channels API: HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
+    }
+    const body = await response.json() as { items?: YoutubeChannelApiItem[] };
+    const found = new Map((body.items ?? [])
+      .filter((item): item is YoutubeChannelApiItem & { id: string } => Boolean(item.id))
+      .map((item) => [item.id, {
+        channelId: item.id,
+        name: item.snippet?.title ?? '',
+        thumbnailUrl: channelThumbnail(item),
+      }]));
+    output.push(...batch.map((channelId) => found.get(channelId) ?? {
+      channelId,
+      name: '',
+      thumbnailUrl: '',
+    }));
+  }
+  return output;
+}
+
+export async function enrichYoutubeChannelMetadata(repository: Repository, limit = 500): Promise<number> {
+  const ids = repository.youtubeChannelsNeedingMetadata(limit);
+  if (!ids.length || !config.youtube.apiKey) return 0;
+  const metadata = await fetchYoutubeChannelMetadata(ids);
+  repository.upsertYoutubeChannelMetadata(metadata);
   return metadata.length;
 }

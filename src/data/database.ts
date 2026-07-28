@@ -4,6 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { activityFromEntry } from './activity.js';
 import type { Activity, SourceSnapshot } from './types.js';
 import type {
+  YoutubeChannelMetadata,
+  YoutubeChannelSummary,
+  YoutubeChannelTrendFrame,
   YoutubeDashboardData,
   YoutubeCapturedWatch,
   YoutubeCaptureResult,
@@ -130,6 +133,8 @@ export class Repository {
     if (current.user_version < 2) this.migrateYoutube();
     const afterYoutube = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterYoutube.user_version < 3) this.migrateYoutubeActivityTypes();
+    const afterActivityTypes = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterActivityTypes.user_version < 4) this.migrateYoutubeChannels();
   }
 
   private migrateYoutube(): void {
@@ -271,6 +276,21 @@ export class Repository {
       ALTER TABLE youtube_search_events ADD COLUMN activity_type TEXT NOT NULL DEFAULT 'search'
         CHECK (activity_type IN ('search', 'visit', 'other'));
       PRAGMA user_version = 3;
+      COMMIT;
+    `);
+  }
+
+  private migrateYoutubeChannels(): void {
+    this.db.exec(`
+      BEGIN;
+      CREATE TABLE IF NOT EXISTS youtube_channels (
+        channel_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        thumbnail_url TEXT NOT NULL,
+        metadata_fetched_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS youtube_channels_fetched_idx ON youtube_channels(metadata_fetched_at);
+      PRAGMA user_version = 4;
       COMMIT;
     `);
   }
@@ -731,14 +751,88 @@ export class Repository {
       ${where}
       GROUP BY day ORDER BY day
     `).all(...params) as Array<Record<string, string | number>>;
-    const topChannels = this.db.prepare(`
-      SELECT w.channel_id, COALESCE(w.channel_title, v.channel_title, 'Unknown channel') name,
-        COUNT(*) watches, COALESCE(SUM(v.duration_seconds), 0) duration_seconds
-      FROM youtube_watch_events w LEFT JOIN youtube_videos v ON v.video_id=w.video_id
-      ${where}
-      GROUP BY COALESCE(w.channel_id, w.channel_title, 'unknown')
-      ORDER BY watches DESC, duration_seconds DESC, name LIMIT 12
+    const channelId = 'COALESCE(w.channel_id, v.channel_id)';
+    const channelName = "COALESCE(NULLIF(c.name, ''), NULLIF(w.channel_title, ''), NULLIF(v.channel_title, ''))";
+    const channelKey = `COALESCE(${channelId}, ${channelName})`;
+    const topChannelRows = this.db.prepare(`
+      WITH aggregated AS (
+        SELECT ${channelId} channel_id, ${channelName} name,
+          COALESCE(c.thumbnail_url, '') thumbnail_url,
+          COUNT(*) watches, COALESCE(SUM(v.duration_seconds), 0) duration_seconds
+        FROM youtube_watch_events w
+        LEFT JOIN youtube_videos v ON v.video_id=w.video_id
+        LEFT JOIN youtube_channels c ON c.channel_id=${channelId}
+        ${where}
+          AND ${channelName} IS NOT NULL
+          AND LOWER(TRIM(${channelName}))<>'unknown channel'
+        GROUP BY ${channelKey}
+      ), ranked AS (
+        SELECT *,
+          ROW_NUMBER() OVER (ORDER BY watches DESC, duration_seconds DESC, name) watch_rank,
+          ROW_NUMBER() OVER (ORDER BY duration_seconds DESC, watches DESC, name) duration_rank
+        FROM aggregated
+      )
+      SELECT channel_id, name, thumbnail_url, watches, duration_seconds
+      FROM ranked
+      WHERE watch_rank<=12 OR duration_rank<=12
+      ORDER BY duration_seconds DESC, watches DESC, name
     `).all(...params) as Array<Record<string, string | number | null>>;
+    const topChannels: YoutubeChannelSummary[] = topChannelRows.map((row) => ({
+      channelId: row.channel_id === null ? null : String(row.channel_id),
+      name: String(row.name),
+      thumbnailUrl: String(row.thumbnail_url),
+      watches: Number(row.watches),
+      durationSeconds: Number(row.duration_seconds),
+    }));
+    const trendChannels = [...topChannels]
+      .sort((a, b) => b.durationSeconds - a.durationSeconds || b.watches - a.watches)
+      .slice(0, 8);
+    const trendKeys = trendChannels.map((channel) => channel.channelId ?? channel.name);
+    let channelTrend: YoutubeChannelTrendFrame[] = [];
+    if (trendKeys.length) {
+      const period = range === 'all'
+        ? "strftime('%Y-%m', w.watched_at, '+8 hours')"
+        : range === '90d'
+          ? "strftime('%Y-%W', w.watched_at, '+8 hours')"
+          : "strftime('%Y-%m-%d', w.watched_at, '+8 hours')";
+      const trendRows = this.db.prepare(`
+        SELECT ${period} period, ${channelId} channel_id, ${channelName} name,
+          COALESCE(c.thumbnail_url, '') thumbnail_url,
+          COUNT(*) watches, COALESCE(SUM(v.duration_seconds), 0) duration_seconds
+        FROM youtube_watch_events w
+        LEFT JOIN youtube_videos v ON v.video_id=w.video_id
+        LEFT JOIN youtube_channels c ON c.channel_id=${channelId}
+        ${where}
+          AND ${channelKey} IN (${trendKeys.map(() => '?').join(',')})
+        GROUP BY period, ${channelKey}
+        ORDER BY period, duration_seconds DESC
+      `).all(...params, ...trendKeys) as Array<Record<string, string | number | null>>;
+      const cumulative = new Map<string, YoutubeChannelSummary>();
+      const frames = new Map<string, YoutubeChannelSummary[]>();
+      for (let index = 0; index < trendRows.length; index++) {
+        const row = trendRows[index];
+        const key = row.channel_id === null ? String(row.name) : String(row.channel_id);
+        const previous = cumulative.get(key);
+        cumulative.set(key, {
+          channelId: row.channel_id === null ? null : String(row.channel_id),
+          name: String(row.name),
+          thumbnailUrl: String(row.thumbnail_url),
+          watches: (previous?.watches ?? 0) + Number(row.watches),
+          durationSeconds: (previous?.durationSeconds ?? 0) + Number(row.duration_seconds),
+        });
+        const periodKey = String(row.period);
+        frames.set(periodKey, []);
+        const nextPeriod = trendRows[index + 1]?.period;
+        if (nextPeriod !== row.period) {
+          frames.set(periodKey, [...cumulative.values()]
+            .sort((a, b) => b.durationSeconds - a.durationSeconds || b.watches - a.watches)
+            .slice(0, 8));
+        }
+      }
+      channelTrend = [...frames.entries()]
+        .filter(([, channels]) => channels.length)
+        .map(([periodKey, channels]) => ({ period: periodKey, channels }));
+    }
     const topics = this.db.prepare(`
       SELECT t.slug, t.name, COUNT(*) watches, COALESCE(SUM(v.duration_seconds), 0) duration_seconds
       FROM youtube_watch_events w
@@ -815,15 +909,13 @@ export class Repository {
         day: String(row.day), watches: Number(row.watches), durationSeconds: Number(row.duration_seconds),
       })),
       lengthBuckets: lengthBuckets.map((row) => ({ label: String(row.label), videos: Number(row.videos) })),
-      topChannels: topChannels.map((row) => ({
-        channelId: row.channel_id === null ? null : String(row.channel_id),
-        name: String(row.name), watches: Number(row.watches), durationSeconds: Number(row.duration_seconds),
-      })),
+      topChannels,
+      channelTrend,
       topics: topics.map((row) => ({
         slug: String(row.slug), name: String(row.name),
         watches: Number(row.watches), durationSeconds: Number(row.duration_seconds),
       })),
-      keywords: extractYoutubeKeywords(keywordRows),
+      keywords: extractYoutubeKeywords(keywordRows, 40),
       recent: recent.map((row) => ({
         videoId: row.video_id === null ? null : String(row.video_id),
         title: String(row.title), url: String(row.url),
@@ -872,6 +964,43 @@ export class Repository {
           video.durationSeconds, video.publishedAt, video.categoryId,
           video.availability, video.metadataHash, fetchedAt
         );
+      }
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  youtubeChannelsNeedingMetadata(limit = 500): string[] {
+    const safeLimit = Math.max(1, Math.min(5000, Math.floor(limit)));
+    const rows = this.db.prepare(`
+      SELECT DISTINCT v.channel_id
+      FROM youtube_videos v
+      LEFT JOIN youtube_channels c ON c.channel_id=v.channel_id
+      WHERE v.channel_id IS NOT NULL AND c.metadata_fetched_at IS NULL
+      ORDER BY v.channel_id
+      LIMIT ?
+    `).all(safeLimit) as Array<{ channel_id: string }>;
+    return rows.map((row) => row.channel_id);
+  }
+
+  upsertYoutubeChannelMetadata(
+    channels: YoutubeChannelMetadata[],
+    fetchedAt = new Date().toISOString(),
+  ): void {
+    const statement = this.db.prepare(`
+      INSERT INTO youtube_channels(channel_id, name, thumbnail_url, metadata_fetched_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(channel_id) DO UPDATE SET
+        name=excluded.name,
+        thumbnail_url=excluded.thumbnail_url,
+        metadata_fetched_at=excluded.metadata_fetched_at
+    `);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const channel of channels) {
+        statement.run(channel.channelId, channel.name, channel.thumbnailUrl, fetchedAt);
       }
       this.db.exec('COMMIT');
     } catch (error) {

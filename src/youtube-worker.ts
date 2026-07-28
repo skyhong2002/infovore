@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { Repository } from './data/database.js';
 import { classifyYoutubeVideos } from './youtube/ai.js';
-import { enrichYoutubeMetadata } from './youtube/metadata.js';
+import { enrichYoutubeChannelMetadata, enrichYoutubeMetadata } from './youtube/metadata.js';
 import { runYoutubePortabilityStep } from './youtube/portability.js';
 
 const repository = new Repository(config.databasePath);
@@ -13,9 +13,16 @@ async function run(): Promise<void> {
   try {
     const portability = await runYoutubePortabilityStep(repository);
     const metadata = await enrichYoutubeMetadata(repository);
+    const channelMetadata = await enrichYoutubeChannelMetadata(repository);
     const classified = await classifyYoutubeVideos(repository);
     repository.setYoutubeSyncState('last_error', '');
-    console.log(JSON.stringify({ at: new Date().toISOString(), portability, metadata, classified }));
+    console.log(JSON.stringify({
+      at: new Date().toISOString(),
+      portability,
+      metadata,
+      channelMetadata,
+      classified,
+    }));
   } catch (error) {
     const message = error instanceof Error ? error.stack ?? error.message : String(error);
     repository.setYoutubeSyncState('last_error', message.slice(0, 2000));

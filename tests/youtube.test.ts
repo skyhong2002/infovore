@@ -9,7 +9,7 @@ import {
   type YoutubeAiClient,
 } from '../src/youtube/ai.js';
 import { decryptPrivateValue, encryptPrivateValue } from '../src/youtube/crypto.js';
-import { fetchYoutubeMetadata } from '../src/youtube/metadata.js';
+import { fetchYoutubeChannelMetadata, fetchYoutubeMetadata } from '../src/youtube/metadata.js';
 import { extractYoutubeKeywords } from '../src/youtube/keywords.js';
 import { normalizeYoutubeCapture } from '../src/youtube/capture.js';
 import { runYoutubePortabilityStep } from '../src/youtube/portability.js';
@@ -208,12 +208,22 @@ test('YouTube imports are idempotent, aggregate-only, and preserve duration sema
       availability: 'available', metadataHash: 'metadata-v1',
     };
     repository.upsertYoutubeVideoMetadata([metadata]);
+    assert.deepEqual(repository.youtubeChannelsNeedingMetadata(), ['channel-one']);
+    repository.upsertYoutubeChannelMetadata([{
+      channelId: 'channel-one',
+      name: 'Channel One',
+      thumbnailUrl: 'https://yt3.ggpht.com/channel-one',
+    }]);
+    assert.deepEqual(repository.youtubeChannelsNeedingMetadata(), []);
     const dashboard = repository.youtubeDashboard('all', new Date('2026-07-29T00:00:00Z'));
     assert.equal(dashboard.stats.watchEvents, 3);
     assert.equal(dashboard.stats.uniqueVideos, 2);
     assert.equal(dashboard.stats.openedDurationSeconds, 1200);
     assert.equal(dashboard.stats.actualWatchedSeconds, null);
     assert.equal(dashboard.topChannels[0].name, 'Channel One');
+    assert.equal(dashboard.topChannels[0].thumbnailUrl, 'https://yt3.ggpht.com/channel-one');
+    assert.ok(dashboard.topChannels.every((channel) => channel.name !== 'Unknown channel'));
+    assert.equal(dashboard.channelTrend.at(-1)?.channels[0].name, 'Channel One');
     assert.equal(dashboard.recent.length, 2);
     assert.ok(dashboard.keywords.some((keyword) => keyword.term === 'typescript'));
     const wrapped = repository.wrapped(2026);
@@ -338,6 +348,36 @@ test('YouTube metadata fetches in batches of 50 and retains unavailable videos',
   await assert.rejects(
     fetchYoutubeMetadata(['video-1'], 'test-api-key', failingFetch),
     /YouTube Data API: HTTP 403: quota exhausted/,
+  );
+});
+
+test('YouTube channel metadata fetches avatars in batches and caches missing channels', async () => {
+  const ids = Array.from({ length: 51 }, (_, index) => `channel-${index + 1}`);
+  const requests: string[][] = [];
+  const fetchImpl = (async (input: string | URL | Request) => {
+    const requested = new URL(String(input)).searchParams.get('id')!.split(',');
+    requests.push(requested);
+    const foundId = requested[0];
+    return new Response(JSON.stringify({
+      items: [{
+        id: foundId,
+        snippet: {
+          title: `Channel ${foundId}`,
+          thumbnails: { high: { url: `https://yt3.ggpht.com/${foundId}` } },
+        },
+      }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  const metadata = await fetchYoutubeChannelMetadata(ids, 'test-api-key', fetchImpl);
+  assert.deepEqual(requests.map((batch) => batch.length), [50, 1]);
+  assert.equal(metadata.length, 51);
+  assert.equal(metadata[0].thumbnailUrl, 'https://yt3.ggpht.com/channel-1');
+  assert.deepEqual(metadata[1], { channelId: 'channel-2', name: '', thumbnailUrl: '' });
+
+  const failingFetch = (async () => new Response('quota exhausted', { status: 403 })) as typeof fetch;
+  await assert.rejects(
+    fetchYoutubeChannelMetadata(['channel-1'], 'test-api-key', failingFetch),
+    /YouTube Channels API: HTTP 403: quota exhausted/,
   );
 });
 

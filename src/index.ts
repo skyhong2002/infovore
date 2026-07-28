@@ -315,7 +315,7 @@ app.get('/platforms/:source', (c) => {
     const range: YoutubeRange = ['7d', '28d', '90d', 'all'].includes(requestedRange)
       ? requestedRange as YoutubeRange
       : '28d';
-    const sort = c.req.query('sort') === 'duration' ? 'duration' : 'watches';
+    const sort = c.req.query('sort') === 'watches' ? 'watches' : 'duration';
     c.header('Cache-Control', 'no-cache');
     return c.html(youtubeDashboardPage(config.ownerName, repository.youtubeDashboard(range), sort));
   }

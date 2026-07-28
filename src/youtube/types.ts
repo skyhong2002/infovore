@@ -77,6 +77,12 @@ export interface YoutubeVideoMetadata {
   metadataHash: string;
 }
 
+export interface YoutubeChannelMetadata {
+  channelId: string;
+  name: string;
+  thumbnailUrl: string;
+}
+
 export interface YoutubeRecentVideo {
   videoId: string | null;
   title: string;
@@ -93,8 +99,16 @@ export interface YoutubeRecentVideo {
 export interface YoutubeChannelSummary {
   channelId: string | null;
   name: string;
+  thumbnailUrl: string;
   watches: number;
   durationSeconds: number;
+}
+
+export type YoutubeChannelTrendEntry = YoutubeChannelSummary;
+
+export interface YoutubeChannelTrendFrame {
+  period: string;
+  channels: YoutubeChannelTrendEntry[];
 }
 
 export interface YoutubeTopicSummary {
@@ -135,6 +149,7 @@ export interface YoutubeDashboardData {
   daily: YoutubeDailySummary[];
   lengthBuckets: YoutubeLengthBucket[];
   topChannels: YoutubeChannelSummary[];
+  channelTrend: YoutubeChannelTrendFrame[];
   topics: YoutubeTopicSummary[];
   keywords: YoutubeKeyword[];
   recent: YoutubeRecentVideo[];

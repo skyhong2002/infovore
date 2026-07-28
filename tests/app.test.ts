@@ -156,6 +156,13 @@ test('YouTube exposes projections while raw watch and search history stay privat
   assert.equal('watchedAt' in recent.data[0], false);
   assert.equal('actualWatchedSeconds' in recent.data[0], false);
   assert.doesNotMatch(JSON.stringify(recent), /Private Community Post|never expose this search/);
+  const dashboardPage = await app.request('/platforms/youtube');
+  const dashboardHtml = await dashboardPage.text();
+  assert.match(dashboardHtml, /href="\?range=28d&sort=duration" aria-current="page"/);
+  assert.match(dashboardHtml, /data-chase-range/);
+  assert.match(dashboardHtml, /class="yt-keywords"/);
+  assert.match(dashboardHtml, /class="yt-video-media"/);
+  assert.doesNotMatch(dashboardHtml, /Unknown channel|never expose this search/);
   const health = await app.request('/healthz');
   assert.equal(health.status, 200);
   assert.match(await health.text(), /"source":"youtube","fresh":true/);
