@@ -23,6 +23,15 @@
   "content_scripts": [
     {
       "matches": [
+        "https://infovore.skyhong.tw/platforms/youtube*"
+      ],
+      "js": [
+        "dashboard.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
         "https://www.youtube.com/*"
       ],
       "js": [

@@ -145,6 +145,7 @@ function channelChase(data: YoutubeDashboardData): string {
 const dashboardStyles = `
   .yt-range{align-items:center;border-bottom:1px solid var(--line);display:flex;gap:4px;margin-bottom:28px;overflow-x:auto;padding-bottom:12px}
   .yt-range a{border-radius:6px;color:var(--muted);font-size:12px;padding:7px 10px;text-decoration:none;white-space:nowrap}.yt-range a[aria-current=page]{background:#f2f4f7;color:#111}
+  .yt-import-control{align-items:center;border-bottom:1px solid var(--line);display:flex;gap:12px;margin:-16px 0 28px;padding:0 0 16px}.yt-import-control[hidden]{display:none}.yt-import-control button{background:transparent;border:1px solid var(--line-strong);border-radius:5px;color:var(--text);cursor:pointer;font:inherit;font-size:11px;padding:7px 10px}.yt-import-control button:hover{border-color:#6b7584}.yt-import-control button:disabled{cursor:wait;opacity:.65}.yt-import-control span{color:var(--quiet);font-size:11px}
   .yt-stats{border-bottom:1px solid var(--line);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:42px}
   .yt-stat{border-left:1px solid var(--line);padding:16px}.yt-stat:first-child{border-left:0;padding-left:0}.yt-stat strong{display:block;font-size:22px}.yt-stat span{color:var(--quiet);font-size:10px;text-transform:uppercase}
   .yt-section{margin-top:42px}.yt-heading{align-items:end;display:flex;justify-content:space-between;margin-bottom:14px}.yt-heading h2{font-size:18px;margin:0}.yt-heading span{color:var(--quiet);font-size:11px}
@@ -167,6 +168,9 @@ export function youtubeDashboardPage(
   const rangeNav = `<nav class="yt-range" aria-label="Time range">${ranges.map((range) =>
     `<a href="/platforms/youtube?range=${range}&sort=${sort}"${range === data.range ? ' aria-current="page"' : ''}>${rangeLabel(range)}</a>`
   ).join('')}</nav>`;
+  const importControl = `<div class="yt-import-control" data-youtube-import-control hidden>
+    <button type="button">Import progress</button><span aria-live="polite"></span>
+  </div><script>(()=>{const c=document.querySelector('[data-youtube-import-control]');if(!c)return;const b=c.querySelector('button');const s=c.querySelector('span');let state='idle';window.addEventListener('infovore-youtube-import-status',()=>{let value={};try{value=JSON.parse(c.dataset.extensionStatus||'{}')}catch{}if(!value.extensionReady)return;c.hidden=false;state=value.state||'idle';const running=state==='running';b.disabled=false;b.textContent=running?'Cancel import':'Import progress';s.textContent=running?(value.videos+' videos scanned'):(state==='complete'?(value.videos+' videos imported'):(state==='error'?(value.lastError||'Import failed'):'Ready'));});b.addEventListener('click',()=>{b.disabled=true;c.dataset.importAction=state==='running'?'cancel':'start';window.dispatchEvent(new Event('infovore-youtube-import-request'));});})();</script>`;
   const stats = `<div class="yt-stats">
     <div class="yt-stat"><strong>${compact(data.stats.watchEvents)}</strong><span>watch events</span></div>
     <div class="yt-stat"><strong>${compact(data.stats.uniqueVideos)}</strong><span>different videos</span></div>
@@ -210,7 +214,7 @@ export function youtubeDashboardPage(
   ).join('')}</div></section>`;
   const intro = `<style>${dashboardStyles}</style><section class="page-intro"><div><div class="eyebrow">YouTube · attention archive</div><h1>YouTube</h1><p>${html(ownerName)}'s viewing patterns, channels, topics, and recent videos.</p></div><div class="page-intro-aside">${Math.round(data.stats.metadataCoverage * 100)}% metadata coverage · ${rangeLabel(data.range)}</div></section>
     <div class="context-line"><a href="/">Home</a><span>→</span><a href="/platforms">Platforms</a><span>→</span><strong>YouTube</strong></div>`;
-  return shell(`${ownerName} · YouTube`, intro + rangeNav + stats + bars
+  return shell(`${ownerName} · YouTube`, intro + rangeNav + importControl + stats + bars
     + `<section class="yt-section yt-columns">${channelTable}${distribution}</section>`
     + channelChase(data) + taxonomy + recent, 'platforms');
 }

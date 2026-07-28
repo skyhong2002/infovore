@@ -13,8 +13,24 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
   assert.equal(manifest.manifest_version, 3);
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, ['https://infovore.skyhong.tw/*']);
-  assert.deepEqual(manifest.content_scripts[0].matches, ['https://www.youtube.com/*']);
+  assert.deepEqual(manifest.content_scripts[0].matches, [
+    'https://infovore.skyhong.tw/platforms/youtube*',
+  ]);
+  assert.deepEqual(manifest.content_scripts[0].js, ['dashboard.js']);
+  assert.deepEqual(manifest.content_scripts[1].matches, ['https://www.youtube.com/*']);
+  assert.deepEqual(manifest.content_scripts[1].js, ['history.js', 'content.js']);
   assert.equal(manifest.background.type, 'module');
+});
+
+test('dashboard bridge exposes import status without exposing capture credentials', () => {
+  const source = readFileSync(
+    new URL('../chrome-extension/dashboard.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /history-import-start/);
+  assert.match(source, /history-import-cancel/);
+  assert.match(source, /historyImportStatus/);
+  assert.doesNotMatch(source, /captureSettings|captureToken|authorization|Bearer/);
 });
 
 test('capture retry queue keeps only the newest cumulative session update', () => {
