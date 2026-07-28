@@ -323,6 +323,29 @@ test('AI taxonomy is versioned, validated, cached, and receives only public meta
       classifyYoutubeVideosWithClient(repository, 100, invalidClient),
       /requires one to three topics/,
     );
+
+    let retryCalls = 0;
+    const retryClient: YoutubeAiClient = {
+      ...client,
+      fetchImpl: (async (_input: string | URL | Request, init?: RequestInit) => {
+        retryCalls++;
+        const request = JSON.parse(String(init?.body)) as {
+          messages: Array<{ role: string; content: string }>;
+        };
+        const payload = JSON.parse(
+          request.messages.find((message) => message.role === 'user')!.content
+        ) as any;
+        const videos = retryCalls === 1 ? [] : payload.videos.map((video: { videoId: string }) => ({
+          videoId: video.videoId,
+          topics: [{ slug: payload.topics[0].slug, confidence: 0.9 }],
+        }));
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ videos }) } }],
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }) as typeof fetch,
+    };
+    assert.equal(await classifyYoutubeVideosWithClient(repository, 100, retryClient), 1);
+    assert.equal(retryCalls, 2);
   } finally {
     repository.close();
   }

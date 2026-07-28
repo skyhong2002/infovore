@@ -135,49 +135,66 @@ export async function classifyYoutubeVideosWithClient(
   let classified = 0;
   for (let index = 0; index < videos.length; index += 20) {
     const batch = videos.slice(index, index + 20);
-    const response = await chatJson(
-      'Classify each YouTube video into the supplied stable taxonomy. '
-      + 'Return JSON {"videos":[{"videoId":"...","topics":[{"slug":"...","confidence":0.0}]}]}. '
-      + 'Assign one primary and at most two secondary topics, ordered by relevance. '
-      + 'Use only supplied public metadata and only supplied topic slugs.',
-      { topics: topics.map(({ slug: topicSlug, name, description }) => ({ slug: topicSlug, name, description })), videos: batch.map(youtubePublicMetadata) },
-      client,
-    );
-    if (!response || typeof response !== 'object' || !Array.isArray((response as any).videos)) {
-      throw new Error('AI classification response must contain a videos array');
-    }
-    const assignments = (response as any).videos as unknown[];
-    const responseById = new Map<string, Record<string, unknown>>();
-    for (const raw of assignments) {
-      if (!raw || typeof raw !== 'object') throw new Error('AI classification entries must be objects');
-      const item = raw as Record<string, unknown>;
-      const videoId = String(item.videoId ?? '');
-      if (!batch.some((video) => video.videoId === videoId) || responseById.has(videoId)) {
-        throw new Error('AI classification returned an unknown or duplicate videoId');
-      }
-      responseById.set(videoId, item);
-    }
-    for (const video of batch) {
-      const item = responseById.get(video.videoId);
-      if (!item || !Array.isArray(item.topics) || item.topics.length < 1 || item.topics.length > 3) {
-        throw new Error(`AI classification requires one to three topics for ${video.videoId}`);
-      }
-      const seen = new Set<number>();
-      const selected = item.topics.map((raw, assignmentIndex: number) => {
-          if (!raw || typeof raw !== 'object') throw new Error('AI topic assignments must be objects');
-          const assignment = raw as Record<string, unknown>;
-          const topic = bySlug.get(slug(assignment.slug));
-          const confidence = Number(assignment.confidence);
-          if (!topic || seen.has(topic.id) || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-            throw new Error(`AI classification returned an invalid topic for ${video.videoId}`);
+    let validated: Array<{
+      video: YoutubeVideoMetadata;
+      selected: Array<{ topicId: number; rank: number; confidence: number }>;
+    }> | null = null;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3 && !validated; attempt++) {
+      try {
+        const response = await chatJson(
+          'Classify each YouTube video into the supplied stable taxonomy. '
+          + 'Return JSON {"videos":[{"videoId":"...","topics":[{"slug":"...","confidence":0.0}]}]}. '
+          + 'Return every supplied videoId exactly once. Confidence must be a number from 0 to 1. '
+          + 'Assign one primary and at most two secondary topics, ordered by relevance. '
+          + 'Use only supplied public metadata and only supplied topic slugs.',
+          { topics: topics.map(({ slug: topicSlug, name, description }) => ({ slug: topicSlug, name, description })), videos: batch.map(youtubePublicMetadata) },
+          client,
+        );
+        if (!response || typeof response !== 'object' || !Array.isArray((response as any).videos)) {
+          throw new Error('AI classification response must contain a videos array');
+        }
+        const assignments = (response as any).videos as unknown[];
+        const responseById = new Map<string, Record<string, unknown>>();
+        for (const raw of assignments) {
+          if (!raw || typeof raw !== 'object') throw new Error('AI classification entries must be objects');
+          const item = raw as Record<string, unknown>;
+          const videoId = String(item.videoId ?? '');
+          if (!batch.some((video) => video.videoId === videoId) || responseById.has(videoId)) {
+            throw new Error('AI classification returned an unknown or duplicate videoId');
           }
-          seen.add(topic.id);
-          return {
-            topicId: topic.id,
-            rank: assignmentIndex + 1,
-            confidence,
-          };
+          responseById.set(videoId, item);
+        }
+        const batchAssignments = batch.map((video) => {
+          const item = responseById.get(video.videoId);
+          if (!item || !Array.isArray(item.topics) || item.topics.length < 1 || item.topics.length > 3) {
+            throw new Error(`AI classification requires one to three topics for ${video.videoId}`);
+          }
+          const seen = new Set<number>();
+          const selected = item.topics.map((raw, assignmentIndex: number) => {
+            if (!raw || typeof raw !== 'object') throw new Error('AI topic assignments must be objects');
+            const assignment = raw as Record<string, unknown>;
+            const topic = bySlug.get(slug(assignment.slug));
+            const confidence = Number(assignment.confidence);
+            if (!topic || seen.has(topic.id) || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+              throw new Error(`AI classification returned an invalid topic for ${video.videoId}`);
+            }
+            seen.add(topic.id);
+            return {
+              topicId: topic.id,
+              rank: assignmentIndex + 1,
+              confidence,
+            };
+          });
+          return { video, selected };
         });
+        validated = batchAssignments;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!validated) throw lastError;
+    for (const { video, selected } of validated) {
       repository.saveYoutubeVideoTopics(
         video.videoId, selected, client.model, PROMPT_VERSION, video.metadataHash
       );
