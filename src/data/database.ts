@@ -798,7 +798,7 @@ export class Repository {
       FROM ranked w LEFT JOIN youtube_videos v ON v.video_id=w.video_id
       WHERE w.row_number=1
       ORDER BY w.watched_at DESC
-      LIMIT 5000
+      LIMIT 2000
     `).all(...params) as Array<{ title: string; description: string | null; tags_json: string | null }>;
     return {
       range,
