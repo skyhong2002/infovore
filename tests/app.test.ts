@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { app, repository } from '../src/index.js';
 import { createIngestApp } from '../src/ingest.js';
+import { setCache } from '../src/data/cache.js';
+import type { SourceSnapshot } from '../src/data/types.js';
 
 const ingestApp = createIngestApp(repository);
 
@@ -45,6 +47,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(homeHtml, /Recent activity/);
   assert.match(homeHtml, /Homepage Anime/);
   assert.match(homeHtml, /Kitsu/);
+  assert.match(homeHtml, /href="\/platforms\/kitsu"/);
   assert.match(homeHtml, /balanced view/);
   assert.match(homeHtml, /highlights from/);
   assert.doesNotMatch(homeHtml, /src="\/card\//);
@@ -60,6 +63,47 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.equal(wrappedJson.totalActivities, 1);
   const wrapped = await app.request('/wrapped/2099');
   assert.match(await wrapped.text(), /2099 Wrapped/);
+});
+
+test('platform index and dedicated mirrors render source-native content', async () => {
+  const statsfm: SourceSnapshot<{
+    topAlbums: Array<{ name: string; artist: string; image: string; streams: number }>;
+    topArtists: Array<{ name: string; image: string; streams: number }>;
+  }> = {
+    source: 'statsfm',
+    profile: { id: 'sky', name: 'Sky', avatar: 'https://example.test/avatar.jpg', url: 'https://stats.fm/sky' },
+    stats: { weeklyStreams: 42, weeklyMinutes: 180 },
+    entries: [{
+      source: 'statsfm', sourceItemId: 'track', kind: 'music', title: 'Mirror Song',
+      image: 'https://example.test/song.jpg', status: 'listened',
+      activityAt: '2026-07-28T12:00:00Z', rating: null, extra: { artist: 'Mirror Artist', album: 'Mirror Album' },
+    }],
+    extra: {
+      topAlbums: [{ name: 'Mirror Album', artist: 'Mirror Artist', image: 'https://example.test/album.jpg', streams: 12 }],
+      topArtists: [{ name: 'Mirror Artist', image: 'https://example.test/artist.jpg', streams: 20 }],
+    },
+  };
+  setCache('data:statsfm', statsfm);
+
+  const index = await app.request('/platforms');
+  const indexHtml = await index.text();
+  assert.equal(index.status, 200);
+  assert.match(indexHtml, /Platform mirror/);
+  assert.match(indexHtml, /href="\/platforms\/statsfm"/);
+  assert.match(indexHtml, /Manual events/);
+
+  const mirror = await app.request('/platforms/statsfm');
+  const mirrorHtml = await mirror.text();
+  assert.equal(mirror.status, 200);
+  assert.match(mirrorHtml, /Mirror Song/);
+  assert.match(mirrorHtml, /Mirror Album/);
+  assert.match(mirrorHtml, /Top albums this week/);
+  assert.match(mirrorHtml, /weekly streams/);
+
+  const manual = await app.request('/platforms/events');
+  assert.equal(manual.status, 200);
+  assert.match(await manual.text(), /Future Concert/);
+  assert.equal((await app.request('/platforms/unknown')).status, 404);
 });
 
 test('MCP Streamable HTTP exposes the managed lifelog tools', async () => {

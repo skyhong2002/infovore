@@ -86,6 +86,7 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 ## Endpoints
 
 - `GET /` — recent entries from every source in one chronological timeline
+- `GET /platforms` / `/platforms/{source}` — per-platform local mirror pages
 - `GET /cards` — card gallery (responsive HTML)
 - `GET /profile` — public cross-media profile
 - `GET /now` — current media, upcoming events, and recent activity

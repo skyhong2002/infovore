@@ -14,6 +14,7 @@ import { fetchGoodreads } from './sources/goodreads.js';
 import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
 import { homePage, nowPage, profilePage, wrappedPage } from './output/pages.js';
+import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
 import { handleMcpRequest } from './mcp.js';
 import { buildBackloggdCard } from './output/backloggd.js';
 import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './output/kitsu.js';
@@ -108,15 +109,19 @@ const app = new Hono();
 // Platform sections for the optional card gallery and status endpoint.
 // URLs derive from config so a self-hosted instance links to its own profiles;
 // only sections whose source is enabled are shown.
-const allSections: { source: string; title: string; url: string; cards: string[] }[] = [
-  { source: 'backloggd', title: 'Backloggd', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'] },
-  { source: 'kitsu', title: 'Kitsu', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
-  { source: 'statsfm', title: 'stats.fm', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
-  { source: 'simkl', title: 'Simkl', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
-  { source: 'goodreads', title: 'Goodreads', url: `https://www.goodreads.com/user/show/${config.goodreads.userId}`, cards: ['goodreads'] },
+const allSections: Array<PlatformDefinition & { cards: string[] }> = [
+  { source: 'backloggd', title: 'Backloggd', description: 'Games played, backlog totals, platforms and recent sessions.', accent: '#8dd3a8', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'] },
+  { source: 'kitsu', title: 'Kitsu', description: 'Anime and manga progress, ratings and library status.', accent: '#f779a1', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
+  { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
+  { source: 'simkl', title: 'Simkl', description: 'Movies, TV and anime collected into one watch history.', accent: '#7bb8ff', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
+  { source: 'goodreads', title: 'Goodreads', description: 'Reading shelf, completed books, authors and ratings.', accent: '#d6b98c', url: `https://www.goodreads.com/user/show/${config.goodreads.userId}`, cards: ['goodreads'] },
 ];
 
 const sections = allSections.filter((s) => config.sourceEnabled(s.source));
+const manualPlatform: PlatformDefinition = {
+  source: 'events', title: 'Manual events', description: 'Concerts, performances and real-world activities recorded by hand.',
+  accent: '#c39bff',
+};
 
 // Cache-buster: a short hash of the card's SVG content, so the URL only
 // changes when the rendered card actually changes. Unchanged data across
@@ -165,9 +170,64 @@ app.get('/', (c) => {
   ));
 });
 
+function manualEventsSnapshot(): SourceSnapshot {
+  const page = repository.queryActivities({ source: 'events', limit: 500 });
+  const entries = page.data.map((activity) => ({
+    sourceItemId: activity.sourceItemId ?? activity.id,
+    source: 'events',
+    kind: 'event' as const,
+    title: activity.title,
+    image: activity.image,
+    status: activity.status ?? undefined,
+    activityAt: activity.occurredAt ?? activity.firstSeenAt,
+    rating: activity.rating,
+    extra: activity.extra,
+  }));
+  return {
+    source: 'events',
+    profile: { id: 'manual', name: config.ownerName, avatar: '', url: '' },
+    stats: {
+      events: page.total,
+      attended: entries.filter((entry) => entry.status === 'attended').length,
+      upcoming: entries.filter((entry) => ['upcoming', 'ticketed'].includes(entry.status ?? '')).length,
+    },
+    entries,
+    extra: {},
+  };
+}
+
+app.get('/platforms', (c) => {
+  const connected: PlatformSummary[] = sections.map((definition) => {
+    const cached = getCache<SourceSnapshot<unknown>>(`data:${definition.source}`);
+    return {
+      definition,
+      snapshot: cached?.data ?? null,
+      fetchedAt: cached ? new Date(cached.fetchedAt).toISOString() : null,
+    };
+  });
+  connected.push({ definition: manualPlatform, snapshot: manualEventsSnapshot(), fetchedAt: null });
+  c.header('Cache-Control', 'no-cache');
+  return c.html(platformIndexPage(config.ownerName, connected));
+});
+
+app.get('/platforms/:source', (c) => {
+  const source = c.req.param('source');
+  const definition = source === 'events' ? manualPlatform : sections.find((section) => section.source === source);
+  if (!definition) return c.text('Platform not found', 404);
+  if (source === 'events') {
+    c.header('Cache-Control', 'no-cache');
+    return c.html(platformPage(config.ownerName, definition, manualEventsSnapshot(), null));
+  }
+  const cached = getCache<SourceSnapshot<unknown>>(`data:${source}`);
+  if (!cached?.data) return c.text('Platform has not completed its first sync yet', 503);
+  c.header('Cache-Control', 'no-cache');
+  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString()));
+});
+
 app.get('/cards', (c) => {
   const body = sections
     .map((s) => {
+      const externalUrl = s.url ?? '#';
       // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,
       // still retina-crisp at 2×); the .svg vector stays available via the link.
       const imgs = s.cards
@@ -176,8 +236,8 @@ app.get('/cards', (c) => {
             `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.webp?v=${version(n)}" alt="${n}" width="520" loading="lazy"></a>`
         )
         .join('\n');
-      const shortUrl = s.url.replace(/^https:\/\//, '').replace(/\/$/, '');
-      return `<section><h2><a href="${s.url}">${s.title}</a><a class="profile-link" href="${s.url}">${shortUrl}</a></h2><div class="row">${imgs}</div></section>`;
+      const shortUrl = externalUrl.replace(/^https:\/\//, '').replace(/\/$/, '');
+      return `<section><h2><a href="/platforms/${s.source}">${s.title}</a><a class="profile-link" href="${externalUrl}">${shortUrl}</a></h2><div class="row">${imgs}</div></section>`;
     })
     .join('\n');
   const updated = lastUpdatedLabel();
