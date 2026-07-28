@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "infovore YouTube Capture",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Privately records measured YouTube watch time and imports saved viewing progress to infovore.",
   "minimum_chrome_version": "120",
   "permissions": [
