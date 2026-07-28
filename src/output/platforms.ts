@@ -7,6 +7,7 @@ export interface PlatformDefinition {
   description: string;
   accent: string;
   url?: string;
+  cards?: string[];
 }
 
 export interface PlatformSummary {
@@ -124,6 +125,7 @@ export function platformPage(
   definition: PlatformDefinition,
   snapshot: SourceSnapshot<unknown>,
   fetchedAt: string | null,
+  cardVersions: Record<string, string> = {},
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
   const stats = Object.entries(snapshot.stats).map(([key, value]) =>
@@ -143,6 +145,13 @@ export function platformPage(
     leaderboard('Top albums this week', extra.topAlbums),
     leaderboard('Top artists this week', extra.topArtists),
   ].join('');
+  const cards = definition.cards?.length
+    ? `<section><div class="platform-section-heading"><h2>Cards</h2><span>${definition.cards.length} available</span></div>
+      <div class="platform-card-grid">${definition.cards.map((name) => {
+        const suffix = cardVersions[name] ? `?v=${html(cardVersions[name])}` : '';
+        return `<a href="/card/${html(name)}.svg${suffix}"><img src="/card/${html(name)}.webp${suffix}" alt="${html(definition.title)} ${html(name)} card" loading="lazy"></a>`;
+      }).join('')}</div></section>`
+    : '';
   const body = `${platformNav(definition.source)}
     <section class="platform-hero" style="--platform-accent:${html(definition.accent)}">
       ${snapshot.profile.avatar
@@ -153,7 +162,7 @@ export function platformPage(
       <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">View original ↗</a>` : ''}
       <a href="/api/activities.json?source=${html(definition.source)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : 'Stored manually'}</div>
-    </section>
+    </section>${cards}
     <section><div class="platform-section-heading"><h2>Overview</h2><span>${snapshot.entries.length} synced entries</span></div>
     <div class="platform-stats">${stats}</div></section>${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, body);

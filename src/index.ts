@@ -109,7 +109,7 @@ const app = new Hono();
 // Platform sections for the optional card gallery and status endpoint.
 // URLs derive from config so a self-hosted instance links to its own profiles;
 // only sections whose source is enabled are shown.
-const allSections: Array<PlatformDefinition & { cards: string[] }> = [
+const allSections: PlatformDefinition[] = [
   { source: 'backloggd', title: 'Backloggd', description: 'Games played, backlog totals, platforms and recent sessions.', accent: '#8dd3a8', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'] },
   { source: 'kitsu', title: 'Kitsu', description: 'Anime and manga progress, ratings and library status.', accent: '#f779a1', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
   { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
@@ -221,7 +221,8 @@ app.get('/platforms/:source', (c) => {
   const cached = getCache<SourceSnapshot<unknown>>(`data:${source}`);
   if (!cached?.data) return c.text('Platform has not completed its first sync yet', 503);
   c.header('Cache-Control', 'no-cache');
-  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString()));
+  const cardVersions = Object.fromEntries((definition.cards ?? []).map((name) => [name, version(name)]));
+  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions));
 });
 
 app.get('/cards', (c) => {
@@ -230,7 +231,7 @@ app.get('/cards', (c) => {
       const externalUrl = s.url ?? '#';
       // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,
       // still retina-crisp at 2×); the .svg vector stays available via the link.
-      const imgs = s.cards
+      const imgs = (s.cards ?? [])
         .map(
           (n) =>
             `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.webp?v=${version(n)}" alt="${n}" width="520" loading="lazy"></a>`
@@ -290,7 +291,7 @@ app.get('/status', (c) => {
   return c.json({
     owner: config.ownerName,
     database: { activities: repository.countPublicActivities(), latestRuns: repository.latestRuns() },
-    cards: sections.flatMap((s) => s.cards).map((n) => `/card/${n}.svg`),
+    cards: sections.flatMap((s) => s.cards ?? []).map((n) => `/card/${n}.svg`),
     sources,
   });
 });

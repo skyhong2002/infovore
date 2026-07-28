@@ -99,6 +99,10 @@ test('platform index and dedicated mirrors render source-native content', async 
   assert.match(mirrorHtml, /Mirror Album/);
   assert.match(mirrorHtml, /Top albums this week/);
   assert.match(mirrorHtml, /weekly streams/);
+  assert.match(mirrorHtml, /<h2>Cards<\/h2>/);
+  assert.match(mirrorHtml, /src="\/card\/statsfm\.webp\?v=/);
+  assert.match(mirrorHtml, /src="\/card\/statsfm-albums\.webp\?v=/);
+  assert.match(mirrorHtml, /src="\/card\/statsfm-artists\.webp\?v=/);
 
   const manual = await app.request('/platforms/events');
   assert.equal(manual.status, 200);
