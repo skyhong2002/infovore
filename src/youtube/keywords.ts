@@ -1,9 +1,14 @@
 import type { YoutubeKeyword } from './types.js';
 
 const STOP_WORDS = new Set([
-  'about', 'after', 'again', 'also', 'and', 'are', 'but', 'can', 'for', 'from',
-  'at', 'by', 'how', 'in', 'into', 'is', 'it', 'its', 'new', 'not', 'now', 'of', 'on', 'or', 'our', 'out',
-  'the', 'this', 'to', 'video', 'what', 'when', 'why', 'with', 'you', 'your',
+  'a', 'about', 'after', 'again', 'all', 'also', 'an', 'and', 'are', 'as', 'at',
+  'be', 'been', 'being', 'but', 'by', 'can', 'did', 'do', 'does', 'done', 'for',
+  'from', 'full', 'get', 'gets', 'getting', 'got', 'had', 'has', 'have', 'he',
+  'her', 'here', 'him', 'his', 'how', 'i', 'if', 'in', 'into', 'is', 'it',
+  'its', 'just', 'me', 'more', 'most', 'my', 'new', 'no', 'not', 'now', 'of',
+  'on', 'or', 'our', 'out', 'so', 'than', 'that', 'the', 'their', 'them',
+  'then', 'there', 'they', 'this', 'to', 'up', 'us', 'video', 'was', 'we',
+  'were', 'what', 'when', 'why', 'will', 'with', 'would', 'you', 'your',
   '一個', '一起', '以及', '什麼', '今天', '可以', '如何', '就是', '我們', '我的',
   '這個', '這些', 'その', 'これ', 'して', 'する', 'です', 'ます', 'から', 'まで',
   'youtube', 'official', 'episode', 'part', 'shorts',

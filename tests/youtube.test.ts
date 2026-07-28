@@ -232,6 +232,12 @@ test('YouTube keywords segment Unicode, ignore URLs, and count each video once',
   assert.ok(keywords.some((keyword) => keyword.term.includes('系統')));
   assert.ok(!keywords.some((keyword) => /https|youtube|watch|private/.test(keyword.term)));
   assert.equal(keywords.find((keyword) => keyword.term === 'typescript')?.videos, 2);
+
+  const stopWords = extractYoutubeKeywords([
+    { title: 'My full video', description: 'Get more of that here', tags_json: '[]' },
+    { title: 'My full video', description: 'Get more of that here', tags_json: '[]' },
+  ]);
+  assert.deepEqual(stopWords, []);
 });
 
 test('AI taxonomy is versioned, validated, cached, and receives only public metadata', async () => {
