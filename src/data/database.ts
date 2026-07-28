@@ -5,6 +5,8 @@ import { activityFromEntry } from './activity.js';
 import type { Activity, SourceSnapshot } from './types.js';
 import type {
   YoutubeDashboardData,
+  YoutubeCapturedWatch,
+  YoutubeCaptureResult,
   YoutubeImportResult,
   YoutubeOAuthCredential,
   YoutubeParsedArchive,
@@ -547,6 +549,104 @@ export class Repository {
       watchesInserted,
       searchesSeen: archive.searches.length,
       searchesInserted,
+    };
+  }
+
+  upsertYoutubeCapture(
+    watch: YoutubeCapturedWatch,
+    importedAt = new Date().toISOString(),
+  ): YoutubeCaptureResult {
+    const existing = this.db.prepare(`
+      SELECT video_id, watched_at, actual_watched_seconds
+      FROM youtube_watch_events WHERE event_id=?
+    `).get(watch.eventId) as {
+      video_id: string;
+      watched_at: string;
+      actual_watched_seconds: number | null;
+    } | undefined;
+    if (existing && (existing.video_id !== watch.videoId || existing.watched_at !== watch.watchedAt)) {
+      throw new Error('Capture session conflicts with an existing watch event');
+    }
+
+    const thumbnail = `https://i.ytimg.com/vi/${watch.videoId}/hqdefault.jpg`;
+    const activity = activityFromEntry({
+      source: 'youtube',
+      sourceItemId: watch.videoId,
+      visibility: 'summary',
+      kind: 'video',
+      title: watch.title,
+      image: thumbnail,
+      status: 'watched',
+      activityAt: watch.watchedAt,
+      rating: null,
+      extra: {
+        channel: watch.channelTitle ?? '',
+        channelId: '',
+        url: watch.url,
+      },
+    }, importedAt);
+
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare(`
+        INSERT INTO youtube_videos (
+          video_id, title, channel_title, thumbnail_url, duration_seconds
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(video_id) DO UPDATE SET
+          title=CASE WHEN youtube_videos.metadata_fetched_at IS NULL
+            THEN excluded.title ELSE youtube_videos.title END,
+          channel_title=COALESCE(youtube_videos.channel_title, excluded.channel_title),
+          thumbnail_url=CASE WHEN youtube_videos.thumbnail_url=''
+            THEN excluded.thumbnail_url ELSE youtube_videos.thumbnail_url END,
+          duration_seconds=COALESCE(youtube_videos.duration_seconds, excluded.duration_seconds)
+      `).run(
+        watch.videoId, watch.title, watch.channelTitle, thumbnail, watch.durationSeconds
+      );
+      this.db.prepare(`
+        INSERT INTO activities (
+          id, dedupe_key, source, source_item_id, type, media_kind, title, image,
+          status, occurred_at, occurred_precision, rating_value, rating_scale,
+          visibility, extra_json, first_seen_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          title=excluded.title, image=excluded.image, extra_json=excluded.extra_json,
+          last_seen_at=excluded.last_seen_at
+      `).run(
+        activity.id, activity.dedupeKey, activity.source, activity.sourceItemId,
+        activity.type, activity.mediaKind, activity.title, activity.image,
+        activity.status, activity.occurredAt, activity.occurredAtPrecision,
+        null, null, activity.visibility, JSON.stringify(activity.extra),
+        activity.firstSeenAt, activity.lastSeenAt
+      );
+      this.db.prepare(`
+        INSERT INTO youtube_watch_events (
+          event_id, activity_id, video_id, watched_at, raw_title, raw_url,
+          channel_id, channel_title, channel_url, actual_watched_seconds,
+          imported_at, activity_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'video')
+        ON CONFLICT(event_id) DO UPDATE SET
+          raw_title=excluded.raw_title,
+          raw_url=excluded.raw_url,
+          channel_title=COALESCE(excluded.channel_title, youtube_watch_events.channel_title),
+          actual_watched_seconds=MAX(
+            COALESCE(youtube_watch_events.actual_watched_seconds, 0),
+            excluded.actual_watched_seconds
+          )
+      `).run(
+        watch.eventId, activity.id, watch.videoId, watch.watchedAt, watch.title,
+        watch.url, null, watch.channelTitle, null, watch.actualWatchedSeconds, importedAt
+      );
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+    const previousSeconds = existing?.actual_watched_seconds ?? 0;
+    return {
+      eventId: watch.eventId,
+      inserted: !existing,
+      updated: Boolean(existing && watch.actualWatchedSeconds > previousSeconds),
+      actualWatchedSeconds: Math.max(previousSeconds, watch.actualWatchedSeconds),
     };
   }
 

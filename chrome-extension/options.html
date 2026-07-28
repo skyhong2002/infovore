@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>infovore YouTube Capture settings</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="options">
+  <main>
+    <header>
+      <div class="mark">i</div>
+      <div>
+        <h1>infovore YouTube Capture</h1>
+        <p>Private connection settings</p>
+      </div>
+    </header>
+    <form id="settings">
+      <label for="endpoint">Capture endpoint</label>
+      <input id="endpoint" name="endpoint" type="url" required>
+      <label for="token">Capture token</label>
+      <input id="token" name="token" type="password" minlength="32" autocomplete="off" required>
+      <label class="toggle">
+        <input id="enabled" name="enabled" type="checkbox">
+        <span>Capture viewing sessions</span>
+      </label>
+      <div class="actions">
+        <button type="submit">Save</button>
+        <button id="test" type="button" class="secondary">Test connection</button>
+      </div>
+      <p id="result" role="status"></p>
+    </form>
+    <p class="privacy">The token and pending captures stay in this Chrome profile. Search terms are never collected.</p>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

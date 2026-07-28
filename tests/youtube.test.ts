@@ -11,6 +11,7 @@ import {
 import { decryptPrivateValue, encryptPrivateValue } from '../src/youtube/crypto.js';
 import { fetchYoutubeMetadata } from '../src/youtube/metadata.js';
 import { extractYoutubeKeywords } from '../src/youtube/keywords.js';
+import { normalizeYoutubeCapture } from '../src/youtube/capture.js';
 import { runYoutubePortabilityStep } from '../src/youtube/portability.js';
 import { parseYoutubeArchive } from '../src/youtube/takeout.js';
 import type { YoutubeParsedArchive, YoutubeVideoMetadata } from '../src/youtube/types.js';
@@ -145,6 +146,64 @@ test('YouTube imports are idempotent, aggregate-only, and preserve duration sema
     const wrapped = repository.wrapped(2026);
     assert.equal(wrapped.bySource.youtube, 3);
     assert.ok(!wrapped.topTitles.some((item) => item.title.includes('Technical Talk')));
+  } finally {
+    repository.close();
+  }
+});
+
+test('Chrome captures validate YouTube URLs and idempotently increase measured watch time', () => {
+  const repository = new Repository(':memory:');
+  const now = new Date('2026-07-28T12:30:00Z');
+  try {
+    const first = normalizeYoutubeCapture({
+      sessionId: '12345678-1234-4123-8123-123456789abc',
+      videoId: 'dQw4w9WgXcQ',
+      title: 'Captured YouTube Video',
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&feature=share',
+      channelTitle: 'Captured Channel',
+      watchedAt: '2026-07-28T12:00:00Z',
+      actualWatchedSeconds: 12,
+      durationSeconds: 213,
+    }, now);
+    const inserted = repository.upsertYoutubeCapture(first, now.toISOString());
+    assert.equal(inserted.inserted, true);
+    assert.equal(inserted.updated, false);
+    assert.equal(inserted.actualWatchedSeconds, 12);
+
+    const duplicate = repository.upsertYoutubeCapture(first, now.toISOString());
+    assert.equal(duplicate.inserted, false);
+    assert.equal(duplicate.updated, false);
+    assert.equal(repository.youtubeCounts().videoWatches, 1);
+
+    const increased = repository.upsertYoutubeCapture({
+      ...first,
+      actualWatchedSeconds: 47,
+    }, now.toISOString());
+    assert.equal(increased.inserted, false);
+    assert.equal(increased.updated, true);
+    assert.equal(increased.actualWatchedSeconds, 47);
+    const dashboard = repository.youtubeDashboard('all', now);
+    assert.equal(dashboard.stats.watchEvents, 1);
+    assert.equal(dashboard.stats.actualWatchedSeconds, 47);
+    assert.equal(dashboard.stats.openedDurationSeconds, 213);
+    assert.equal(repository.queryActivities({ source: 'youtube' }).total, 0);
+
+    assert.throws(() => normalizeYoutubeCapture({
+      sessionId: '12345678-1234-4123-8123-123456789abc',
+      videoId: 'dQw4w9WgXcQ',
+      title: 'Wrong host',
+      url: 'https://example.test/watch?v=dQw4w9WgXcQ',
+      watchedAt: '2026-07-28T12:00:00Z',
+      actualWatchedSeconds: 5,
+    }, now), /youtube\.com/);
+    assert.throws(() => normalizeYoutubeCapture({
+      sessionId: '12345678-1234-4123-8123-123456789abc',
+      videoId: 'dQw4w9WgXcQ',
+      title: 'Wrong video',
+      url: 'https://www.youtube.com/watch?v=AAAAAAAAAAA',
+      watchedAt: '2026-07-28T12:00:00Z',
+      actualWatchedSeconds: 5,
+    }, now), /does not match/);
   } finally {
     repository.close();
   }

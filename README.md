@@ -72,7 +72,7 @@ change.
 | [stats.fm](https://stats.fm/skyhong2002) | Public API |
 | [Simkl](https://simkl.com) | Official API (client ID + OAuth token via PIN flow) |
 | [Goodreads](https://www.goodreads.com/user/show/160195773-skychopath) | Shelf RSS feeds + profile scrape |
-| YouTube | Google Takeout import + Data Portability API; Data API metadata |
+| YouTube | Google Takeout import + private Chrome capture; Data API metadata |
 
 ## Cards
 
@@ -102,6 +102,7 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /feed.json` / `GET /feed.xml` — JSON and RSS activity feeds
 - `GET /api/wrapped/{year}.json` — machine-readable annual recap
 - `POST /api/ingest/events` — authenticated private-ingest service (JSON)
+- `POST /api/ingest/youtube/capture` — dedicated-token Chrome viewing capture
 - `POST /mcp` — stateless MCP Streamable HTTP endpoint
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
 
@@ -155,6 +156,27 @@ values for daily `myactivity.youtube` archive sync. Testing OAuth applications
 require reauthorization every seven days. For local Compose, the OAuth callback
 uses the ingest service at `http://localhost:3001`; production reverse proxies
 route the same `/api/ingest/*` path on the public domain.
+
+### Capture new YouTube viewing
+
+Google Data Portability is not available for every account country. The
+Manifest V3 extension in [`chrome-extension/`](chrome-extension/) is the
+incremental fallback:
+
+1. Generate a separate `YOUTUBE_CAPTURE_TOKEN` with at least 32 random
+   characters. Do not reuse `INGEST_TOKEN`.
+2. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**,
+   and select this repository's `chrome-extension` directory.
+3. Enter the capture token in the extension settings and test the connection.
+
+The extension starts a viewing session only after playback, records it after
+five non-ad playback seconds, and sends cumulative measured watch time
+every 30 seconds. Failed requests remain in `chrome.storage.local`, retry with
+bounded exponential backoff, and survive browser restarts. One session is
+idempotently updated server-side, so retries never add duplicate watch events.
+The dedicated token can only access the capture endpoint. Search terms,
+playback position, cookies, and browsing outside `www.youtube.com` are not
+collected.
 
 ### Behind a reverse proxy
 

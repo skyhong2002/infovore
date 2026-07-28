@@ -6,11 +6,12 @@ import { Repository } from './data/database.js';
 import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
 import { completeYoutubeOAuth, youtubeOAuthAuthorizationUrl } from './youtube/portability.js';
 import { parseYoutubeArchive } from './youtube/takeout.js';
+import { normalizeYoutubeCapture } from './youtube/capture.js';
 
-function authorized(auth: string | undefined): boolean {
-  if (!config.ingestToken || !auth?.startsWith('Bearer ')) return false;
+function authorized(auth: string | undefined, expectedToken = config.ingestToken): boolean {
+  if (!expectedToken || !auth?.startsWith('Bearer ')) return false;
   const provided = Buffer.from(auth.slice(7));
-  const expected = Buffer.from(config.ingestToken);
+  const expected = Buffer.from(expectedToken);
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
@@ -58,6 +59,34 @@ export function createIngestApp(repository: Repository): Hono {
       const parsed = parseYoutubeArchive(archive, config.youtube.privateDataKey, 'takeout');
       const result = repository.ingestYoutubeArchive(parsed);
       return c.json({ ok: true, ...result, totals: repository.youtubeCounts() }, 201);
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  });
+  app.get('/api/ingest/youtube/capture/status', (c) => {
+    if (!config.youtube.captureToken) {
+      return c.json({ error: 'YouTube capture is not configured' }, 503);
+    }
+    if (!authorized(c.req.header('authorization'), config.youtube.captureToken)) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    return c.json({ status: 'ready', service: 'infovore-youtube-capture' });
+  });
+  app.post('/api/ingest/youtube/capture', async (c) => {
+    if (!config.youtube.captureToken) {
+      return c.json({ error: 'YouTube capture is not configured' }, 503);
+    }
+    if (!authorized(c.req.header('authorization'), config.youtube.captureToken)) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    try {
+      const body = await c.req.text();
+      if (Buffer.byteLength(body) > 16 * 1024) {
+        return c.json({ error: 'Capture payload exceeds 16 KiB' }, 413);
+      }
+      const input = normalizeYoutubeCapture(JSON.parse(body));
+      const result = repository.upsertYoutubeCapture(input);
+      return c.json({ ok: true, ...result }, result.inserted ? 201 : 200);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }

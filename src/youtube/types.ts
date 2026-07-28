@@ -35,6 +35,33 @@ export interface YoutubeImportResult {
   searchesInserted: number;
 }
 
+export interface YoutubeCaptureInput {
+  sessionId: string;
+  videoId: string;
+  title: string;
+  url: string;
+  channelTitle: string | null;
+  watchedAt: string;
+  actualWatchedSeconds: number;
+  durationSeconds: number | null;
+}
+
+export interface YoutubeCapturedWatch extends Omit<
+  YoutubeWatchInput,
+  'videoId' | 'actualWatchedSeconds'
+> {
+  videoId: string;
+  actualWatchedSeconds: number;
+  durationSeconds: number | null;
+}
+
+export interface YoutubeCaptureResult {
+  eventId: string;
+  inserted: boolean;
+  updated: boolean;
+  actualWatchedSeconds: number;
+}
+
 export interface YoutubeVideoMetadata {
   videoId: string;
   title: string;

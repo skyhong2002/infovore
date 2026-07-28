@@ -218,6 +218,61 @@ test('YouTube Takeout upload requires auth and accepts only ZIP payloads', async
   assert.ok(result.totals.videoWatches >= 2);
 });
 
+test('YouTube Chrome capture uses a dedicated token and idempotently updates a session', async () => {
+  const payload = {
+    sessionId: '87654321-4321-4321-8321-cba987654321',
+    videoId: 'M7lc1UVf-VE',
+    title: 'YouTube API Demo',
+    url: 'https://www.youtube.com/watch?v=M7lc1UVf-VE',
+    channelTitle: 'Google for Developers',
+    watchedAt: new Date().toISOString(),
+    actualWatchedSeconds: 8,
+    durationSeconds: 215,
+  };
+  const unauthorized = await ingestApp.request('/api/ingest/youtube/capture', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(unauthorized.status, 401);
+  const broadToken = await ingestApp.request('/api/ingest/youtube/capture/status', {
+    headers: { authorization: 'Bearer test-token-with-at-least-32-characters' },
+  });
+  assert.equal(broadToken.status, 401);
+  const headers = {
+    'content-type': 'application/json',
+    authorization: 'Bearer test-youtube-capture-token-with-at-least-32-characters',
+  };
+  const status = await ingestApp.request('/api/ingest/youtube/capture/status', { headers });
+  assert.equal(status.status, 200);
+
+  const inserted = await ingestApp.request('/api/ingest/youtube/capture', {
+    method: 'POST', headers, body: JSON.stringify(payload),
+  });
+  assert.equal(inserted.status, 201);
+  assert.equal((await inserted.json() as { inserted: boolean }).inserted, true);
+  const updated = await ingestApp.request('/api/ingest/youtube/capture', {
+    method: 'POST', headers, body: JSON.stringify({ ...payload, actualWatchedSeconds: 38 }),
+  });
+  assert.equal(updated.status, 200);
+  const result = await updated.json() as {
+    ok: boolean;
+    eventId: string;
+    inserted: boolean;
+    updated: boolean;
+    actualWatchedSeconds: number;
+  };
+  assert.equal(result.ok, true);
+  assert.match(result.eventId, /^[a-f0-9]{64}$/);
+  assert.equal(result.inserted, false);
+  assert.equal(result.updated, true);
+  assert.equal(result.actualWatchedSeconds, 38);
+  const timeline = await (await app.request('/api/activities.json?source=youtube')).json() as {
+    total: number;
+  };
+  assert.equal(timeline.total, 0);
+});
+
 test('platform index and dedicated mirrors render source-native content', async () => {
   const statsfm: SourceSnapshot<{
     topAlbums: Array<{ name: string; artist: string; image: string; streams: number }>;

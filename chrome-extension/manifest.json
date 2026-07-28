@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "infovore YouTube Capture",
+  "version": "1.0.0",
+  "description": "Privately records YouTube viewing sessions and measured watch time to infovore.",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://infovore.skyhong.tw/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "infovore YouTube Capture"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
