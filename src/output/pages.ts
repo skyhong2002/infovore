@@ -69,7 +69,7 @@ function activityRow(activity: Activity): string {
 }
 
 export function homePage(ownerName: string, activities: Activity[], total: number, lastUpdated: string | null): string {
-  const intro = `<section class="feed-intro"><p class="muted">The latest entries from every connected platform for ${html(ownerName)}, together in one chronological stream.</p><div class="feed-count">Showing ${activities.length} of ${total} entries</div></section>`;
+  const intro = `<section class="feed-intro"><p class="muted">A balanced view of the latest entries for ${html(ownerName)}, so frequent listening never crowds out everything else.</p><div class="feed-count">Showing ${activities.length} highlights from ${total} entries</div></section>`;
   const timeline = activities.length
     ? `<main class="activity-list">${activities.map(activityRow).join('')}</main>`
     : '<div class="empty">No activity has been collected yet.</div>';

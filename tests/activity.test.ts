@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { activityFromEntry } from '../src/data/activity.js';
-import type { MediaEntry } from '../src/data/types.js';
+import { activityFromEntry, selectHomepageActivities } from '../src/data/activity.js';
+import type { Activity, MediaEntry } from '../src/data/types.js';
 
 const base: MediaEntry = {
   sourceItemId: 'library-42', source: 'kitsu', kind: 'anime', title: 'Frieren', image: '',
@@ -34,4 +34,35 @@ test('manual events retain one stable id across status and date edits', () => {
   const attended = activityFromEntry({ ...event, status: 'attended', activityAt: '2026-07-29T11:00:00Z' });
   assert.equal(upcoming.id, attended.id);
   assert.equal(upcoming.occurredAtPrecision, 'day');
+});
+
+function homepageActivity(id: string, kind: MediaEntry['kind'], occurredAt: string): Activity {
+  return activityFromEntry({
+    source: kind === 'music' ? 'statsfm' : 'simkl', sourceItemId: id, kind,
+    title: id, image: 'https://example.test/image.webp', status: 'completed',
+    activityAt: occurredAt, rating: null, extra: {},
+  });
+}
+
+test('homepage keeps music at ten percent and one listen per Taipei day', () => {
+  const activities: Activity[] = [];
+  for (let index = 0; index < 50; index++) {
+    activities.push(homepageActivity(`track-${index}`, 'music', `2026-07-${String(28 - Math.floor(index / 5)).padStart(2, '0')}T${String(23 - index % 5).padStart(2, '0')}:00:00+08:00`));
+  }
+  for (let index = 0; index < 50; index++) {
+    activities.push(homepageActivity(`movie-${index}`, 'movie', `2026-06-${String(28 - Math.floor(index / 2)).padStart(2, '0')}T12:00:00+08:00`));
+  }
+  const selected = selectHomepageActivities(activities);
+  const music = selected.filter((activity) => activity.mediaKind === 'music');
+  assert.equal(selected.length, 40);
+  assert.equal(music.length, 4);
+  assert.equal(new Set(music.map((activity) => activity.occurredAt?.slice(0, 10))).size, 4);
+});
+
+test('homepage still shows one representative when the archive only contains music', () => {
+  const music = [
+    homepageActivity('latest', 'music', '2026-07-28T12:00:00+08:00'),
+    homepageActivity('older', 'music', '2026-07-27T12:00:00+08:00'),
+  ];
+  assert.deepEqual(selectHomepageActivities(music).map((activity) => activity.title), ['latest']);
 });

@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
 import { Repository } from './data/database.js';
+import { selectHomepageActivities } from './data/activity.js';
 import type { SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
@@ -149,12 +150,12 @@ function lastUpdatedLabel(): string | null {
 
 app.get('/', (c) => {
   const now = Date.now();
-  const recent = repository.listActivities(500)
+  const eligible = repository.listActivities(500)
     .filter((activity) => {
       if (!activity.occurredAt || !['exact', 'day'].includes(activity.occurredAtPrecision)) return true;
       return Date.parse(activity.occurredAt) <= now;
-    })
-    .slice(0, 100);
+    });
+  const recent = selectHomepageActivities(eligible);
   c.header('Cache-Control', 'no-cache');
   return c.html(homePage(
     config.ownerName,

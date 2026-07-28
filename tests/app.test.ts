@@ -45,7 +45,8 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(homeHtml, /Recent activity/);
   assert.match(homeHtml, /Homepage Anime/);
   assert.match(homeHtml, /Kitsu/);
-  assert.match(homeHtml, /every connected platform/);
+  assert.match(homeHtml, /balanced view/);
+  assert.match(homeHtml, /highlights from/);
   assert.doesNotMatch(homeHtml, /src="\/card\//);
   const cards = await app.request('/cards');
   assert.equal(cards.status, 200);
