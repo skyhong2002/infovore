@@ -785,9 +785,20 @@ export class Repository {
       FROM ranked WHERE row_number=1 ORDER BY watched_at DESC LIMIT 10
     `).all(...params) as Array<Record<string, string | number | null>>;
     const keywordRows = this.db.prepare(`
-      SELECT DISTINCT COALESCE(v.title, w.raw_title) title, v.description, v.tags_json
-      FROM youtube_watch_events w LEFT JOIN youtube_videos v ON v.video_id=w.video_id
-      ${where}
+      WITH ranked AS (
+        SELECT w.video_id, w.raw_url, w.raw_title, w.watched_at,
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(w.video_id, w.raw_url) ORDER BY w.watched_at DESC
+          ) row_number
+        FROM youtube_watch_events w
+        ${where}
+      )
+      SELECT COALESCE(v.title, w.raw_title) title,
+        SUBSTR(v.description, 1, 600) description, v.tags_json
+      FROM ranked w LEFT JOIN youtube_videos v ON v.video_id=w.video_id
+      WHERE w.row_number=1
+      ORDER BY w.watched_at DESC
+      LIMIT 5000
     `).all(...params) as Array<{ title: string; description: string | null; tags_json: string | null }>;
     return {
       range,
