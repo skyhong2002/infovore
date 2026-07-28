@@ -117,7 +117,11 @@ export function platformIndexPage(ownerName: string, platforms: PlatformSummary[
       <div class="platform-tile-footer">${fetchedAt ? `Synced ${html(date(fetchedAt))}` : 'Live from the infovore archive'} <span>Open →</span></div>
     </a>`;
   }).join('');
-  return shell(`${ownerName} · platforms`, `${platformNav()}<section class="platform-intro"><p class="muted">A local, read-only copy of the content infovore already collects from each connected account.</p></section><main class="platform-index">${cards}</main>`);
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Source view</div><h1>Platform mirrors</h1>
+    <p>A local, read-only copy of what infovore collects for ${html(ownerName)} from every connected account—kept separate here, then combined in the Timeline.</p></div>
+    <div class="page-intro-aside">Open a platform to see its native entries, summary, and shareable cards.</div></section>
+    <div class="context-line"><a href="/">Combined timeline</a><span>→</span><strong>Platforms</strong><span>→</span><a href="/cards">All cards</a></div>`;
+  return shell(`${ownerName} · platforms`, `${intro}${platformNav()}<div class="platform-index">${cards}</div>`, 'platforms');
 }
 
 export function platformPage(
@@ -152,7 +156,7 @@ export function platformPage(
         return `<a href="/card/${html(name)}.svg${suffix}"><img src="/card/${html(name)}.webp${suffix}" alt="${html(definition.title)} ${html(name)} card" loading="lazy"></a>`;
       }).join('')}</div></section>`
     : '';
-  const body = `${platformNav(definition.source)}
+  const body = `<div class="context-line"><a href="/">Combined timeline</a><span>→</span><a href="/platforms">Platforms</a><span>→</span><strong>${html(definition.title)}</strong></div>${platformNav(definition.source)}
     <section class="platform-hero" style="--platform-accent:${html(definition.accent)}">
       ${snapshot.profile.avatar
         ? `<img class="platform-avatar" src="${html(snapshot.profile.avatar)}" alt="" loading="eager">`
@@ -165,5 +169,5 @@ export function platformPage(
     </section>${cards}
     <section><div class="platform-section-heading"><h2>Overview</h2><span>${snapshot.entries.length} synced entries</span></div>
     <div class="platform-stats">${stats}</div></section>${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}`;
-  return shell(`${definition.title} · ${snapshot.profile.name}`, body);
+  return shell(`${definition.title} · ${snapshot.profile.name}`, body, 'platforms');
 }

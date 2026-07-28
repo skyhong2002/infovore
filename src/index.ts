@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
@@ -13,7 +14,7 @@ import { fetchSimkl } from './sources/simkl.js';
 import { fetchGoodreads } from './sources/goodreads.js';
 import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
-import { homePage, nowPage, profilePage, wrappedPage } from './output/pages.js';
+import { homePage, html, nowPage, profilePage, shell, wrappedPage } from './output/pages.js';
 import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
 import { handleMcpRequest } from './mcp.js';
 import { buildBackloggdCard } from './output/backloggd.js';
@@ -105,6 +106,13 @@ async function refreshAll(): Promise<void> {
 }
 
 const app = new Hono();
+const ogImage = readFileSync(new URL('../assets/og.png', import.meta.url));
+
+app.get('/og.png', (c) => {
+  c.header('Content-Type', 'image/png');
+  c.header('Cache-Control', 'public, max-age=604800');
+  return c.body(ogImage.buffer.slice(ogImage.byteOffset, ogImage.byteOffset + ogImage.byteLength) as ArrayBuffer);
+});
 
 // Platform sections for the optional card gallery and status endpoint.
 // URLs derive from config so a self-hosted instance links to its own profiles;
@@ -167,6 +175,7 @@ app.get('/', (c) => {
     recent,
     repository.countPublicActivities(),
     lastUpdatedLabel(),
+    sections.length + 1,
   ));
 });
 
@@ -234,48 +243,20 @@ app.get('/cards', (c) => {
       const imgs = (s.cards ?? [])
         .map(
           (n) =>
-            `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.webp?v=${version(n)}" alt="${n}" width="520" loading="lazy"></a>`
+            `<a href="/card/${html(n)}.svg?v=${version(n)}"><img src="/card/${html(n)}.webp?v=${version(n)}" alt="${html(s.title)} ${html(n)} card" width="520" loading="lazy"></a>`
         )
         .join('\n');
       const shortUrl = externalUrl.replace(/^https:\/\//, '').replace(/\/$/, '');
-      return `<section><h2><a href="/platforms/${s.source}">${s.title}</a><a class="profile-link" href="${externalUrl}">${shortUrl}</a></h2><div class="row">${imgs}</div></section>`;
+      return `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/platforms/${html(s.source)}">${html(s.title)}</a></h2><a class="profile-link" href="${html(externalUrl)}">${html(shortUrl)} ↗</a></div><div class="card-gallery-row">${imgs}</div></section>`;
     })
     .join('\n');
   const updated = lastUpdatedLabel();
   c.header('Cache-Control', 'no-cache');
-  return c.html(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="alternate" type="application/rss+xml" title="${config.ownerName} · infovore" href="/feed.xml">
-<title>cards · infovore · ${config.ownerName}</title>
-<style>
-  body { background: #0d0e11; color: #e8eaed; margin: 0 auto; padding: 32px 16px 48px;
-         max-width: 1100px; font-family: system-ui, -apple-system, sans-serif; }
-  h1 { font-size: 26px; margin: 0 0 4px; }
-  p.sub { color: #8a939e; margin: 0 0 28px; font-size: 14px; }
-  section { margin-bottom: 36px; }
-  h2 { font-size: 15px; color: #8a939e; text-transform: uppercase; letter-spacing: 1.5px;
-       margin: 0 0 12px; }
-  h2 a { color: inherit; text-decoration: none; }
-  h2 a:hover { color: #e8eaed; }
-  h2 .profile-link { font-size: 12px; text-transform: none; letter-spacing: 0; margin-left: 12px;
-                     color: #5a626b; }
-  h2 .profile-link:hover { color: #8a939e; text-decoration: underline; }
-  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-  .row img { max-width: 100%; height: auto; display: block; }
-  footer { color: #5a626b; font-size: 13px; }
-  footer a { color: #8a939e; }
-</style>
-</head>
-<body>
-<h1>infovore cards</h1>
-<p class="sub"><a href="/">recent activity</a> · What ${config.ownerName} is playing, watching, reading and listening to — refreshed daily at ${config.refreshTimes.join(', ')} (GMT+8)${updated ? ` · last updated ${updated}` : ''}.</p>
-${body}
-<footer><a href="/profile">profile</a> · <a href="/now">now</a> · <a href="/wrapped">wrapped</a> · <a href="/feed.xml">rss</a> · <a href="/status">status</a> · <a href="https://github.com/skyhong2002/infovore">source</a></footer>
-</body>
-</html>`);
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Shareable view</div><h1>Cards</h1>
+    <p>Compact visual snapshots generated from the same platform data. Use this gallery when the timeline is too detailed and the platform mirrors are too broad.</p></div>
+    <div class="page-intro-aside">${updated ? `Last synced ${html(updated)}.` : ''} Click any card for its SVG original.</div></section>
+    <div class="context-line"><a href="/">Timeline</a><span>→</span><a href="/platforms">Platforms</a><span>→</span><strong>Cards</strong></div>`;
+  return c.html(shell(`${config.ownerName} · cards`, `${intro}<div class="card-gallery">${body}</div>`, 'cards'));
 });
 
 app.get('/status', (c) => {

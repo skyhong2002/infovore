@@ -48,21 +48,34 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(homeHtml, /Homepage Anime/);
   assert.match(homeHtml, /Kitsu/);
   assert.match(homeHtml, /href="\/platforms\/kitsu"/);
-  assert.match(homeHtml, /balanced view/);
+  assert.match(homeHtml, /Balanced timeline/);
   assert.match(homeHtml, /highlights from/);
+  assert.match(homeHtml, /The same life, organized three ways/);
+  assert.match(homeHtml, /href="\/" aria-current="page">Timeline/);
+  assert.match(homeHtml, /property="og:image" content="http:\/\/localhost:3000\/og\.png"/);
   assert.doesNotMatch(homeHtml, /src="\/card\//);
+  const og = await app.request('/og.png');
+  assert.equal(og.status, 200);
+  assert.equal(og.headers.get('content-type'), 'image/png');
   const cards = await app.request('/cards');
   assert.equal(cards.status, 200);
-  assert.match(await cards.text(), /infovore cards/);
+  const cardsHtml = await cards.text();
+  assert.match(cardsHtml, /Shareable view/);
+  assert.match(cardsHtml, /href="\/cards" aria-current="page">Cards/);
   const profile = await app.request('/profile');
   assert.equal(profile.status, 200);
-  assert.match(await profile.text(), /Activity archive/);
+  assert.match(await profile.text(), /The archive/);
   const now = await app.request('/now');
-  assert.match(await now.text(), /Future Concert/);
+  const nowHtml = await now.text();
+  assert.match(nowHtml, /Future Concert/);
+  assert.match(nowHtml, /href="\/now" aria-current="page">Now/);
   const wrappedJson = await (await app.request('/api/wrapped/2099.json')).json() as { totalActivities: number };
   assert.equal(wrappedJson.totalActivities, 1);
   const wrapped = await app.request('/wrapped/2099');
-  assert.match(await wrapped.text(), /2099 Wrapped/);
+  const wrappedHtml = await wrapped.text();
+  assert.match(wrappedHtml, /2099 Wrapped/);
+  assert.match(wrappedHtml, /Archive · annual view/);
+  assert.match(wrappedHtml, /href="\/profile" aria-current="page">Archive/);
 });
 
 test('platform index and dedicated mirrors render source-native content', async () => {
@@ -91,6 +104,8 @@ test('platform index and dedicated mirrors render source-native content', async 
   assert.match(indexHtml, /Platform mirror/);
   assert.match(indexHtml, /href="\/platforms\/statsfm"/);
   assert.match(indexHtml, /Manual events/);
+  assert.match(indexHtml, /href="\/platforms" aria-current="page">Platforms/);
+  assert.match(indexHtml, /Combined timeline/);
 
   const mirror = await app.request('/platforms/statsfm');
   const mirrorHtml = await mirror.text();
