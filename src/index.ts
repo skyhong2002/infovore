@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
 import { Repository } from './data/database.js';
 import { selectHomepageActivities } from './data/activity.js';
+import { nextIntervalAt } from './data/schedule.js';
 import type { SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
@@ -151,9 +152,7 @@ function formatGmt8(ts: number): string {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${hh}:${mm} GMT+8`;
 }
 
-// The most recent successful fetch across active sources — refreshes now
-// happen twice a day rather than every 30 minutes, so it's worth showing
-// how fresh the data actually is instead of implying it's always current.
+// The most recent successful fetch across active sources.
 function lastUpdatedLabel(): string | null {
   const timestamps = activeSources
     .map((name) => getCache(`data:${name}`)?.fetchedAt)
@@ -275,6 +274,10 @@ app.get('/status', (c) => {
   });
   return c.json({
     owner: config.ownerName,
+    refresh: {
+      intervalMinutes: config.refreshIntervalMinutes,
+      nextScheduledAt: new Date(nextRunAt()).toISOString(),
+    },
     database: { activities: repository.countPublicActivities(), latestRuns: repository.latestRuns() },
     cards: sections.flatMap((s) => s.cards ?? []).map((n) => `/card/${n}.svg`),
     sources,
@@ -447,22 +450,11 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-// Refresh immediately on startup, then on the fixed daily GMT+8 schedule in
-// config.refreshTimes (default 06:00 & 18:00) rather than a fixed interval.
-const DAY_MS = 24 * 60 * 60 * 1000;
-
+// Refresh immediately on startup, then at the next interval boundary. The
+// recursive timeout is scheduled after the current refresh finishes so slow
+// upstreams can never cause overlapping cycles.
 function nextRunAt(): number {
-  const now = Date.now();
-  let next = Infinity;
-  for (const time of config.refreshTimes) {
-    const [hour, minute] = time.split(':').map(Number);
-    const d = new Date(now);
-    d.setUTCHours(hour, minute, 0, 0);
-    let t = d.getTime() - GMT8_OFFSET_MS; // shift UTC HH:MM to GMT+8 HH:MM
-    while (t <= now) t += DAY_MS;
-    if (t < next) next = t;
-  }
-  return next;
+  return nextIntervalAt(Date.now(), config.refreshIntervalMinutes);
 }
 
 function scheduleNextRefresh(): void {

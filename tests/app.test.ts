@@ -84,6 +84,9 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(wrappedHtml, /2099 Wrapped/);
   assert.match(wrappedHtml, /Archive · annual view/);
   assert.match(wrappedHtml, /href="\/profile" aria-current="page">Archive/);
+  const status = await (await app.request('/status')).json() as { refresh: { intervalMinutes: number; nextScheduledAt: string } };
+  assert.equal(status.refresh.intervalMinutes, 60);
+  assert.match(status.refresh.nextScheduledAt, /^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/);
 });
 
 test('platform index and dedicated mirrors render source-native content', async () => {
