@@ -38,20 +38,26 @@ test('event ingestion requires auth and never exposes private events', async () 
 test('profile, now and Wrapped pages render from durable activities', async () => {
   repository.ingestEntries([{
     source: 'kitsu', sourceItemId: 'home-entry', kind: 'anime', title: 'Homepage Anime',
-    image: 'https://example.test/home.jpg', status: 'completed',
+    image: 'https://example.test/home.jpg', status: 'current',
     activityAt: '2026-07-01T12:00:00Z', rating: { value: 9, scale: 10 }, extra: { progress: 12 },
   }], '2026-07-01T13:00:00Z');
   const home = await app.request('/');
   assert.equal(home.status, 200);
   const homeHtml = await home.text();
-  assert.match(homeHtml, /Recent activity/);
+  assert.match(homeHtml, /More recent highlights/);
   assert.match(homeHtml, /Homepage Anime/);
   assert.match(homeHtml, /Kitsu/);
   assert.match(homeHtml, /href="\/platforms\/kitsu"/);
   assert.match(homeHtml, /Balanced timeline/);
   assert.match(homeHtml, /highlights from/);
-  assert.match(homeHtml, /The same life, organized three ways/);
-  assert.match(homeHtml, /href="\/" aria-current="page">Timeline/);
+  assert.match(homeHtml, /Personal infoboard/);
+  assert.match(homeHtml, /The useful things first/);
+  assert.match(homeHtml, /Up next/);
+  assert.match(homeHtml, /In progress/);
+  assert.match(homeHtml, /Future Concert/);
+  assert.match(homeHtml, /Latest signal from each platform/);
+  assert.doesNotMatch(homeHtml, /One timeline for everything worth remembering/);
+  assert.match(homeHtml, /href="\/" aria-current="page">Home/);
   assert.match(homeHtml, /property="og:image" content="http:\/\/localhost:3000\/og\.png"/);
   assert.doesNotMatch(homeHtml, /src="\/card\//);
   const og = await app.request('/og.png');
@@ -62,6 +68,8 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   const cardsHtml = await cards.text();
   assert.match(cardsHtml, /Shareable view/);
   assert.match(cardsHtml, /href="\/cards" aria-current="page">Cards/);
+  assert.match(cardsHtml, /\.card-gallery-row\{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px\}/);
+  assert.match(cardsHtml, /\.card-gallery-row img\{display:block;height:auto;max-width:100%;width:520px\}/);
   const profile = await app.request('/profile');
   assert.equal(profile.status, 200);
   assert.match(await profile.text(), /The archive/);
@@ -105,7 +113,7 @@ test('platform index and dedicated mirrors render source-native content', async 
   assert.match(indexHtml, /href="\/platforms\/statsfm"/);
   assert.match(indexHtml, /Manual events/);
   assert.match(indexHtml, /href="\/platforms" aria-current="page">Platforms/);
-  assert.match(indexHtml, /Combined timeline/);
+  assert.match(indexHtml, /href="\/">Home/);
 
   const mirror = await app.request('/platforms/statsfm');
   const mirrorHtml = await mirror.text();
@@ -118,6 +126,8 @@ test('platform index and dedicated mirrors render source-native content', async 
   assert.match(mirrorHtml, /src="\/card\/statsfm\.webp\?v=/);
   assert.match(mirrorHtml, /src="\/card\/statsfm-albums\.webp\?v=/);
   assert.match(mirrorHtml, /src="\/card\/statsfm-artists\.webp\?v=/);
+  assert.match(mirrorHtml, /\.platform-card-grid a\{border-radius:10px;display:block;flex:0 1 520px/);
+  assert.match(mirrorHtml, /\.platform-card-grid img\{display:block;height:auto;max-width:100%;width:520px\}/);
 
   const manual = await app.request('/platforms/events');
   assert.equal(manual.status, 200);

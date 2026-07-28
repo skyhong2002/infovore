@@ -163,12 +163,13 @@ function lastUpdatedLabel(): string | null {
 
 app.get('/', (c) => {
   const now = Date.now();
-  const eligible = repository.listActivities(500)
+  const all = repository.listActivities(500);
+  const eligible = all
     .filter((activity) => {
       if (!activity.occurredAt || !['exact', 'day'].includes(activity.occurredAtPrecision)) return true;
       return Date.parse(activity.occurredAt) <= now;
     });
-  const recent = selectHomepageActivities(eligible);
+  const recent = selectHomepageActivities(eligible, 24);
   c.header('Cache-Control', 'no-cache');
   return c.html(homePage(
     config.ownerName,
@@ -176,6 +177,9 @@ app.get('/', (c) => {
     repository.countPublicActivities(),
     lastUpdatedLabel(),
     sections.length + 1,
+    currentActivities(all, 4),
+    upcomingActivities(new Date(now).toISOString(), 4),
+    latestSourceActivities(eligible),
   ));
 });
 
@@ -255,7 +259,7 @@ app.get('/cards', (c) => {
   const intro = `<section class="page-intro"><div><div class="eyebrow">Shareable view</div><h1>Cards</h1>
     <p>Compact visual snapshots generated from the same platform data. Use this gallery when the timeline is too detailed and the platform mirrors are too broad.</p></div>
     <div class="page-intro-aside">${updated ? `Last synced ${html(updated)}.` : ''} Click any card for its SVG original.</div></section>
-    <div class="context-line"><a href="/">Timeline</a><span>→</span><a href="/platforms">Platforms</a><span>→</span><strong>Cards</strong></div>`;
+    <div class="context-line"><a href="/">Home</a><span>→</span><a href="/platforms">Platforms</a><span>→</span><strong>Cards</strong></div>`;
   return c.html(shell(`${config.ownerName} · cards`, `${intro}<div class="card-gallery">${body}</div>`, 'cards'));
 });
 
@@ -307,10 +311,31 @@ function uniqueItems<T extends { source: string; sourceItemId: string | null; ti
   });
 }
 
+function currentActivities(items: ReturnType<Repository['listActivities']>, limit = 12) {
+  return uniqueItems(items).filter((item) =>
+    ['current', 'reading', 'watching', 'playing'].includes(item.status ?? '')
+  ).slice(0, limit);
+}
+
+function upcomingActivities(now: string, limit = 12) {
+  return uniqueItems(repository.queryActivities({ kind: 'event', since: now, limit: 100 }).data)
+    .sort((a, b) => Date.parse(a.occurredAt ?? '') - Date.parse(b.occurredAt ?? ''))
+    .slice(0, limit);
+}
+
+function latestSourceActivities(items: ReturnType<Repository['listActivities']>) {
+  const seen = new Set<string>();
+  return uniqueItems(items).filter((item) => {
+    if (seen.has(item.source)) return false;
+    seen.add(item.source);
+    return true;
+  }).slice(0, sections.length + 1);
+}
+
 app.get('/now', (c) => {
   const now = new Date().toISOString();
-  const current = uniqueItems(repository.listActivities(500).filter((item) => ['current', 'reading', 'watching', 'playing'].includes(item.status ?? ''))).slice(0, 12);
-  const upcoming = uniqueItems(repository.queryActivities({ kind: 'event', since: now, limit: 100 }).data).slice(0, 12);
+  const current = currentActivities(repository.listActivities(500));
+  const upcoming = upcomingActivities(now);
   const recent = repository.queryActivities({ until: now, limit: 24 }).data;
   return c.html(nowPage(config.ownerName, current, upcoming, recent));
 });
