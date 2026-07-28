@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { mergeQueue, retryDelayMs } from '../chrome-extension/queue.js';
 
+await import('../chrome-extension/history.js');
+
 test('Chrome extension manifest is least-privilege and captures YouTube SPA pages', () => {
   const manifest = JSON.parse(readFileSync(
     new URL('../chrome-extension/manifest.json', import.meta.url),
@@ -33,4 +35,47 @@ test('capture retry queue keeps only the newest cumulative session update', () =
   assert.equal(replaced[0].nextAttemptAt, 2_000);
   assert.equal(retryDelayMs(1), 30_000);
   assert.equal(retryDelayMs(20), 6 * 60 * 60_000);
+});
+
+test('history helper parses duration and merges duplicate resume progress', () => {
+  Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: { origin: 'https://www.youtube.com' },
+  });
+  const helper = globalThis.infovoreYoutubeHistory;
+  assert.equal(helper.parseDurationText('9:35:04'), 34_504);
+  assert.equal(helper.parseDurationText('12:34'), 754);
+  assert.equal(helper.parseDurationText('LIVE'), null);
+
+  const lockup = ({ progress, resume, duration }) => ({
+    querySelector(selector) {
+      if (selector.startsWith('h3 a')) {
+        return { href: 'https://www.youtube.com/watch?v=ABCDEFGHIJK' };
+      }
+      if (selector.startsWith('.ytThumbnail')) {
+        return { getAttribute: () => `width: ${progress}%` };
+      }
+      if (selector.includes('[href*="t="]')) {
+        return { href: `https://www.youtube.com/watch?v=ABCDEFGHIJK&t=${resume}s` };
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      return selector === '.ytBadgeShapeText'
+        ? [{ textContent: duration }]
+        : [];
+    },
+  });
+  const items = helper.collectProgress({
+    querySelectorAll: () => [
+      lockup({ progress: 30, resume: 90, duration: '10:00' }),
+      lockup({ progress: 40, resume: 120, duration: '10:00' }),
+    ],
+  });
+  assert.deepEqual(items, [{
+    videoId: 'ABCDEFGHIJK',
+    progressPercent: 40,
+    resumeSeconds: 120,
+    durationSeconds: 600,
+  }]);
 });

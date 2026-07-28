@@ -3,6 +3,7 @@ import { DEFAULT_ENDPOINT, mergeQueue, retryDelayMs } from './queue.js';
 const QUEUE_KEY = 'captureQueue';
 const SETTINGS_KEY = 'captureSettings';
 const STATUS_KEY = 'captureStatus';
+const HISTORY_STATUS_KEY = 'historyImportStatus';
 let queueMutation = Promise.resolve();
 let flushPromise = null;
 
@@ -143,6 +144,122 @@ function flushQueue() {
   return flushPromise;
 }
 
+function progressEndpoint(endpoint) {
+  return endpoint.replace(/\/capture$/, '/progress');
+}
+
+async function sendProgressBatch(payload) {
+  const config = await settings();
+  if (!config.enabled || !config.token) throw new Error('Capture token is not configured');
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(progressEndpoint(config.endpoint), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (response.ok) return await response.json();
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body?.error || `Progress import failed: HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1000 * (2 ** attempt)));
+    }
+  }
+  throw lastError;
+}
+
+async function historyStatus(patch) {
+  const stored = await chrome.storage.local.get(HISTORY_STATUS_KEY);
+  await chrome.storage.local.set({
+    [HISTORY_STATUS_KEY]: {
+      ...(stored[HISTORY_STATUS_KEY] ?? {}),
+      ...patch,
+    },
+  });
+}
+
+async function waitForTab(tabId) {
+  const current = await chrome.tabs.get(tabId);
+  if (current.status === 'complete') return;
+  await new Promise((resolve) => {
+    const listener = (updatedId, changeInfo) => {
+      if (updatedId !== tabId || changeInfo.status !== 'complete') return;
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+async function startHistoryImport() {
+  const config = await settings();
+  if (!config.enabled || !config.token) throw new Error('Capture token is not configured');
+  const stored = await chrome.storage.local.get(HISTORY_STATUS_KEY);
+  if (stored[HISTORY_STATUS_KEY]?.state === 'running') {
+    throw new Error('A history import is already running');
+  }
+  const scanId = crypto.randomUUID();
+  const observedAt = new Date().toISOString();
+  const tab = await chrome.tabs.create({
+    active: true,
+    url: 'https://www.youtube.com/feed/history',
+  });
+  if (!tab.id) throw new Error('Could not open YouTube History');
+  await historyStatus({
+    state: 'running',
+    scanId,
+    observedAt,
+    tabId: tab.id,
+    videos: 0,
+    pass: 0,
+    lastError: '',
+  });
+  void (async () => {
+    try {
+      await waitForTab(tab.id);
+      const result = await chrome.tabs.sendMessage(tab.id, {
+        type: 'start-history-import',
+        scanId,
+        observedAt,
+      });
+      if (!result?.ok) throw new Error(result?.error || 'YouTube History import failed');
+      await historyStatus({
+        state: 'complete',
+        videos: result.videos,
+        completedAt: new Date().toISOString(),
+        lastError: '',
+      });
+    } catch (error) {
+      const storedStatus = await chrome.storage.local.get(HISTORY_STATUS_KEY);
+      if (storedStatus[HISTORY_STATUS_KEY]?.state === 'cancelled') return;
+      await historyStatus({
+        state: 'error',
+        completedAt: new Date().toISOString(),
+        lastError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+  return { scanId, observedAt, tabId: tab.id };
+}
+
+async function cancelHistoryImport() {
+  const stored = await chrome.storage.local.get(HISTORY_STATUS_KEY);
+  const status = stored[HISTORY_STATUS_KEY] ?? {};
+  if (status.tabId) {
+    await chrome.tabs.sendMessage(status.tabId, { type: 'cancel-history-import' }).catch(() => {});
+  }
+  await historyStatus({
+    state: 'cancelled',
+    completedAt: new Date().toISOString(),
+    lastError: '',
+  });
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'capture' && message.payload) {
     enqueue(message.payload)
@@ -152,6 +269,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === 'flush') {
     flushQueue()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+  if (message?.type === 'history-import-start') {
+    startHistoryImport()
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) => {
+        sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
+      });
+    return true;
+  }
+  if (message?.type === 'history-import-cancel') {
+    cancelHistoryImport()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+  if (message?.type === 'history-progress-batch' && message.payload) {
+    sendProgressBatch(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    return true;
+  }
+  if (message?.type === 'history-import-progress') {
+    historyStatus({
+      state: 'running',
+      videos: message.videos,
+      pass: message.pass,
+    })
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;

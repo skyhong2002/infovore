@@ -62,6 +62,28 @@ export interface YoutubeCaptureResult {
   actualWatchedSeconds: number;
 }
 
+export interface YoutubeProgressInput {
+  videoId: string;
+  progressPercent: number | null;
+  resumeSeconds: number | null;
+  durationSeconds: number | null;
+}
+
+export interface YoutubeProgressBatchInput {
+  scanId: string;
+  observedAt: string;
+  complete: boolean;
+  items: YoutubeProgressInput[];
+}
+
+export interface YoutubeProgressImportResult {
+  scanId: string;
+  accepted: number;
+  stored: number;
+  totalStored: number;
+  completed: boolean;
+}
+
 export interface YoutubeVideoMetadata {
   videoId: string;
   title: string;
@@ -101,7 +123,7 @@ export interface YoutubeChannelSummary {
   name: string;
   thumbnailUrl: string;
   watches: number;
-  durationSeconds: number;
+  estimatedWatchSeconds: number;
 }
 
 export type YoutubeChannelTrendEntry = YoutubeChannelSummary;
@@ -115,13 +137,13 @@ export interface YoutubeTopicSummary {
   slug: string;
   name: string;
   watches: number;
-  durationSeconds: number;
+  estimatedWatchSeconds: number;
 }
 
 export interface YoutubeDailySummary {
   day: string;
   watches: number;
-  durationSeconds: number;
+  estimatedWatchSeconds: number;
 }
 
 export interface YoutubeLengthBucket {
@@ -143,6 +165,11 @@ export interface YoutubeDashboardData {
     uniqueVideos: number;
     uniqueChannels: number;
     openedDurationSeconds: number;
+    catalogDurationSeconds: number;
+    estimatedWatchSeconds: number;
+    inferredWatchSeconds: number;
+    contentCoveredSeconds: number;
+    progressCoverage: number;
     actualWatchedSeconds: number | null;
     metadataCoverage: number;
   };

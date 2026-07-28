@@ -6,6 +6,7 @@
   let boundVideo = null;
   let lastTickAt = performance.now();
   let lastMediaTime = 0;
+  let historyImportCancelled = false;
 
   function videoIdFromLocation() {
     const url = new URL(location.href);
@@ -158,6 +159,70 @@
     if (!video.paused) ensureSession(video);
   }
 
+  function wait(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+  }
+
+  function progressFingerprint(item) {
+    return [
+      item.progressPercent ?? '',
+      item.resumeSeconds ?? '',
+      item.durationSeconds ?? '',
+    ].join(':');
+  }
+
+  async function sendProgressBatch(scanId, observedAt, items, complete = false) {
+    const response = await chrome.runtime.sendMessage({
+      type: 'history-progress-batch',
+      payload: { scanId, observedAt, items, complete },
+    });
+    if (!response?.ok) throw new Error(response?.error || 'Progress batch was rejected');
+    return response;
+  }
+
+  async function runHistoryImport(scanId, observedAt) {
+    if (location.pathname !== '/feed/history') {
+      throw new Error('History import must run on the YouTube History page');
+    }
+    historyImportCancelled = false;
+    const sent = new Map();
+    let unchangedPasses = 0;
+    let lastHeight = 0;
+    let lastItems = 0;
+    for (let pass = 0; pass < 900; pass++) {
+      if (historyImportCancelled) throw new Error('History import cancelled');
+      const items = globalThis.infovoreYoutubeHistory.collectProgress();
+      const changed = items.filter((item) => {
+        const fingerprint = progressFingerprint(item);
+        if (sent.get(item.videoId) === fingerprint) return false;
+        sent.set(item.videoId, fingerprint);
+        return true;
+      });
+      for (let index = 0; index < changed.length; index += 250) {
+        await sendProgressBatch(scanId, observedAt, changed.slice(index, index + 250));
+      }
+      await chrome.runtime.sendMessage({
+        type: 'history-import-progress',
+        scanId,
+        videos: sent.size,
+        pass,
+      });
+      const height = document.documentElement.scrollHeight;
+      if (height === lastHeight && items.length === lastItems && changed.length === 0) {
+        unchangedPasses++;
+      } else {
+        unchangedPasses = 0;
+      }
+      if (unchangedPasses >= 5) break;
+      lastHeight = height;
+      lastItems = items.length;
+      window.scrollTo({ top: height, behavior: 'instant' });
+      await wait(700);
+    }
+    await sendProgressBatch(scanId, observedAt, [], true);
+    return sent.size;
+  }
+
   function handleNavigation() {
     const videoId = videoIdFromLocation();
     if (state && state.videoId !== videoId) {
@@ -174,6 +239,22 @@
     lastMediaTime = boundVideo?.currentTime ?? 0;
   });
   window.addEventListener('pagehide', () => flush(true));
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'start-history-import') {
+      runHistoryImport(message.scanId, message.observedAt)
+        .then((videos) => sendResponse({ ok: true, videos }))
+        .catch((error) => sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+      return true;
+    }
+    if (message?.type === 'cancel-history-import') {
+      historyImportCancelled = true;
+      sendResponse({ ok: true });
+    }
+    return false;
+  });
   new MutationObserver(bindVideo).observe(document.documentElement, {
     childList: true,
     subtree: true,

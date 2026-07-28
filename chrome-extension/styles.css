@@ -118,6 +118,15 @@ button.secondary {
   color: #d9dde3;
 }
 
+button.danger {
+  border-color: #b9472e;
+  color: #ff9c87;
+}
+
+.popup .actions {
+  flex-wrap: wrap;
+}
+
 #result,
 .error {
   min-height: 20px;

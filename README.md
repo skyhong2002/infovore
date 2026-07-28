@@ -103,6 +103,7 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /api/wrapped/{year}.json` — machine-readable annual recap
 - `POST /api/ingest/events` — authenticated private-ingest service (JSON)
 - `POST /api/ingest/youtube/capture` — dedicated-token Chrome viewing capture
+- `POST /api/ingest/youtube/progress` — explicit history progress import
 - `POST /mcp` — stateless MCP Streamable HTTP endpoint
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
 
@@ -174,9 +175,15 @@ five non-ad playback seconds, and sends cumulative measured watch time
 every 30 seconds. Failed requests remain in `chrome.storage.local`, retry with
 bounded exponential backoff, and survive browser restarts. One session is
 idempotently updated server-side, so retries never add duplicate watch events.
-The dedicated token can only access the capture endpoint. Search terms,
-playback position, cookies, and browsing outside `www.youtube.com` are not
-collected.
+The dedicated token can only access the capture and progress endpoints. Search
+terms, cookies, and browsing outside `www.youtube.com` are not collected.
+
+The popup's explicit **Import history** action opens the signed-in YouTube
+History page and imports only video ids plus the resume/progress and duration
+shown there. It does not import titles, channels, history timestamps, searches,
+or event order. These rows remain private and contribute only aggregate
+content-coverage statistics. Automatic viewing capture does not collect
+playback position.
 
 ### Behind a reverse proxy
 

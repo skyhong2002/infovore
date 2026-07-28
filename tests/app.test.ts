@@ -280,6 +280,68 @@ test('YouTube Chrome capture uses a dedicated token and idempotently updates a s
   assert.equal(timeline.total, 0);
 });
 
+test('YouTube progress import is private, authenticated, bounded, and aggregate-only', async () => {
+  const observedAt = new Date().toISOString();
+  const payload = {
+    scanId: 'api-progress-123456789',
+    observedAt,
+    complete: true,
+    items: [{
+      videoId: 'PROGRESS001',
+      progressPercent: 37.5,
+      resumeSeconds: 321,
+      durationSeconds: 900,
+    }],
+  };
+  const unauthorized = await ingestApp.request('/api/ingest/youtube/progress', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(unauthorized.status, 401);
+  const broadToken = await ingestApp.request('/api/ingest/youtube/progress', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: 'Bearer test-token-with-at-least-32-characters',
+    },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(broadToken.status, 401);
+  const headers = {
+    'content-type': 'application/json',
+    authorization: 'Bearer test-youtube-capture-token-with-at-least-32-characters',
+  };
+  const oversized = await ingestApp.request('/api/ingest/youtube/progress', {
+    method: 'POST',
+    headers,
+    body: 'x'.repeat(97 * 1024),
+  });
+  assert.equal(oversized.status, 413);
+  const accepted = await ingestApp.request('/api/ingest/youtube/progress', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  assert.equal(accepted.status, 200);
+  const result = await accepted.json() as {
+    completed: boolean;
+    accepted: number;
+    totalStored: number;
+  };
+  assert.equal(result.completed, true);
+  assert.equal(result.accepted, 1);
+  assert.equal(result.totalStored, 1);
+
+  const publicBodies = [
+    await (await app.request('/api/youtube/summary.json?range=all')).text(),
+    await (await app.request('/api/youtube/recent.json')).text(),
+    await (await app.request('/feed.json')).text(),
+    await (await app.request('/feed.xml')).text(),
+  ].join('\n');
+  assert.doesNotMatch(publicBodies, /api-progress-123456789|resumeSeconds|PROGRESS001/);
+});
+
 test('platform index and dedicated mirrors render source-native content', async () => {
   const statsfm: SourceSnapshot<{
     topAlbums: Array<{ name: string; artist: string; image: string; streams: number }>;

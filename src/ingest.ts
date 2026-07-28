@@ -7,6 +7,7 @@ import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInpu
 import { completeYoutubeOAuth, youtubeOAuthAuthorizationUrl } from './youtube/portability.js';
 import { parseYoutubeArchive } from './youtube/takeout.js';
 import { normalizeYoutubeCapture } from './youtube/capture.js';
+import { normalizeYoutubeProgressBatch } from './youtube/progress.js';
 
 function authorized(auth: string | undefined, expectedToken = config.ingestToken): boolean {
   if (!expectedToken || !auth?.startsWith('Bearer ')) return false;
@@ -87,6 +88,25 @@ export function createIngestApp(repository: Repository): Hono {
       const input = normalizeYoutubeCapture(JSON.parse(body));
       const result = repository.upsertYoutubeCapture(input);
       return c.json({ ok: true, ...result }, result.inserted ? 201 : 200);
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  });
+  app.post('/api/ingest/youtube/progress', async (c) => {
+    if (!config.youtube.captureToken) {
+      return c.json({ error: 'YouTube capture is not configured' }, 503);
+    }
+    if (!authorized(c.req.header('authorization'), config.youtube.captureToken)) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    try {
+      const body = await c.req.text();
+      if (Buffer.byteLength(body) > 96 * 1024) {
+        return c.json({ error: 'Progress payload exceeds 96 KiB' }, 413);
+      }
+      const input = normalizeYoutubeProgressBatch(JSON.parse(body));
+      const result = repository.ingestYoutubeProgress(input);
+      return c.json({ ok: true, ...result }, result.completed ? 200 : 202);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }

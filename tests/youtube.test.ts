@@ -13,6 +13,10 @@ import { fetchYoutubeChannelMetadata, fetchYoutubeMetadata } from '../src/youtub
 import { extractYoutubeKeywords } from '../src/youtube/keywords.js';
 import { normalizeYoutubeCapture } from '../src/youtube/capture.js';
 import { runYoutubePortabilityStep } from '../src/youtube/portability.js';
+import {
+  normalizeYoutubeProgressBatch,
+  progressSeconds,
+} from '../src/youtube/progress.js';
 import { parseYoutubeArchive } from '../src/youtube/takeout.js';
 import type { YoutubeParsedArchive, YoutubeVideoMetadata } from '../src/youtube/types.js';
 
@@ -287,6 +291,204 @@ test('Chrome captures validate YouTube URLs and idempotently increase measured w
       watchedAt: '2026-07-28T12:00:00Z',
       actualWatchedSeconds: 5,
     }, now), /does not match/);
+  } finally {
+    repository.close();
+  }
+});
+
+test('YouTube progress validation prefers exact resume positions and rejects stale observations', () => {
+  const now = new Date('2026-07-29T12:00:00Z');
+  const batch = normalizeYoutubeProgressBatch({
+    scanId: 'scan-1234567890123456',
+    observedAt: '2026-07-29T11:55:00Z',
+    complete: false,
+    items: [
+      {
+        videoId: 'AAAAAAAAAAA',
+        progressPercent: 80,
+        resumeSeconds: 125,
+        durationSeconds: 100,
+      },
+      {
+        videoId: 'AAAAAAAAAAA',
+        progressPercent: 50,
+        resumeSeconds: 90,
+        durationSeconds: 100,
+      },
+    ],
+  }, now);
+  assert.equal(batch.items.length, 1);
+  assert.equal(batch.items[0].resumeSeconds, 90);
+  assert.equal(progressSeconds(batch.items[0]), 90);
+  assert.equal(progressSeconds({
+    videoId: 'BBBBBBBBBBB',
+    progressPercent: 25,
+    resumeSeconds: null,
+    durationSeconds: 400,
+  }), 100);
+  assert.throws(() => normalizeYoutubeProgressBatch({
+    scanId: 'scan-1234567890123456',
+    observedAt: '2026-07-28T11:00:00Z',
+    complete: false,
+    items: [],
+  }, now), /older than 24 hours/);
+});
+
+test('YouTube watch estimates, measured sessions, and content progress remain separate', () => {
+  const repository = new Repository(':memory:');
+  const now = new Date('2026-07-29T12:00:00Z');
+  const archive: YoutubeParsedArchive = {
+    archiveHash: 'progress-estimate-fixture',
+    source: 'takeout',
+    watches: [
+      {
+        eventId: 'estimate-watch-a',
+        videoId: 'AAAAAAAAAAA',
+        title: 'Estimated session',
+        url: 'https://www.youtube.com/watch?v=AAAAAAAAAAA',
+        channelId: 'channel-a',
+        channelTitle: 'Channel A',
+        channelUrl: 'https://www.youtube.com/channel/channel-a',
+        watchedAt: '2026-07-29T10:00:00Z',
+        actualWatchedSeconds: null,
+        activityType: 'video',
+      },
+      {
+        eventId: 'takeout-shadow-b',
+        videoId: 'BBBBBBBBBBB',
+        title: 'Measured session shadow',
+        url: 'https://www.youtube.com/watch?v=BBBBBBBBBBB',
+        channelId: 'channel-b',
+        channelTitle: 'Channel B',
+        channelUrl: 'https://www.youtube.com/channel/channel-b',
+        watchedAt: '2026-07-29T11:00:00Z',
+        actualWatchedSeconds: null,
+        activityType: 'video',
+      },
+    ],
+    searches: [
+      {
+        eventId: 'estimate-search-a',
+        searchedAt: '2026-07-29T10:04:00Z',
+        queryCiphertext: encryptPrivateValue('private interval marker', SECRET),
+        activityType: 'search',
+      },
+      {
+        eventId: 'estimate-search-b',
+        searchedAt: '2026-07-29T11:10:00Z',
+        queryCiphertext: encryptPrivateValue('private measured marker', SECRET),
+        activityType: 'search',
+      },
+    ],
+  };
+  try {
+    repository.ingestYoutubeArchive(archive);
+    repository.upsertYoutubeCapture(normalizeYoutubeCapture({
+      sessionId: '12345678-1234-4123-8123-123456789abc',
+      videoId: 'BBBBBBBBBBB',
+      title: 'Measured session',
+      url: 'https://www.youtube.com/watch?v=BBBBBBBBBBB',
+      channelTitle: 'Channel B',
+      watchedAt: '2026-07-29T11:02:00Z',
+      actualWatchedSeconds: 100,
+      durationSeconds: 1200,
+    }, now));
+    repository.upsertYoutubeVideoMetadata([
+      {
+        videoId: 'AAAAAAAAAAA',
+        title: 'Estimated session',
+        channelId: 'channel-a',
+        channelTitle: 'Channel A',
+        description: '',
+        tags: [],
+        thumbnailUrl: 'https://i.ytimg.com/vi/AAAAAAAAAAA/hqdefault.jpg',
+        durationSeconds: 600,
+        publishedAt: null,
+        categoryId: null,
+        availability: 'available',
+        metadataHash: 'estimate-a',
+      },
+      {
+        videoId: 'BBBBBBBBBBB',
+        title: 'Measured session',
+        channelId: 'channel-b',
+        channelTitle: 'Channel B',
+        description: '',
+        tags: [],
+        thumbnailUrl: 'https://i.ytimg.com/vi/BBBBBBBBBBB/hqdefault.jpg',
+        durationSeconds: 1200,
+        publishedAt: null,
+        categoryId: null,
+        availability: 'available',
+        metadataHash: 'estimate-b',
+      },
+    ]);
+    const imported = repository.ingestYoutubeProgress({
+      scanId: 'scan-estimate-123456789',
+      observedAt: '2026-07-29T11:55:00.000Z',
+      complete: false,
+      items: [
+        {
+          videoId: 'AAAAAAAAAAA',
+          progressPercent: 50,
+          resumeSeconds: 120,
+          durationSeconds: 600,
+        },
+        {
+          videoId: 'BBBBBBBBBBB',
+          progressPercent: 50,
+          resumeSeconds: null,
+          durationSeconds: 1200,
+        },
+      ],
+    });
+    assert.equal(imported.stored, 2);
+    assert.equal(repository.ingestYoutubeProgress({
+      scanId: 'scan-estimate-123456789',
+      observedAt: '2026-07-29T11:55:00.000Z',
+      complete: false,
+      items: [
+        {
+          videoId: 'AAAAAAAAAAA',
+          progressPercent: 50,
+          resumeSeconds: 120,
+          durationSeconds: 600,
+        },
+        {
+          videoId: 'BBBBBBBBBBB',
+          progressPercent: 50,
+          resumeSeconds: null,
+          durationSeconds: 1200,
+        },
+      ],
+    }).stored, 0);
+    const complete = repository.ingestYoutubeProgress({
+      scanId: 'scan-estimate-123456789',
+      observedAt: '2026-07-29T11:55:00.000Z',
+      complete: true,
+      items: [],
+    });
+    assert.equal(complete.completed, true);
+    assert.equal(complete.totalStored, 2);
+    assert.throws(() => repository.ingestYoutubeProgress({
+      scanId: 'scan-estimate-123456789',
+      observedAt: '2026-07-29T11:55:00.000Z',
+      complete: false,
+      items: [],
+    }), /already complete/);
+
+    const dashboard = repository.youtubeDashboard('all', now);
+    assert.equal(dashboard.stats.watchEvents, 3);
+    assert.equal(dashboard.stats.estimatedWatchSeconds, 340);
+    assert.equal(dashboard.stats.inferredWatchSeconds, 240);
+    assert.equal(dashboard.stats.actualWatchedSeconds, 100);
+    assert.equal(dashboard.stats.catalogDurationSeconds, 1800);
+    assert.equal(dashboard.stats.contentCoveredSeconds, 720);
+    assert.equal(dashboard.stats.progressCoverage, 1);
+    const ranged = repository.youtubeDashboard('7d', now);
+    assert.equal(ranged.stats.watchEvents, 3);
+    assert.equal(ranged.stats.estimatedWatchSeconds, 340);
+    assert.equal(ranged.stats.catalogDurationSeconds, 1800);
   } finally {
     repository.close();
   }

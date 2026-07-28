@@ -43,14 +43,14 @@ function channelChase(data: YoutubeDashboardData): string {
   if (!data.channelTrend.length) return '';
   const frames = JSON.stringify(data.channelTrend).replace(/</g, '\\u003c');
   const latest = data.channelTrend.at(-1)!;
-  const max = Math.max(1, ...latest.channels.map((channel) => channel.durationSeconds));
+  const max = Math.max(1, ...latest.channels.map((channel) => channel.estimatedWatchSeconds));
   const rows = latest.channels.map((channel) => `<div class="yt-chase-row">
     ${channelAvatar(channel)}
     <div class="yt-chase-copy"><div class="yt-chase-label"><strong>${html(channel.name)}</strong></div>
-      <div class="yt-chase-track"><i style="--share:${Math.round(channel.durationSeconds / max * 100)}%"></i></div></div>
-    <span class="yt-chase-value">${hours(channel.durationSeconds)}</span>
+      <div class="yt-chase-track"><i style="--share:${Math.round(channel.estimatedWatchSeconds / max * 100)}%"></i></div></div>
+    <span class="yt-chase-value">${hours(channel.estimatedWatchSeconds)}</span>
   </div>`).join('');
-  return `<section class="yt-section"><div class="yt-heading"><h2>Channel momentum</h2><span>cumulative opened duration</span></div>
+  return `<section class="yt-section"><div class="yt-heading"><h2>Channel momentum</h2><span>cumulative estimated time</span></div>
     <div class="yt-chase">
       <div class="yt-chase-controls">
         <button type="button" data-chase-play aria-label="Play channel history" title="Play channel history">▶</button>
@@ -87,7 +87,7 @@ function channelChase(data: YoutubeDashboardData): string {
         const render = (index) => {
           const frame = frames[index];
           if (!frame) return;
-          const max = Math.max(1, ...frame.channels.map((channel) => channel.durationSeconds));
+          const max = Math.max(1, ...frame.channels.map((channel) => channel.estimatedWatchSeconds));
           rows.replaceChildren(...frame.channels.map((channel) => {
             const row = document.createElement('div');
             row.className = 'yt-chase-row';
@@ -102,12 +102,12 @@ function channelChase(data: YoutubeDashboardData): string {
             const track = document.createElement('div');
             track.className = 'yt-chase-track';
             const bar = document.createElement('i');
-            bar.style.setProperty('--share', Math.round(channel.durationSeconds / max * 100) + '%');
+            bar.style.setProperty('--share', Math.round(channel.estimatedWatchSeconds / max * 100) + '%');
             track.append(bar);
             copy.append(label, track);
             const value = document.createElement('span');
             value.className = 'yt-chase-value';
-            value.textContent = formatHours(channel.durationSeconds);
+            value.textContent = formatHours(channel.estimatedWatchSeconds);
             row.append(copy, value);
             return row;
           }));
@@ -145,7 +145,7 @@ function channelChase(data: YoutubeDashboardData): string {
 const dashboardStyles = `
   .yt-range{align-items:center;border-bottom:1px solid var(--line);display:flex;gap:4px;margin-bottom:28px;overflow-x:auto;padding-bottom:12px}
   .yt-range a{border-radius:6px;color:var(--muted);font-size:12px;padding:7px 10px;text-decoration:none;white-space:nowrap}.yt-range a[aria-current=page]{background:#f2f4f7;color:#111}
-  .yt-stats{border-bottom:1px solid var(--line);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:42px}
+  .yt-stats{border-bottom:1px solid var(--line);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:42px}
   .yt-stat{border-left:1px solid var(--line);padding:16px}.yt-stat:first-child{border-left:0;padding-left:0}.yt-stat strong{display:block;font-size:22px}.yt-stat span{color:var(--quiet);font-size:10px;text-transform:uppercase}
   .yt-section{margin-top:42px}.yt-heading{align-items:end;display:flex;justify-content:space-between;margin-bottom:14px}.yt-heading h2{font-size:18px;margin:0}.yt-heading span{color:var(--quiet);font-size:11px}
   .yt-bars{align-items:end;border-bottom:1px solid var(--line);display:flex;gap:3px;height:150px;overflow-x:auto;padding:0 0 1px}.yt-day{background:#ff453a;display:block;flex:1 0 7px;min-height:2px;opacity:.86}.yt-day:hover{opacity:1}
@@ -171,8 +171,9 @@ export function youtubeDashboardPage(
     <div class="yt-stat"><strong>${compact(data.stats.watchEvents)}</strong><span>watch events</span></div>
     <div class="yt-stat"><strong>${compact(data.stats.uniqueVideos)}</strong><span>different videos</span></div>
     <div class="yt-stat"><strong>${compact(data.stats.uniqueChannels)}</strong><span>channels</span></div>
-    <div class="yt-stat"><strong>${hours(data.stats.openedDurationSeconds)}</strong><span>opened duration</span></div>
-    <div class="yt-stat"><strong>${hours(data.stats.actualWatchedSeconds)}</strong><span>measured watch time</span></div>
+    <div class="yt-stat"><strong>${hours(data.stats.estimatedWatchSeconds)}</strong><span>estimated time</span></div>
+    <div class="yt-stat"><strong>${hours(data.stats.contentCoveredSeconds)}</strong><span>content covered</span></div>
+    <div class="yt-stat"><strong>${hours(data.stats.actualWatchedSeconds)}</strong><span>measured</span></div>
   </div>`;
   const maxDay = Math.max(1, ...data.daily.map((day) => day.watches));
   const bars = `<section class="yt-section"><div class="yt-heading"><h2>Daily volume</h2><span>${data.daily.length} active days</span></div>
@@ -180,11 +181,13 @@ export function youtubeDashboardPage(
       `<i class="yt-day" style="height:${Math.max(2, Math.round(day.watches / maxDay * 100))}%" title="${html(day.day)} · ${day.watches} videos"></i>`
     ).join('')}</div></section>`;
   const channels = [...data.topChannels].sort((a, b) =>
-    sort === 'duration' ? b.durationSeconds - a.durationSeconds : b.watches - a.watches
+    sort === 'duration'
+      ? b.estimatedWatchSeconds - a.estimatedWatchSeconds
+      : b.watches - a.watches
   ).slice(0, 12);
-  const channelTable = `<section><div class="yt-heading"><h2>Top channels</h2><span class="yt-sort"><a href="?range=${data.range}&sort=watches"${sort === 'watches' ? ' aria-current="page"' : ''}>plays</a> · <a href="?range=${data.range}&sort=duration"${sort === 'duration' ? ' aria-current="page"' : ''}>duration</a></span></div>
-    <table class="yt-table"><thead><tr><th>Channel</th><th>Plays</th><th>Duration</th></tr></thead><tbody>${channels.map((channel) =>
-      `<tr><td><div class="yt-channel">${channelAvatar(channel)}${channel.channelId ? `<a href="https://www.youtube.com/channel/${html(channel.channelId)}">${html(channel.name)}</a>` : `<span>${html(channel.name)}</span>`}</div></td><td>${channel.watches}</td><td>${hours(channel.durationSeconds)}</td></tr>`
+  const channelTable = `<section><div class="yt-heading"><h2>Top channels</h2><span class="yt-sort"><a href="?range=${data.range}&sort=watches"${sort === 'watches' ? ' aria-current="page"' : ''}>plays</a> · <a href="?range=${data.range}&sort=duration"${sort === 'duration' ? ' aria-current="page"' : ''}>estimated time</a></span></div>
+    <table class="yt-table"><thead><tr><th>Channel</th><th>Plays</th><th>Est. time</th></tr></thead><tbody>${channels.map((channel) =>
+      `<tr><td><div class="yt-channel">${channelAvatar(channel)}${channel.channelId ? `<a href="https://www.youtube.com/channel/${html(channel.channelId)}">${html(channel.name)}</a>` : `<span>${html(channel.name)}</span>`}</div></td><td>${channel.watches}</td><td>${hours(channel.estimatedWatchSeconds)}</td></tr>`
     ).join('')}</tbody></table></section>`;
   const maxLength = Math.max(1, ...data.lengthBuckets.map((bucket) => bucket.videos));
   const distribution = `<section><div class="yt-heading"><h2>Length mix</h2><span>unique videos</span></div><div class="yt-distribution">${data.lengthBuckets.map((bucket) =>
@@ -193,7 +196,7 @@ export function youtubeDashboardPage(
   const maxKeywordVideos = Math.max(1, ...data.keywords.map((item) => item.videos));
   const taxonomy = `<section class="yt-section"><div class="yt-taxonomy"><div><div class="yt-heading"><h2>Stable topics</h2><span>AI-classified</span></div>
     <div class="yt-topic-list">${data.topics.length ? data.topics.map((topic) =>
-      `<div class="yt-topic"><strong>${html(topic.name)}</strong><span>${topic.watches} watches · ${hours(topic.durationSeconds)}</span></div>`
+      `<div class="yt-topic"><strong>${html(topic.name)}</strong><span>${topic.watches} watches · ${hours(topic.estimatedWatchSeconds)} est.</span></div>`
     ).join('') : '<span class="muted">Topic classification is pending.</span>'}</div></div>
     <div><div class="yt-heading"><h2>Trending keywords</h2><span>public metadata only</span></div>
     <div class="yt-keywords">${data.keywords.map((keyword, index) => {
@@ -253,15 +256,17 @@ export async function buildYoutubeOverviewCard(data: YoutubeDashboardData): Prom
       )
     )),
   ];
-  return cardShell('Viewing volume', `${compact(data.stats.watchEvents)} plays · ${hours(data.stats.openedDurationSeconds)} opened`, body, 280);
+  return cardShell('Viewing volume', `${compact(data.stats.watchEvents)} plays · ${hours(data.stats.estimatedWatchSeconds)} estimated`, body, 280);
 }
 
 export async function buildYoutubeChannelsCard(data: YoutubeDashboardData): Promise<string> {
   const channels = [...data.topChannels]
-    .sort((a, b) => b.durationSeconds - a.durationSeconds || b.watches - a.watches)
+    .sort((a, b) =>
+      b.estimatedWatchSeconds - a.estimatedWatchSeconds || b.watches - a.watches
+    )
     .slice(0, 8);
   const images = await Promise.all(channels.map((channel) => toDataUri(channel.thumbnailUrl)));
-  const max = Math.max(1, ...channels.map((channel) => channel.durationSeconds));
+  const max = Math.max(1, ...channels.map((channel) => channel.estimatedWatchSeconds));
   const body = channels.map((channel, index) =>
     h('div', { style: { alignItems: 'center', display: 'flex', marginBottom: 8 } },
       h('span', { style: { color: C.dim, fontSize: 10, width: 22 } }, `#${index + 1}`),
@@ -270,11 +275,11 @@ export async function buildYoutubeChannelsCard(data: YoutubeDashboardData): Prom
         : h('div', { style: { backgroundColor: C.panel, borderRadius: 12, height: 24, marginRight: 7, width: 24 } }),
       h('span', { style: { fontFamily: textFont(channel.name, 'Inter'), fontSize: 11, width: 142 } }, truncate(channel.name, 24)),
       h('div', { style: { backgroundColor: C.panel, display: 'flex', height: 7, width: 190 } },
-        h('div', { style: { backgroundColor: C.red, height: 7, width: Math.round(channel.durationSeconds / max * 190) } })),
-      h('span', { style: { color: C.dim, fontSize: 9, marginLeft: 8, width: 52 } }, hours(channel.durationSeconds))
+        h('div', { style: { backgroundColor: C.red, height: 7, width: Math.round(channel.estimatedWatchSeconds / max * 190) } })),
+      h('span', { style: { color: C.dim, fontSize: 9, marginLeft: 8, width: 52 } }, hours(channel.estimatedWatchSeconds))
     )
   );
-  return cardShell('Top channels', `${compact(data.stats.uniqueChannels)} channels · by duration`, body, 360);
+  return cardShell('Top channels', `${compact(data.stats.uniqueChannels)} channels · by estimated time`, body, 360);
 }
 
 export async function buildYoutubeTopicsCard(data: YoutubeDashboardData): Promise<string> {

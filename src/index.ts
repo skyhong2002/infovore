@@ -170,7 +170,7 @@ function youtubeSnapshot(): SourceSnapshot {
       watchEvents: data.stats.watchEvents,
       uniqueVideos: data.stats.uniqueVideos,
       uniqueChannels: data.stats.uniqueChannels,
-      openedHours: Math.round(data.stats.openedDurationSeconds / 3600),
+      estimatedHours: Math.round(data.stats.estimatedWatchSeconds / 3600),
     },
     entries: data.recent.map((video) => ({
       sourceItemId: video.videoId ?? video.url,

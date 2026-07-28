@@ -41,7 +41,7 @@ test('snapshots and activities survive reopen and duplicate syncs upsert', () =>
   }
 });
 
-test('version 1 databases migrate through YouTube schema version 4 without data loss', () => {
+test('version 1 databases migrate through YouTube schema version 5 without data loss', () => {
   const dir = mkdtempSync(join(tmpdir(), 'infovore-v1-'));
   const path = join(dir, 'data.sqlite');
   try {
@@ -111,13 +111,17 @@ test('version 1 databases migrate through YouTube schema version 4 without data 
     const watchColumns = migrated.prepare('PRAGMA table_info(youtube_watch_events)').all() as Array<{ name: string }>;
     const searchColumns = migrated.prepare('PRAGMA table_info(youtube_search_events)').all() as Array<{ name: string }>;
     const channelColumns = migrated.prepare('PRAGMA table_info(youtube_channels)').all() as Array<{ name: string }>;
+    const progressColumns = migrated.prepare('PRAGMA table_info(youtube_video_progress)').all() as Array<{ name: string }>;
+    const progressImportColumns = migrated.prepare('PRAGMA table_info(youtube_progress_imports)').all() as Array<{ name: string }>;
     const activitiesSql = migrated.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
     ).get() as { sql: string };
-    assert.equal(version.user_version, 4);
+    assert.equal(version.user_version, 5);
     assert.ok(watchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(searchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(channelColumns.some((column) => column.name === 'thumbnail_url'));
+    assert.ok(progressColumns.some((column) => column.name === 'progress_seconds'));
+    assert.ok(progressImportColumns.some((column) => column.name === 'completed_at'));
     assert.match(activitiesSql.sql, /'summary'/);
     migrated.close();
   } finally {

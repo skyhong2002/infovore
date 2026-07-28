@@ -13,11 +13,14 @@ import type {
   YoutubeImportResult,
   YoutubeOAuthCredential,
   YoutubeParsedArchive,
+  YoutubeProgressBatchInput,
+  YoutubeProgressImportResult,
   YoutubeRange,
   YoutubeTopic,
   YoutubeVideoMetadata,
 } from '../youtube/types.js';
 import { extractYoutubeKeywords } from '../youtube/keywords.js';
+import { progressSeconds } from '../youtube/progress.js';
 
 export interface SyncRun {
   id: number;
@@ -135,6 +138,8 @@ export class Repository {
     if (afterYoutube.user_version < 3) this.migrateYoutubeActivityTypes();
     const afterActivityTypes = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterActivityTypes.user_version < 4) this.migrateYoutubeChannels();
+    const afterYoutubeChannels = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterYoutubeChannels.user_version < 5) this.migrateYoutubeProgress();
   }
 
   private migrateYoutube(): void {
@@ -291,6 +296,32 @@ export class Repository {
       );
       CREATE INDEX IF NOT EXISTS youtube_channels_fetched_idx ON youtube_channels(metadata_fetched_at);
       PRAGMA user_version = 4;
+      COMMIT;
+    `);
+  }
+
+  private migrateYoutubeProgress(): void {
+    this.db.exec(`
+      BEGIN;
+      CREATE TABLE youtube_progress_imports (
+        scan_id TEXT PRIMARY KEY,
+        observed_at TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+      CREATE TABLE youtube_video_progress (
+        video_id TEXT PRIMARY KEY REFERENCES youtube_videos(video_id) ON DELETE CASCADE,
+        progress_percent REAL,
+        resume_seconds INTEGER,
+        duration_seconds INTEGER,
+        progress_seconds INTEGER,
+        confidence TEXT NOT NULL CHECK (confidence IN ('resume', 'progress')),
+        observed_at TEXT NOT NULL,
+        scan_id TEXT NOT NULL REFERENCES youtube_progress_imports(scan_id)
+      );
+      CREATE INDEX youtube_video_progress_scan_idx
+        ON youtube_video_progress(scan_id, observed_at DESC);
+      PRAGMA user_version = 5;
       COMMIT;
     `);
   }
@@ -697,6 +728,102 @@ export class Repository {
     };
   }
 
+  ingestYoutubeProgress(
+    batch: YoutubeProgressBatchInput,
+    importedAt = new Date().toISOString(),
+  ): YoutubeProgressImportResult {
+    const existingImport = this.db.prepare(`
+      SELECT observed_at, completed_at FROM youtube_progress_imports WHERE scan_id=?
+    `).get(batch.scanId) as { observed_at: string; completed_at: string | null } | undefined;
+    if (existingImport && existingImport.observed_at !== batch.observedAt) {
+      throw new Error('Progress scan conflicts with an existing observation time');
+    }
+    if (existingImport?.completed_at && !batch.complete) {
+      throw new Error('Progress scan is already complete');
+    }
+
+    let stored = 0;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO youtube_progress_imports (
+          scan_id, observed_at, started_at, completed_at
+        ) VALUES (?, ?, ?, NULL)
+      `).run(batch.scanId, batch.observedAt, importedAt);
+      const insertVideo = this.db.prepare(`
+        INSERT INTO youtube_videos (
+          video_id, title, thumbnail_url, duration_seconds
+        ) VALUES (?, 'Unavailable video', ?, ?)
+        ON CONFLICT(video_id) DO UPDATE SET
+          duration_seconds=COALESCE(youtube_videos.duration_seconds, excluded.duration_seconds),
+          thumbnail_url=CASE WHEN youtube_videos.thumbnail_url=''
+            THEN excluded.thumbnail_url ELSE youtube_videos.thumbnail_url END
+      `);
+      const upsert = this.db.prepare(`
+        INSERT INTO youtube_video_progress (
+          video_id, progress_percent, resume_seconds, duration_seconds,
+          progress_seconds, confidence, observed_at, scan_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(video_id) DO UPDATE SET
+          progress_percent=excluded.progress_percent,
+          resume_seconds=excluded.resume_seconds,
+          duration_seconds=COALESCE(excluded.duration_seconds, youtube_video_progress.duration_seconds),
+          progress_seconds=COALESCE(excluded.progress_seconds, youtube_video_progress.progress_seconds),
+          confidence=excluded.confidence,
+          observed_at=excluded.observed_at,
+          scan_id=excluded.scan_id
+        WHERE excluded.observed_at>youtube_video_progress.observed_at
+          OR (
+            excluded.observed_at=youtube_video_progress.observed_at
+            AND (
+              excluded.progress_percent IS NOT youtube_video_progress.progress_percent
+              OR excluded.resume_seconds IS NOT youtube_video_progress.resume_seconds
+              OR excluded.duration_seconds IS NOT youtube_video_progress.duration_seconds
+              OR excluded.progress_seconds IS NOT youtube_video_progress.progress_seconds
+              OR excluded.confidence IS NOT youtube_video_progress.confidence
+              OR excluded.scan_id IS NOT youtube_video_progress.scan_id
+            )
+          )
+      `);
+      for (const item of batch.items) {
+        insertVideo.run(
+          item.videoId,
+          `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+          item.durationSeconds,
+        );
+        const result = upsert.run(
+          item.videoId, item.progressPercent, item.resumeSeconds, item.durationSeconds,
+          progressSeconds(item), item.resumeSeconds !== null && item.resumeSeconds > 0
+            ? 'resume'
+            : 'progress',
+          batch.observedAt, batch.scanId,
+        );
+        stored += Number(result.changes);
+      }
+      if (batch.complete) {
+        this.db.prepare(`
+          UPDATE youtube_progress_imports
+          SET completed_at=COALESCE(completed_at, ?)
+          WHERE scan_id=?
+        `).run(importedAt, batch.scanId);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+    const total = this.db.prepare(`
+      SELECT COUNT(*) count FROM youtube_video_progress WHERE scan_id=?
+    `).get(batch.scanId) as { count: number };
+    return {
+      scanId: batch.scanId,
+      accepted: batch.items.length,
+      stored,
+      totalStored: Number(total.count),
+      completed: batch.complete || Boolean(existingImport?.completed_at),
+    };
+  }
+
   youtubeCounts(): {
     watches: number;
     videoWatches: number;
@@ -732,80 +859,139 @@ export class Repository {
       ? "WHERE w.activity_type='video' AND w.watched_at>=?"
       : "WHERE w.activity_type='video'";
     const params = cutoff ? [cutoff] : [];
+    const estimatedWhere = cutoff ? 'WHERE e.watched_at>=?' : 'WHERE 1=1';
+    const estimatedEvents = `
+      WITH timeline AS (
+        SELECT 'watch' kind, event_id, watched_at occurred_at
+        FROM youtube_watch_events WHERE activity_type='video'
+        UNION ALL
+        SELECT 'search' kind, event_id, searched_at occurred_at
+        FROM youtube_search_events
+      ), ordered AS (
+        SELECT kind, event_id, occurred_at,
+          LEAD(occurred_at) OVER (ORDER BY occurred_at, kind, event_id) next_activity_at
+        FROM timeline
+      ), estimated_events AS (
+        SELECT w.*,
+          CASE
+            WHEN w.actual_watched_seconds IS NOT NULL THEN w.actual_watched_seconds
+            WHEN EXISTS (
+              SELECT 1 FROM youtube_watch_events measured
+              WHERE measured.video_id=w.video_id
+                AND measured.actual_watched_seconds IS NOT NULL
+                AND ABS((julianday(measured.watched_at)-julianday(w.watched_at))*86400)<=300
+            ) THEN 0
+            WHEN v.duration_seconds IS NULL OR o.next_activity_at IS NULL THEN 0
+            ELSE MIN(
+              v.duration_seconds,
+              MAX(0, CAST((julianday(o.next_activity_at)-julianday(w.watched_at))*86400 AS INTEGER))
+            )
+          END estimated_watch_seconds
+        FROM youtube_watch_events w
+        JOIN ordered o ON o.kind='watch' AND o.event_id=w.event_id
+        LEFT JOIN youtube_videos v ON v.video_id=w.video_id
+        WHERE w.activity_type='video'
+      )
+    `;
     const stats = this.db.prepare(`
+      ${estimatedEvents},
+      selected_videos AS (
+        SELECT DISTINCT e.video_id
+        FROM estimated_events e
+        ${estimatedWhere} AND e.video_id IS NOT NULL
+      )
       SELECT COUNT(*) watch_events,
-        COUNT(DISTINCT COALESCE(w.video_id, w.raw_url)) unique_videos,
-        COUNT(DISTINCT COALESCE(w.channel_id, w.channel_title)) unique_channels,
+        COUNT(DISTINCT COALESCE(e.video_id, e.raw_url)) unique_videos,
+        COUNT(DISTINCT COALESCE(e.channel_id, e.channel_title)) unique_channels,
         COALESCE(SUM(v.duration_seconds), 0) opened_duration_seconds,
-        SUM(w.actual_watched_seconds) actual_watched_seconds,
-        COUNT(DISTINCT CASE WHEN v.metadata_fetched_at IS NOT NULL THEN w.video_id END) enriched_videos
-      FROM youtube_watch_events w
-      LEFT JOIN youtube_videos v ON v.video_id=w.video_id
-      ${where}
-    `).get(...params) as Record<string, number | null>;
+        COALESCE(SUM(e.estimated_watch_seconds), 0) estimated_watch_seconds,
+        COALESCE(SUM(CASE WHEN e.actual_watched_seconds IS NULL
+          THEN e.estimated_watch_seconds ELSE 0 END), 0) inferred_watch_seconds,
+        SUM(e.actual_watched_seconds) actual_watched_seconds,
+        COUNT(DISTINCT CASE WHEN v.metadata_fetched_at IS NOT NULL THEN e.video_id END) enriched_videos,
+        (SELECT COALESCE(SUM(v2.duration_seconds), 0)
+          FROM selected_videos s JOIN youtube_videos v2 ON v2.video_id=s.video_id
+        ) catalog_duration_seconds,
+        (SELECT COALESCE(SUM(MIN(COALESCE(vp.progress_seconds, 0), COALESCE(v2.duration_seconds, vp.progress_seconds, 0))), 0)
+          FROM selected_videos s
+          JOIN youtube_videos v2 ON v2.video_id=s.video_id
+          JOIN youtube_video_progress vp ON vp.video_id=s.video_id
+        ) content_covered_seconds,
+        (SELECT COALESCE(SUM(CASE WHEN vp.video_id IS NOT NULL THEN v2.duration_seconds ELSE 0 END), 0)
+          FROM selected_videos s
+          JOIN youtube_videos v2 ON v2.video_id=s.video_id
+          LEFT JOIN youtube_video_progress vp ON vp.video_id=s.video_id
+        ) progress_duration_seconds
+      FROM estimated_events e
+      LEFT JOIN youtube_videos v ON v.video_id=e.video_id
+      ${estimatedWhere}
+    `).get(...params, ...params) as Record<string, number | null>;
     const uniqueVideos = Number(stats.unique_videos ?? 0);
     const daily = this.db.prepare(`
-      SELECT strftime('%Y-%m-%d', w.watched_at, '+8 hours') day,
-        COUNT(*) watches, COALESCE(SUM(v.duration_seconds), 0) duration_seconds
-      FROM youtube_watch_events w LEFT JOIN youtube_videos v ON v.video_id=w.video_id
-      ${where}
+      ${estimatedEvents}
+      SELECT strftime('%Y-%m-%d', e.watched_at, '+8 hours') day,
+        COUNT(*) watches, COALESCE(SUM(e.estimated_watch_seconds), 0) estimated_watch_seconds
+      FROM estimated_events e
+      ${estimatedWhere}
       GROUP BY day ORDER BY day
     `).all(...params) as Array<Record<string, string | number>>;
-    const channelId = 'COALESCE(w.channel_id, v.channel_id)';
-    const channelName = "COALESCE(NULLIF(c.name, ''), NULLIF(w.channel_title, ''), NULLIF(v.channel_title, ''))";
+    const channelId = 'COALESCE(e.channel_id, v.channel_id)';
+    const channelName = "COALESCE(NULLIF(c.name, ''), NULLIF(e.channel_title, ''), NULLIF(v.channel_title, ''))";
     const channelKey = `COALESCE(${channelId}, ${channelName})`;
     const topChannelRows = this.db.prepare(`
-      WITH aggregated AS (
+      ${estimatedEvents},
+      aggregated AS (
         SELECT ${channelId} channel_id, ${channelName} name,
           COALESCE(c.thumbnail_url, '') thumbnail_url,
-          COUNT(*) watches, COALESCE(SUM(v.duration_seconds), 0) duration_seconds
-        FROM youtube_watch_events w
-        LEFT JOIN youtube_videos v ON v.video_id=w.video_id
+          COUNT(*) watches, COALESCE(SUM(e.estimated_watch_seconds), 0) estimated_watch_seconds
+        FROM estimated_events e
+        LEFT JOIN youtube_videos v ON v.video_id=e.video_id
         LEFT JOIN youtube_channels c ON c.channel_id=${channelId}
-        ${where}
+        ${estimatedWhere}
           AND ${channelName} IS NOT NULL
           AND LOWER(TRIM(${channelName}))<>'unknown channel'
         GROUP BY ${channelKey}
       ), ranked AS (
         SELECT *,
-          ROW_NUMBER() OVER (ORDER BY watches DESC, duration_seconds DESC, name) watch_rank,
-          ROW_NUMBER() OVER (ORDER BY duration_seconds DESC, watches DESC, name) duration_rank
+          ROW_NUMBER() OVER (ORDER BY watches DESC, estimated_watch_seconds DESC, name) watch_rank,
+          ROW_NUMBER() OVER (ORDER BY estimated_watch_seconds DESC, watches DESC, name) time_rank
         FROM aggregated
       )
-      SELECT channel_id, name, thumbnail_url, watches, duration_seconds
+      SELECT channel_id, name, thumbnail_url, watches, estimated_watch_seconds
       FROM ranked
-      WHERE watch_rank<=12 OR duration_rank<=12
-      ORDER BY duration_seconds DESC, watches DESC, name
+      WHERE watch_rank<=12 OR time_rank<=12
+      ORDER BY estimated_watch_seconds DESC, watches DESC, name
     `).all(...params) as Array<Record<string, string | number | null>>;
     const topChannels: YoutubeChannelSummary[] = topChannelRows.map((row) => ({
       channelId: row.channel_id === null ? null : String(row.channel_id),
       name: String(row.name),
       thumbnailUrl: String(row.thumbnail_url),
       watches: Number(row.watches),
-      durationSeconds: Number(row.duration_seconds),
+      estimatedWatchSeconds: Number(row.estimated_watch_seconds),
     }));
     const trendChannels = [...topChannels]
-      .sort((a, b) => b.durationSeconds - a.durationSeconds || b.watches - a.watches)
+      .sort((a, b) => b.estimatedWatchSeconds - a.estimatedWatchSeconds || b.watches - a.watches)
       .slice(0, 8);
     const trendKeys = trendChannels.map((channel) => channel.channelId ?? channel.name);
     let channelTrend: YoutubeChannelTrendFrame[] = [];
     if (trendKeys.length) {
       const period = range === 'all'
-        ? "strftime('%Y-%m', w.watched_at, '+8 hours')"
+        ? "strftime('%Y-%m', e.watched_at, '+8 hours')"
         : range === '90d'
-          ? "strftime('%Y-%W', w.watched_at, '+8 hours')"
-          : "strftime('%Y-%m-%d', w.watched_at, '+8 hours')";
+          ? "strftime('%Y-%W', e.watched_at, '+8 hours')"
+          : "strftime('%Y-%m-%d', e.watched_at, '+8 hours')";
       const trendRows = this.db.prepare(`
+        ${estimatedEvents}
         SELECT ${period} period, ${channelId} channel_id, ${channelName} name,
           COALESCE(c.thumbnail_url, '') thumbnail_url,
-          COUNT(*) watches, COALESCE(SUM(v.duration_seconds), 0) duration_seconds
-        FROM youtube_watch_events w
-        LEFT JOIN youtube_videos v ON v.video_id=w.video_id
+          COUNT(*) watches, COALESCE(SUM(e.estimated_watch_seconds), 0) estimated_watch_seconds
+        FROM estimated_events e
+        LEFT JOIN youtube_videos v ON v.video_id=e.video_id
         LEFT JOIN youtube_channels c ON c.channel_id=${channelId}
-        ${where}
+        ${estimatedWhere}
           AND ${channelKey} IN (${trendKeys.map(() => '?').join(',')})
         GROUP BY period, ${channelKey}
-        ORDER BY period, duration_seconds DESC
+        ORDER BY period, estimated_watch_seconds DESC
       `).all(...params, ...trendKeys) as Array<Record<string, string | number | null>>;
       const cumulative = new Map<string, YoutubeChannelSummary>();
       const frames = new Map<string, YoutubeChannelSummary[]>();
@@ -818,14 +1004,17 @@ export class Repository {
           name: String(row.name),
           thumbnailUrl: String(row.thumbnail_url),
           watches: (previous?.watches ?? 0) + Number(row.watches),
-          durationSeconds: (previous?.durationSeconds ?? 0) + Number(row.duration_seconds),
+          estimatedWatchSeconds: (previous?.estimatedWatchSeconds ?? 0)
+            + Number(row.estimated_watch_seconds),
         });
         const periodKey = String(row.period);
         frames.set(periodKey, []);
         const nextPeriod = trendRows[index + 1]?.period;
         if (nextPeriod !== row.period) {
           frames.set(periodKey, [...cumulative.values()]
-            .sort((a, b) => b.durationSeconds - a.durationSeconds || b.watches - a.watches)
+            .sort((a, b) =>
+              b.estimatedWatchSeconds - a.estimatedWatchSeconds || b.watches - a.watches
+            )
             .slice(0, 8));
         }
       }
@@ -834,14 +1023,15 @@ export class Repository {
         .map(([periodKey, channels]) => ({ period: periodKey, channels }));
     }
     const topics = this.db.prepare(`
-      SELECT t.slug, t.name, COUNT(*) watches, COALESCE(SUM(v.duration_seconds), 0) duration_seconds
-      FROM youtube_watch_events w
-      JOIN youtube_video_topics vt ON vt.video_id=w.video_id AND vt.rank=1
+      ${estimatedEvents}
+      SELECT t.slug, t.name, COUNT(*) watches,
+        COALESCE(SUM(e.estimated_watch_seconds), 0) estimated_watch_seconds
+      FROM estimated_events e
+      JOIN youtube_video_topics vt ON vt.video_id=e.video_id AND vt.rank=1
       JOIN youtube_topics t ON t.id=vt.topic_id
         AND t.taxonomy_version=(SELECT MAX(taxonomy_version) FROM youtube_topics)
-      LEFT JOIN youtube_videos v ON v.video_id=w.video_id
-      ${where}
-      GROUP BY t.id ORDER BY watches DESC, duration_seconds DESC, t.name LIMIT 12
+      ${estimatedWhere}
+      GROUP BY t.id ORDER BY watches DESC, estimated_watch_seconds DESC, t.name LIMIT 12
     `).all(...params) as Array<Record<string, string | number>>;
     const lengthWhere = cutoff
       ? "WHERE activity_type='video' AND watched_at>=? AND video_id IS NOT NULL"
@@ -902,18 +1092,26 @@ export class Repository {
         uniqueVideos,
         uniqueChannels: Number(stats.unique_channels ?? 0),
         openedDurationSeconds: Number(stats.opened_duration_seconds ?? 0),
+        catalogDurationSeconds: Number(stats.catalog_duration_seconds ?? 0),
+        estimatedWatchSeconds: Number(stats.estimated_watch_seconds ?? 0),
+        inferredWatchSeconds: Number(stats.inferred_watch_seconds ?? 0),
+        contentCoveredSeconds: Number(stats.content_covered_seconds ?? 0),
+        progressCoverage: Number(stats.catalog_duration_seconds ?? 0)
+          ? Number(stats.progress_duration_seconds ?? 0) / Number(stats.catalog_duration_seconds)
+          : 0,
         actualWatchedSeconds: stats.actual_watched_seconds === null ? null : Number(stats.actual_watched_seconds),
         metadataCoverage: uniqueVideos ? Number(stats.enriched_videos ?? 0) / uniqueVideos : 0,
       },
       daily: daily.map((row) => ({
-        day: String(row.day), watches: Number(row.watches), durationSeconds: Number(row.duration_seconds),
+        day: String(row.day), watches: Number(row.watches),
+        estimatedWatchSeconds: Number(row.estimated_watch_seconds),
       })),
       lengthBuckets: lengthBuckets.map((row) => ({ label: String(row.label), videos: Number(row.videos) })),
       topChannels,
       channelTrend,
       topics: topics.map((row) => ({
         slug: String(row.slug), name: String(row.name),
-        watches: Number(row.watches), durationSeconds: Number(row.duration_seconds),
+        watches: Number(row.watches), estimatedWatchSeconds: Number(row.estimated_watch_seconds),
       })),
       keywords: extractYoutubeKeywords(keywordRows, 40),
       recent: recent.map((row) => ({
