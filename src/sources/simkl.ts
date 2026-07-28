@@ -33,14 +33,15 @@ export async function fetchSimkl(): Promise<SourceSnapshot> {
   if (!accessToken) throw new Error('simkl: SIMKL_ACCESS_TOKEN not set (run the PIN flow)');
 
   const params = `?client_id=${clientId}&app-name=infovore&app-version=0.1`;
-  const [stats, settings, movies, shows] = await Promise.all([
+  const [stats, settings, movies, shows, anime] = await Promise.all([
     getJson(`/users/${userId}/stats${params}`),
     getJson(`/users/settings`),
     getJson(`/sync/all-items/movies/completed`),
     getJson(`/sync/all-items/shows`),
+    getJson(`/sync/all-items/anime`),
   ]);
 
-  const entries = parseSimklEntries(movies, shows);
+  const entries = parseSimklEntries(movies, shows, anime);
 
   return {
     source: 'simkl',
@@ -52,8 +53,8 @@ export async function fetchSimkl(): Promise<SourceSnapshot> {
     },
     stats: {
       moviesCompleted: stats?.movies?.completed?.count ?? 0,
-      showsWatching: stats?.tv?.watching?.count ?? 0,
-      showsCompleted: stats?.tv?.completed?.count ?? 0,
+      showsWatching: (stats?.tv?.watching?.count ?? 0) + (stats?.anime?.watching?.count ?? 0),
+      showsCompleted: (stats?.tv?.completed?.count ?? 0) + (stats?.anime?.completed?.count ?? 0),
       totalMinutes: stats?.total_mins ?? 0,
     },
     entries,
@@ -61,7 +62,7 @@ export async function fetchSimkl(): Promise<SourceSnapshot> {
   };
 }
 
-export function parseSimklEntries(movies: any, shows: any): MediaEntry[] {
+export function parseSimklEntries(movies: any, shows: any, anime?: any): MediaEntry[] {
   const recentMovies: MediaEntry[] = (movies?.movies ?? [])
     .filter((m: any) => m.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
@@ -76,20 +77,23 @@ export function parseSimklEntries(movies: any, shows: any): MediaEntry[] {
       extra: m.movie?.year ? { year: m.movie.year } : {},
     }));
 
-  const recentShows: MediaEntry[] = (shows?.shows ?? [])
+  // Simkl exposes TV and anime through separate endpoints. Keep the existing
+  // card/timeline shape by presenting both as episodic shows.
+  const recentShows: MediaEntry[] = [...(shows?.shows ?? []), ...(anime?.anime ?? [])]
     .filter((s: any) => s.last_watched_at)
     .sort((a: any, b: any) => b.last_watched_at.localeCompare(a.last_watched_at))
     .map((s: any) => {
+      const show = s.show ?? s.anime;
       const extra: Record<string, string | number> = {};
-      if (s.show?.year) extra.year = s.show.year;
+      if (show?.year) extra.year = show.year;
       if (s.watched_episodes_count != null) extra.watchedEpisodes = s.watched_episodes_count;
       if (s.total_episodes_count != null) extra.totalEpisodes = s.total_episodes_count;
       return {
-        sourceItemId: String(s.show?.ids?.simkl ?? s.show?.ids?.imdb ?? `${s.show?.title ?? 'unknown'}-${s.show?.year ?? ''}`),
+        sourceItemId: String(show?.ids?.simkl ?? show?.ids?.imdb ?? `${show?.title ?? 'unknown'}-${show?.year ?? ''}`),
         source: 'simkl',
         kind: 'show',
-        title: s.show?.title ?? 'Unknown',
-        image: poster(s.show?.poster),
+        title: show?.title ?? 'Unknown',
+        image: poster(show?.poster),
         activityAt: s.last_watched_at,
         rating: s.user_rating != null ? { value: s.user_rating, scale: 10 } : null,
         extra,

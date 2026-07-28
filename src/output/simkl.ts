@@ -120,7 +120,7 @@ async function buildSingle(data: SourceSnapshot, kind: 'movies' | 'shows'): Prom
   const rows = Math.max(1, Math.ceil(items.length / 5));
   const body = [
     sectionHeader(
-      kind === 'movies' ? 'Recently Watched Movies' : 'Recently Watched TV',
+      kind === 'movies' ? 'Recently Watched Movies' : 'Recently Watched TV & Anime',
       kind === 'movies' ? moviesSub(data.stats) : showsSub(data.stats)
     ),
     ...tileRows(items, posters, kind),
@@ -139,7 +139,7 @@ async function buildBoth(data: SourceSnapshot): Promise<string> {
     postersFor(movies),
   ]);
   const body = [
-    sectionHeader('Recently Watched TV', showsSub(data.stats)),
+    sectionHeader('Recently Watched TV & Anime', showsSub(data.stats)),
     ...tileRows(shows, showPosters, 'shows'),
     h('div', { style: { display: 'flex', marginTop: 16 } }),
     sectionHeader('Recently Watched Movies', moviesSub(data.stats)),
