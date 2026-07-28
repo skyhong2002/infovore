@@ -481,10 +481,27 @@ export class Repository {
         event_id, searched_at, query_ciphertext, imported_at, activity_type
       ) VALUES (?, ?, ?, ?, ?)
     `);
+    const watchSecondKeys = new Set(this.db.prepare(`
+      SELECT substr(watched_at, 1, 19) watched_second,
+        COALESCE(video_id, NULLIF(raw_url, ''), raw_title) identity
+      FROM youtube_watch_events
+    `).all().map((row) => {
+      const value = row as { watched_second: string; identity: string };
+      return `${value.watched_second}\u001f${value.identity}`;
+    }));
+    const searchSeconds = new Set(this.db.prepare(`
+      SELECT substr(searched_at, 1, 19) searched_second
+      FROM youtube_search_events
+    `).all().map((row) => String((row as { searched_second: string }).searched_second)));
 
     this.db.exec('BEGIN IMMEDIATE');
     try {
       for (const watch of archive.watches) {
+        const identity = watch.videoId ?? (watch.url || watch.title);
+        const secondKey = `${watch.watchedAt.slice(0, 19)}\u001f${identity}`;
+        // HTML Takeout records omit milliseconds. Match at second precision so
+        // importing HTML after JSON does not duplicate the overlapping window.
+        if (watchSecondKeys.has(secondKey)) continue;
         const thumbnail = watch.videoId ? `https://i.ytimg.com/vi/${watch.videoId}/hqdefault.jpg` : '';
         if (watch.videoId) {
           insertVideo.run(watch.videoId, watch.title, watch.channelId, watch.channelTitle, thumbnail);
@@ -518,16 +535,26 @@ export class Repository {
           watch.url, watch.channelId, watch.channelTitle, watch.channelUrl,
           watch.actualWatchedSeconds, importedAt, watch.activityType
         );
-        if (Number(result.changes) > 0) watchesInserted++;
+        if (Number(result.changes) > 0) {
+          watchesInserted++;
+          watchSecondKeys.add(secondKey);
+        }
         // A prior interrupted import can leave the generic activity but not the
         // YouTube event. Count only the canonical event insert.
         if (wasPresent && Number(result.changes) === 0) continue;
       }
       for (const search of archive.searches) {
+        const searchedSecond = search.searchedAt.slice(0, 19);
+        // Search HTML also omits milliseconds. Takeout emits at most one search
+        // record per second, so time is the only private-safe cross-format key.
+        if (searchSeconds.has(searchedSecond)) continue;
         const result = insertSearch.run(
           search.eventId, search.searchedAt, search.queryCiphertext, importedAt, search.activityType
         );
-        if (Number(result.changes) > 0) searchesInserted++;
+        if (Number(result.changes) > 0) {
+          searchesInserted++;
+          searchSeconds.add(searchedSecond);
+        }
       }
       this.db.prepare(`
         INSERT OR IGNORE INTO youtube_imports (

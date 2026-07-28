@@ -66,6 +66,51 @@ function fixtureZip(): Uint8Array {
   });
 }
 
+function htmlFixtureZip(): Uint8Array {
+  const activity = (
+    action: string,
+    title: string,
+    url: string,
+    channel: string,
+    channelUrl: string,
+    time: string,
+    control: string,
+  ) => `<div class="outer-cell"><div class="content-cell">${action}
+    ${url ? `<a href="${url}">${title}</a>` : title}<br>
+    ${channelUrl ? `<a href="${channelUrl}">${channel}</a><br>` : ''}
+    ${time}<br><b>Products:</b><br>YouTube<br><b>Activity controls:</b><br>
+    This activity was saved because ${control} was on.
+    <a href="https://myaccount.google.com/activitycontrols">settings</a>.
+  </div></div>`;
+  const watch = [
+    activity(
+      'Watched', 'Long Technical Talk', 'https://www.youtube.com/watch?v=video-one',
+      'Channel One', 'https://www.youtube.com/channel/channel-one',
+      'Jul 28, 2026, 9:00:00 AM CST', 'YouTube watch history',
+    ),
+    activity(
+      'Viewed', 'a post', 'https://www.youtube.com/post/post-one',
+      'Channel One', 'https://www.youtube.com/channel/channel-one',
+      'Jul 28, 2026, 10:00:00 AM CST', 'YouTube watch history',
+    ),
+  ].join('');
+  const search = [
+    activity(
+      'Searched for', 'private search term',
+      'https://www.youtube.com/results?search_query=private+search+term',
+      '', '', 'Jul 28, 2026, 8:30:00 AM CST', 'YouTube search history',
+    ),
+    activity(
+      'Visited', 'Google', 'https://www.google.com/',
+      '', '', 'Jul 28, 2026, 8:45:00 AM CST', 'YouTube search history',
+    ),
+  ].join('');
+  return zipSync({
+    'Takeout/YouTube and YouTube Music/history/watch-history.html': strToU8(watch),
+    'Takeout/YouTube and YouTube Music/history/search-history.html': strToU8(search),
+  });
+}
+
 test('private-value encryption is randomized and authenticated', () => {
   const first = encryptPrivateValue('sensitive', SECRET);
   const second = encryptPrivateValue('sensitive', SECRET);
@@ -97,6 +142,34 @@ test('Takeout parser normalizes watch/search records and rejects unsafe archives
     /uncompressed size limit/,
   );
   assert.throws(() => parseYoutubeArchive(fixtureZip(), 'too-short'), /at least 32 characters/);
+});
+
+test('Takeout parser accepts HTML history and preserves Taipei timestamps', () => {
+  const parsed = parseYoutubeArchive(htmlFixtureZip(), SECRET);
+  assert.equal(parsed.watches.length, 2);
+  assert.equal(parsed.searches.length, 2);
+  assert.equal(parsed.watches[0].videoId, 'video-one');
+  assert.equal(parsed.watches[0].channelId, 'channel-one');
+  assert.equal(parsed.watches[0].watchedAt, '2026-07-28T01:00:00.000Z');
+  assert.equal(parsed.watches[1].activityType, 'post');
+  assert.equal(parsed.searches[0].searchedAt, '2026-07-28T00:30:00.000Z');
+  assert.equal(decryptPrivateValue(parsed.searches[0].queryCiphertext, SECRET), 'private search term');
+  assert.equal(parsed.searches[1].activityType, 'visit');
+});
+
+test('HTML imports do not duplicate second-precision JSON events', () => {
+  const repository = new Repository(':memory:');
+  try {
+    const json = parseYoutubeArchive(fixtureZip(), SECRET);
+    const html = parseYoutubeArchive(htmlFixtureZip(), SECRET);
+    repository.ingestYoutubeArchive(json);
+    const result = repository.ingestYoutubeArchive(html);
+    assert.equal(result.watchesInserted, 1);
+    assert.equal(result.searchesInserted, 0);
+    assert.equal(repository.youtubeCounts().videoWatches, 3);
+  } finally {
+    repository.close();
+  }
 });
 
 test('YouTube imports are idempotent, aggregate-only, and preserve duration semantics', () => {
