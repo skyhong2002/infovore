@@ -45,7 +45,7 @@ sources/  ──fetch + normalize──▶  data/  ──read-only──▶  out
 The unified model (`src/data/types.ts`):
 
 - **`MediaEntry`** — one normalized activity item: `source`, `kind` (game /
-  anime / manga / movie / show / book / music / event), `title`, `image`, `status`,
+  anime / manga / movie / show / book / music / video / event), `title`, `image`, `status`,
   `activityAt`, `rating`, and a small `extra` bag for the long tail that
   doesn't generalize (platform/playtime, episode counts, author, ...).
 - **`SourceSnapshot<TExtra>`** — one refresh cycle's worth of data for a
@@ -72,13 +72,15 @@ change.
 | [stats.fm](https://stats.fm/skyhong2002) | Public API |
 | [Simkl](https://simkl.com) | Official API (client ID + OAuth token via PIN flow) |
 | [Goodreads](https://www.goodreads.com/user/show/160195773-skychopath) | Shelf RSS feeds + profile scrape |
+| YouTube | Google Takeout import + Data Portability API; Data API metadata |
 
 ## Cards
 
-Eleven cards in total — combined and single-medium variants:
+Fourteen cards in total — combined and single-medium variants:
 `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
-`simkl` / `simkl-shows` / `simkl-movies`, `goodreads`.
+`simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
+`youtube` / `youtube-channels` / `youtube-topics`.
 
 Each card is served as **svg** (vector), **png**, or **webp** — the previews
 above use webp (≈10× smaller than the SVG), so this page loads fast.
@@ -95,6 +97,8 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /card/{name}.{svg,png,webp}` — a card; `?scale=1..3` for raster (default 2)
 - `GET /api/{source}.json` — a source's normalized `SourceSnapshot` (raw cached data)
 - `GET /api/activities.json?limit=100` — persisted, deduplicated public activity timeline
+- `GET /api/youtube/summary.json?range=28d` — public-safe YouTube aggregates
+- `GET /api/youtube/recent.json` — ten recently watched distinct videos
 - `GET /feed.json` / `GET /feed.xml` — JSON and RSS activity feeds
 - `GET /api/wrapped/{year}.json` — machine-readable annual recap
 - `POST /api/ingest/events` — authenticated private-ingest service (JSON)
@@ -126,6 +130,31 @@ overlay routes only `/api/ingest/*` to the write service.
 Set only the sources you use via `SOURCES` in `.env` (e.g. `SOURCES=kitsu,statsfm`);
 the rest are hidden. Every account id/username is an env var — see the comments
 in `.env.example`, including how to get a Simkl client id + OAuth token.
+
+### Import YouTube history
+
+Set `YOUTUBE_PRIVATE_DATA_KEY`, then import a Google Takeout archive locally:
+
+```sh
+npm run youtube:import -- /path/to/takeout.zip
+```
+
+The same parser is available through authenticated ingestion:
+
+```sh
+curl -X POST https://infovore.example/api/ingest/youtube/takeout \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
+  -H "Content-Type: application/zip" \
+  --data-binary @/path/to/takeout.zip
+```
+
+Imports are idempotent. Full watch events use aggregate-only visibility and
+search queries are encrypted at rest; neither is exposed by the generic
+timeline, feeds, or MCP tools. Configure the Google Data Portability OAuth
+values for daily `myactivity.youtube` archive sync. Testing OAuth applications
+require reauthorization every seven days. For local Compose, the OAuth callback
+uses the ingest service at `http://localhost:3001`; production reverse proxies
+route the same `/api/ingest/*` path on the public domain.
 
 ### Behind a reverse proxy
 

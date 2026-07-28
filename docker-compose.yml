@@ -30,6 +30,17 @@ services:
       - DATABASE_PATH=/data/infovore.sqlite
     volumes:
       - infovore-data:/data
+  youtube-worker:
+    build: .
+    image: infovore
+    container_name: infovore-youtube-worker
+    command: ["npx", "tsx", "src/youtube-worker.ts"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATABASE_PATH=/data/infovore.sqlite
+    volumes:
+      - infovore-data:/data
 
 volumes:
   infovore-data:

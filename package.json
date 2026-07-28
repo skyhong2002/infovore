@@ -6,16 +6,20 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "youtube:import": "tsx src/import-youtube.ts",
+    "youtube:worker": "tsx src/youtube-worker.ts",
+    "youtube:topics:rebuild": "tsx src/youtube-topics.ts",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test DATABASE_PATH=:memory: INGEST_TOKEN=test-token-with-at-least-32-characters PUBLIC_BASE_URL=http://localhost:3000 node --import tsx --test tests/**/*.test.ts",
+    "test": "NODE_ENV=test DATABASE_PATH=:memory: INGEST_TOKEN=test-token-with-at-least-32-characters YOUTUBE_PRIVATE_DATA_KEY=test-private-data-key-with-at-least-32-characters PUBLIC_BASE_URL=http://localhost:3000 node --import tsx --test tests/**/*.test.ts",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.8",
+    "@hono/node-server": "^2.0.12",
     "@jsquash/webp": "^1.5.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@resvg/resvg-js": "^2.6.2",
     "cheerio": "^1.2.0",
+    "fflate": "^0.8.3",
     "hono": "^4.12.28",
     "satori": "^0.26.0",
     "tsx": "^4.23.0",

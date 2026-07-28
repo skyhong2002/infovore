@@ -7,7 +7,7 @@ import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js
 import { Repository } from './data/database.js';
 import { selectHomepageActivities } from './data/activity.js';
 import { nextIntervalAt } from './data/schedule.js';
-import type { SourceSnapshot } from './data/types.js';
+import type { Activity, SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
 import { fetchStatsfm } from './sources/statsfm.js';
@@ -23,6 +23,13 @@ import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './outp
 import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } from './output/statsfm.js';
 import { buildSimklCard, buildSimklMoviesCard, buildSimklShowsCard } from './output/simkl.js';
 import { buildGoodreadsCard } from './output/goodreads.js';
+import {
+  buildYoutubeChannelsCard,
+  buildYoutubeOverviewCard,
+  buildYoutubeTopicsCard,
+  youtubeDashboardPage,
+} from './output/youtube.js';
+import type { YoutubeRange } from './youtube/types.js';
 
 // Registration point: a new source module goes in `src/sources/`, returns a
 // `SourceSnapshot`, and gets one entry here. A new output module goes in
@@ -39,7 +46,7 @@ const fetchers: Record<string, () => Promise<SourceSnapshot<unknown>>> = {
 
 interface CardDefinition {
   source: string;
-  build: (data: SourceSnapshot<unknown>) => Promise<string>;
+  build?: (data: SourceSnapshot<unknown>) => Promise<string>;
 }
 
 function defineCard<T>(source: string, build: (data: SourceSnapshot<T>) => Promise<string>): CardDefinition {
@@ -58,17 +65,36 @@ const cards: Record<string, CardDefinition> = {
   'simkl-movies': defineCard('simkl', buildSimklMoviesCard),
   'simkl-shows': defineCard('simkl', buildSimklShowsCard),
   goodreads: defineCard('goodreads', buildGoodreadsCard),
+  youtube: { source: 'youtube' },
+  'youtube-channels': { source: 'youtube' },
+  'youtube-topics': { source: 'youtube' },
 };
 
 const repository = new Repository(config.databasePath);
 
 async function renderCards(name: string, data: SourceSnapshot<unknown>): Promise<void> {
   for (const [cardName, card] of Object.entries(cards)) {
-    if (card.source !== name) continue;
+    if (card.source !== name || !card.build) continue;
     try {
       setCache(`svg:${cardName}`, await card.build(data));
     } catch (err) {
       console.error(`[render] ${cardName} failed:`, err);
+    }
+  }
+}
+
+async function renderYoutubePresentation(): Promise<void> {
+  const data = repository.youtubeDashboard('28d');
+  const builders = {
+    youtube: buildYoutubeOverviewCard,
+    'youtube-channels': buildYoutubeChannelsCard,
+    'youtube-topics': buildYoutubeTopicsCard,
+  };
+  for (const [name, build] of Object.entries(builders)) {
+    try {
+      setCache(`svg:${name}`, await build(data));
+    } catch (error) {
+      console.error(`[render] ${name} failed:`, error);
     }
   }
 }
@@ -80,6 +106,7 @@ for (const saved of repository.loadSnapshots()) {
   restoreCache(`data:${saved.snapshot.source}`, saved.snapshot, Date.parse(saved.fetchedAt), saved.error ?? undefined);
   await renderCards(saved.snapshot.source, saved.snapshot);
 }
+if (config.sourceEnabled('youtube')) await renderYoutubePresentation();
 
 async function refreshSource(name: string, isRetry = false): Promise<void> {
   const syncId = repository.startSync(name);
@@ -104,6 +131,7 @@ const activeSources = Object.keys(fetchers).filter((n) => config.sourceEnabled(n
 
 async function refreshAll(): Promise<void> {
   await Promise.allSettled(activeSources.map((n) => refreshSource(n)));
+  if (config.sourceEnabled('youtube')) await renderYoutubePresentation();
 }
 
 const app = new Hono();
@@ -124,6 +152,7 @@ const allSections: PlatformDefinition[] = [
   { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
   { source: 'simkl', title: 'Simkl', description: 'Movies, TV and anime collected into one watch history.', accent: '#7bb8ff', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
   { source: 'goodreads', title: 'Goodreads', description: 'Reading shelf, completed books, authors and ratings.', accent: '#d6b98c', url: `https://www.goodreads.com/user/show/${config.goodreads.userId}`, cards: ['goodreads'] },
+  { source: 'youtube', title: 'YouTube', description: 'Viewing volume, channels, topics and recently watched videos.', accent: '#ff453a', url: 'https://www.youtube.com/feed/history', cards: ['youtube', 'youtube-channels', 'youtube-topics'] },
 ];
 
 const sections = allSections.filter((s) => config.sourceEnabled(s.source));
@@ -131,6 +160,54 @@ const manualPlatform: PlatformDefinition = {
   source: 'events', title: 'Manual events', description: 'Concerts, performances and real-world activities recorded by hand.',
   accent: '#c39bff',
 };
+
+function youtubeSnapshot(): SourceSnapshot {
+  const data = repository.youtubeDashboard('28d');
+  return {
+    source: 'youtube',
+    profile: { id: 'youtube', name: config.ownerName, avatar: '', url: 'https://www.youtube.com/feed/history' },
+    stats: {
+      watchEvents: data.stats.watchEvents,
+      uniqueVideos: data.stats.uniqueVideos,
+      uniqueChannels: data.stats.uniqueChannels,
+      openedHours: Math.round(data.stats.openedDurationSeconds / 3600),
+    },
+    entries: data.recent.map((video) => ({
+      sourceItemId: video.videoId ?? video.url,
+      visibility: 'summary' as const,
+      source: 'youtube',
+      kind: 'video' as const,
+      title: video.title,
+      image: video.thumbnailUrl,
+      status: 'watched',
+      activityAt: video.watchedAt,
+      rating: null,
+      extra: { channel: video.channelTitle, url: video.url },
+    })),
+    extra: {},
+  };
+}
+
+function youtubeRecentActivities(): Activity[] {
+  return repository.youtubeDashboard('28d').recent.map((video) => ({
+    id: `youtube-home-${video.videoId ?? video.watchedAt}`,
+    dedupeKey: `youtube-home-${video.videoId ?? video.watchedAt}`,
+    source: 'youtube',
+    sourceItemId: video.videoId,
+    type: 'video.watched',
+    mediaKind: 'video',
+    title: video.title,
+    image: video.thumbnailUrl,
+    status: 'watched',
+    occurredAt: video.watchedAt,
+    occurredAtPrecision: 'exact',
+    rating: null,
+    visibility: 'public',
+    extra: { channel: video.channelTitle, url: video.url },
+    firstSeenAt: video.watchedAt,
+    lastSeenAt: video.watchedAt,
+  }));
+}
 
 // Cache-buster: a short hash of the card's SVG content, so the URL only
 // changes when the rendered card actually changes. Unchanged data across
@@ -168,17 +245,21 @@ app.get('/', (c) => {
       if (!activity.occurredAt || !['exact', 'day'].includes(activity.occurredAtPrecision)) return true;
       return Date.parse(activity.occurredAt) <= now;
     });
-  const recent = selectHomepageActivities(eligible, 24);
+  const youtubeActivities = config.sourceEnabled('youtube') ? youtubeRecentActivities() : [];
+  const combined = [...youtubeActivities, ...eligible]
+    .sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
+  const recent = selectHomepageActivities(combined, 24);
+  const youtubeWatchCount = config.sourceEnabled('youtube') ? repository.youtubeCounts().videoWatches : 0;
   c.header('Cache-Control', 'no-cache');
   return c.html(homePage(
     config.ownerName,
     recent,
-    repository.countPublicActivities(),
+    repository.countPublicActivities() + youtubeWatchCount,
     lastUpdatedLabel(),
     sections.length + 1,
     currentActivities(all, 4),
     upcomingActivities(new Date(now).toISOString(), 4),
-    latestSourceActivities(eligible),
+    latestSourceActivities(combined),
   ));
 });
 
@@ -210,6 +291,9 @@ function manualEventsSnapshot(): SourceSnapshot {
 
 app.get('/platforms', (c) => {
   const connected: PlatformSummary[] = sections.map((definition) => {
+    if (definition.source === 'youtube') {
+      return { definition, snapshot: youtubeSnapshot(), fetchedAt: null };
+    }
     const cached = getCache<SourceSnapshot<unknown>>(`data:${definition.source}`);
     return {
       definition,
@@ -226,6 +310,15 @@ app.get('/platforms/:source', (c) => {
   const source = c.req.param('source');
   const definition = source === 'events' ? manualPlatform : sections.find((section) => section.source === source);
   if (!definition) return c.text('Platform not found', 404);
+  if (source === 'youtube') {
+    const requestedRange = c.req.query('range') ?? '28d';
+    const range: YoutubeRange = ['7d', '28d', '90d', 'all'].includes(requestedRange)
+      ? requestedRange as YoutubeRange
+      : '28d';
+    const sort = c.req.query('sort') === 'duration' ? 'duration' : 'watches';
+    c.header('Cache-Control', 'no-cache');
+    return c.html(youtubeDashboardPage(config.ownerName, repository.youtubeDashboard(range), sort));
+  }
   if (source === 'events') {
     c.header('Cache-Control', 'no-cache');
     return c.html(platformPage(config.ownerName, definition, manualEventsSnapshot(), null));
@@ -263,7 +356,7 @@ app.get('/cards', (c) => {
 });
 
 app.get('/status', (c) => {
-  const sources = activeSources.map((name) => {
+  const sources: Array<Record<string, unknown>> = activeSources.map((name) => {
     const entry = getCache(`data:${name}`);
     return {
       source: name,
@@ -272,6 +365,20 @@ app.get('/status', (c) => {
       json: `/api/${name}.json`,
     };
   });
+  if (config.sourceEnabled('youtube')) {
+    sources.push({
+      source: 'youtube',
+      counts: repository.youtubeCounts(),
+      oauthAuthorized: Boolean(repository.youtubeOAuthCredential()),
+      sync: {
+        checkpoint: repository.youtubeSyncState('checkpoint'),
+        activeJob: Boolean(repository.youtubeSyncState('active_job')),
+        lastResult: repository.youtubeSyncState('last_result'),
+        lastError: repository.youtubeSyncState('last_error'),
+      },
+      summary: '/api/youtube/summary.json',
+    });
+  }
   return c.json({
     owner: config.ownerName,
     refresh: {
@@ -293,6 +400,28 @@ app.get('/api/activities.json', (c) => {
   return c.json(page);
 });
 
+app.get('/api/youtube/summary.json', (c) => {
+  const requested = c.req.query('range') ?? '28d';
+  const range: YoutubeRange = ['7d', '28d', '90d', 'all'].includes(requested)
+    ? requested as YoutubeRange
+    : '28d';
+  const data = repository.youtubeDashboard(range);
+  return c.json({ ...data, recent: undefined });
+});
+
+app.get('/api/youtube/recent.json', (c) => {
+  const data = repository.youtubeDashboard('28d');
+  return c.json({
+    range: data.range,
+    generatedAt: data.generatedAt,
+    data: data.recent.map(({
+      watchedAt: _watchedAt,
+      actualWatchedSeconds: _actualWatchedSeconds,
+      ...video
+    }) => video),
+  });
+});
+
 app.get('/feed.json', (c) => c.json(repository.queryActivities({ limit: Number(c.req.query('limit') ?? 100) })));
 
 app.get('/feed.xml', (c) => {
@@ -301,7 +430,13 @@ app.get('/feed.xml', (c) => {
 });
 
 app.get('/profile', (c) => c.html(profilePage(
-  config.ownerName, repository.countPublicActivities(), repository.countBySource(), repository.listActivities(12)
+  config.ownerName,
+  repository.countPublicActivities() + (config.sourceEnabled('youtube') ? repository.youtubeCounts().videoWatches : 0),
+  {
+    ...repository.countBySource(),
+    ...(config.sourceEnabled('youtube') ? { youtube: repository.youtubeCounts().videoWatches } : {}),
+  },
+  repository.listActivities(12)
 )));
 
 function uniqueItems<T extends { source: string; sourceItemId: string | null; title: string }>(items: T[]): T[] {
@@ -434,11 +569,25 @@ app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
 app.get('/healthz', (c) => {
   const now = Date.now();
   const maxAgeMs = config.maxSourceAgeHours * 60 * 60 * 1000;
-  const sources = activeSources.map((name) => {
+  const sources: Array<{
+    source: string;
+    fresh: boolean;
+    ageMs: number | null;
+    error: string | null;
+  }> = activeSources.map((name) => {
     const entry = getCache(`data:${name}`);
     const ageMs = entry ? now - entry.fetchedAt : null;
     return { source: name, fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: entry?.error ?? null };
   });
+  if (config.sourceEnabled('youtube')) {
+    const counts = repository.youtubeCounts();
+    sources.push({
+      source: 'youtube',
+      fresh: counts.videoWatches > 0,
+      ageMs: null,
+      error: repository.youtubeSyncState('last_error') || null,
+    });
+  }
   const freshCount = sources.filter((source) => source.fresh).length;
   const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';
   return c.json({ status, maxSourceAgeHours: config.maxSourceAgeHours, sources }, status === 'unhealthy' ? 503 : 200);

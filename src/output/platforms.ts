@@ -24,6 +24,7 @@ const kindLabels: Record<string, string> = {
   show: 'Shows',
   book: 'Books',
   music: 'Recent tracks',
+  video: 'Videos',
   event: 'Events',
 };
 
@@ -92,6 +93,7 @@ function platformNav(active?: string): string {
     ['statsfm', 'stats.fm'],
     ['simkl', 'Simkl'],
     ['goodreads', 'Goodreads'],
+    ['youtube', 'YouTube'],
     ['events', 'Manual'],
   ];
   return `<nav class="platform-nav" aria-label="Platforms"><a href="/platforms"${active ? '' : ' aria-current="page"'}>All</a>${sources.map(([source, title]) =>

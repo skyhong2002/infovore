@@ -52,7 +52,7 @@ export function shell(title: string, body: string, active: PageKey): string {
 }
 
 function sourceLabel(source: string): string {
-  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', goodreads: 'Goodreads', events: 'Manual' } as Record<string, string>)[source] ?? source;
+  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', goodreads: 'Goodreads', youtube: 'YouTube', events: 'Manual' } as Record<string, string>)[source] ?? source;
 }
 
 function activityWhen(activity: Activity): { date: string; time: string; datetime: string } {
@@ -75,6 +75,7 @@ function activityMeta(activity: Activity): string {
   if (activity.status) add(activity.status.replaceAll('_', ' '));
   if (activity.extra.artist) add(activity.extra.artist);
   else if (activity.extra.author) add(`by ${activity.extra.author}`);
+  else if (activity.extra.channel) add(activity.extra.channel);
   if (activity.extra.watchedEpisodes != null && activity.extra.totalEpisodes != null) {
     add(`${activity.extra.watchedEpisodes}/${activity.extra.totalEpisodes} episodes`);
   } else if (activity.extra.progress) {
@@ -140,7 +141,7 @@ export function homePage(
     ? `<div class="activity-list">${activities.map(activityRow).join('')}</div>`
     : '<div class="empty">No activity has been collected yet.</div>';
   const recent = `<section class="content-section" id="recent"><div class="section-heading"><div><div class="eyebrow">Balanced timeline</div><h2>More recent highlights</h2></div><span>${activities.length} highlights from ${total} entries</span></div>${timeline}
-    <div class="feed-note">${lastUpdated ? `Last synced ${html(lastUpdated)} · ` : ''}Music is sampled so watching, reading, playing, and attending remain visible.</div></section>`;
+    <div class="feed-note">${lastUpdated ? `Last synced ${html(lastUpdated)} · ` : ''}High-frequency music and YouTube activity are sampled so every medium remains visible.</div></section>`;
   return shell(`${ownerName} · infoboard`, board + priorities + pulse + recent, 'home');
 }
 

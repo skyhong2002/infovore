@@ -61,36 +61,53 @@ function taipeiDay(activity: Activity): string {
 
 /**
  * Keep the homepage representative without changing the underlying archive.
- * Music is the only per-play stream, so it gets a small display budget and at
- * most one (the newest) entry per Taipei calendar day.
+ * Music and YouTube are high-frequency streams. Each gets a small display
+ * budget and at most one newest entry per Taipei calendar day.
  */
 export function selectHomepageActivities(
   activities: Activity[],
   limit = 40,
   musicShare = 0.1,
+  youtubeShare = 0.1,
 ): Activity[] {
   if (limit < 1) return [];
-  const safeShare = Math.max(0, Math.min(0.5, musicShare));
-  const nonMusicAvailable = activities.filter((activity) => activity.mediaKind !== 'music').length;
-  const nonMusicBudget = Math.min(nonMusicAvailable, Math.ceil(limit * (1 - safeShare)));
-  const proportionalMusicBudget = nonMusicBudget
-    ? Math.floor(nonMusicBudget * safeShare / (1 - safeShare))
-    : 1;
-  const musicBudget = Math.min(limit - nonMusicBudget, Math.max(1, proportionalMusicBudget));
+  const safeMusicShare = Math.max(0, Math.min(0.4, musicShare));
+  const safeYoutubeShare = Math.max(0, Math.min(0.4, youtubeShare));
+  const isMusic = (activity: Activity) => activity.mediaKind === 'music';
+  const isYoutube = (activity: Activity) => activity.source === 'youtube';
+  const musicAvailable = activities.some(isMusic);
+  const youtubeAvailable = activities.some(isYoutube);
+  const regularAvailable = activities.filter((activity) => !isMusic(activity) && !isYoutube(activity)).length;
+  const activeHighShare = (musicAvailable ? safeMusicShare : 0)
+    + (youtubeAvailable ? safeYoutubeShare : 0);
+  const regularShare = Math.max(0.2, 1 - activeHighShare);
+  const regularBudget = Math.min(regularAvailable, Math.ceil(limit * regularShare));
+  const highBudget = (share: number, available: boolean) => available
+    ? Math.max(1, Math.floor(regularBudget * share / regularShare))
+    : 0;
+  const musicBudget = highBudget(safeMusicShare, musicAvailable);
+  const youtubeBudget = highBudget(safeYoutubeShare, youtubeAvailable);
   const seenMusicDays = new Set<string>();
+  const seenYoutubeDays = new Set<string>();
   const selected: Activity[] = [];
   let musicCount = 0;
-  let nonMusicCount = 0;
+  let youtubeCount = 0;
+  let regularCount = 0;
 
   for (const activity of activities) {
-    if (activity.mediaKind === 'music') {
+    if (isMusic(activity)) {
       const day = taipeiDay(activity);
       if (musicCount >= musicBudget || seenMusicDays.has(day)) continue;
       seenMusicDays.add(day);
       musicCount++;
+    } else if (isYoutube(activity)) {
+      const day = taipeiDay(activity);
+      if (youtubeCount >= youtubeBudget || seenYoutubeDays.has(day)) continue;
+      seenYoutubeDays.add(day);
+      youtubeCount++;
     } else {
-      if (nonMusicCount >= nonMusicBudget) continue;
-      nonMusicCount++;
+      if (regularCount >= regularBudget) continue;
+      regularCount++;
     }
     selected.push(activity);
     if (selected.length >= limit) break;

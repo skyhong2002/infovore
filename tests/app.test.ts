@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { strToU8, zipSync } from 'fflate';
 import { app, repository } from '../src/index.js';
 import { createIngestApp } from '../src/ingest.js';
 import { setCache } from '../src/data/cache.js';
 import type { SourceSnapshot } from '../src/data/types.js';
+import { encryptPrivateValue } from '../src/youtube/crypto.js';
+import type { YoutubeParsedArchive } from '../src/youtube/types.js';
 
 const ingestApp = createIngestApp(repository);
+const YOUTUBE_SECRET = 'test-private-data-key-with-at-least-32-characters';
 
 test('event ingestion requires auth and never exposes private events', async () => {
   const unauthorized = await ingestApp.request('/api/ingest/events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
@@ -87,6 +91,131 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   const status = await (await app.request('/status')).json() as { refresh: { intervalMinutes: number; nextScheduledAt: string } };
   assert.equal(status.refresh.intervalMinutes, 60);
   assert.match(status.refresh.nextScheduledAt, /^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/);
+});
+
+test('YouTube exposes projections while raw watch and search history stay private', async () => {
+  const youtubeArchive: YoutubeParsedArchive = {
+    archiveHash: 'app-privacy-fixture',
+    source: 'takeout',
+    watches: [
+      {
+        eventId: 'youtube-private-watch-1',
+        videoId: 'public-projection-video',
+        title: 'Projected Recent Video',
+        url: 'https://www.youtube.com/watch?v=public-projection-video',
+        channelId: 'projection-channel',
+        channelTitle: 'Projection Channel',
+        channelUrl: 'https://www.youtube.com/channel/projection-channel',
+        watchedAt: new Date().toISOString(),
+        actualWatchedSeconds: null,
+        activityType: 'video',
+      },
+      {
+        eventId: 'youtube-private-post-1',
+        videoId: null,
+        title: 'Private Community Post',
+        url: 'https://www.youtube.com/post/private-post',
+        channelId: null,
+        channelTitle: null,
+        channelUrl: null,
+        watchedAt: new Date(Date.now() - 1_000).toISOString(),
+        actualWatchedSeconds: null,
+        activityType: 'post',
+      },
+    ],
+    searches: [{
+      eventId: 'youtube-private-search-1',
+      searchedAt: new Date().toISOString(),
+      queryCiphertext: encryptPrivateValue('never expose this search', YOUTUBE_SECRET),
+      activityType: 'search',
+    }],
+  };
+  repository.ingestYoutubeArchive(youtubeArchive);
+
+  const timeline = await (await app.request('/api/activities.json?source=youtube')).json() as { total: number };
+  assert.equal(timeline.total, 0);
+  const jsonFeed = await (await app.request('/feed.json')).text();
+  const rssFeed = await (await app.request('/feed.xml')).text();
+  for (const body of [jsonFeed, rssFeed]) {
+    assert.doesNotMatch(body, /Projected Recent Video/);
+    assert.doesNotMatch(body, /Private Community Post/);
+    assert.doesNotMatch(body, /never expose this search/);
+  }
+
+  const summary = await (await app.request('/api/youtube/summary.json?range=all')).json() as Record<string, unknown>;
+  assert.equal('recent' in summary, false);
+  assert.doesNotMatch(JSON.stringify(summary), /Projected Recent Video|never expose this search/);
+
+  const recent = await (await app.request('/api/youtube/recent.json')).json() as {
+    data: Array<Record<string, unknown>>;
+  };
+  assert.equal(recent.data.length, 1);
+  assert.equal(recent.data[0].title, 'Projected Recent Video');
+  assert.equal('eventId' in recent.data[0], false);
+  assert.equal('rawTitle' in recent.data[0], false);
+  assert.equal('watchedAt' in recent.data[0], false);
+  assert.equal('actualWatchedSeconds' in recent.data[0], false);
+  assert.doesNotMatch(JSON.stringify(recent), /Private Community Post|never expose this search/);
+  const health = await app.request('/healthz');
+  assert.equal(health.status, 200);
+  assert.match(await health.text(), /"source":"youtube","fresh":true/);
+
+  const mcpResponse = await app.request('/mcp', {
+    method: 'POST',
+    headers: {
+      host: 'localhost:3000',
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 91,
+      method: 'tools/call',
+      params: { name: 'get_recent_activities', arguments: { limit: 100, source: 'youtube' } },
+    }),
+  });
+  assert.equal(mcpResponse.status, 200);
+  const mcpBody = await mcpResponse.text();
+  assert.doesNotMatch(mcpBody, /Projected Recent Video|Private Community Post|never expose this search/);
+});
+
+test('YouTube Takeout upload requires auth and accepts only ZIP payloads', async () => {
+  const archive = zipSync({
+    'Takeout/YouTube and YouTube Music/history/watch-history.json': strToU8(JSON.stringify([{
+      header: 'YouTube',
+      title: 'Watched Uploaded Video',
+      titleUrl: 'https://www.youtube.com/watch?v=uploaded-video',
+      time: '2026-07-27T00:00:00Z',
+      activityControls: ['YouTube watch history'],
+    }])),
+  });
+  const unauthorized = await ingestApp.request('/api/ingest/youtube/takeout', {
+    method: 'POST',
+    headers: { 'content-type': 'application/zip' },
+    body: Buffer.from(archive),
+  });
+  assert.equal(unauthorized.status, 401);
+  const wrongType = await ingestApp.request('/api/ingest/youtube/takeout', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer test-token-with-at-least-32-characters',
+      'content-type': 'application/json',
+    },
+    body: '{}',
+  });
+  assert.equal(wrongType.status, 415);
+  const accepted = await ingestApp.request('/api/ingest/youtube/takeout', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer test-token-with-at-least-32-characters',
+      'content-type': 'application/zip',
+    },
+    body: Buffer.from(archive),
+  });
+  assert.equal(accepted.status, 201);
+  const result = await accepted.json() as { watchesInserted: number; totals: { videoWatches: number } };
+  assert.equal(result.watchesInserted, 1);
+  assert.ok(result.totals.videoWatches >= 2);
 });
 
 test('platform index and dedicated mirrors render source-native content', async () => {

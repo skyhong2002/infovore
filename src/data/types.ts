@@ -3,7 +3,7 @@
 // the other exists. This is the actual asset: a persistent, cross-platform
 // media consumption log, of which cards are just the first rendering.
 
-export type MediaKind = 'game' | 'anime' | 'manga' | 'movie' | 'show' | 'book' | 'music' | 'event';
+export type MediaKind = 'game' | 'anime' | 'manga' | 'movie' | 'show' | 'book' | 'music' | 'video' | 'event';
 
 export interface Rating {
   value: number;
@@ -33,7 +33,9 @@ export interface MediaEntry {
   extra: Record<string, ExtraValue>;
 }
 
-export type ActivityVisibility = 'public' | 'private';
+// `summary` activities may contribute to explicit aggregate views, but are
+// never returned by the generic public timeline, feeds, search, or MCP tools.
+export type ActivityVisibility = 'public' | 'summary' | 'private';
 export type ActivityTimePrecision = 'exact' | 'day' | 'label' | 'unknown';
 
 // Durable v2 model. SourceSnapshot remains the source/output interchange

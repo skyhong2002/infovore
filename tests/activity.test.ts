@@ -36,9 +36,14 @@ test('manual events retain one stable id across status and date edits', () => {
   assert.equal(upcoming.occurredAtPrecision, 'day');
 });
 
-function homepageActivity(id: string, kind: MediaEntry['kind'], occurredAt: string): Activity {
+function homepageActivity(
+  id: string,
+  kind: MediaEntry['kind'],
+  occurredAt: string,
+  source = kind === 'music' ? 'statsfm' : 'simkl',
+): Activity {
   return activityFromEntry({
-    source: kind === 'music' ? 'statsfm' : 'simkl', sourceItemId: id, kind,
+    source, sourceItemId: id, kind,
     title: id, image: 'https://example.test/image.webp', status: 'completed',
     activityAt: occurredAt, rating: null, extra: {},
   });
@@ -65,4 +70,35 @@ test('homepage still shows one representative when the archive only contains mus
     homepageActivity('older', 'music', '2026-07-27T12:00:00+08:00'),
   ];
   assert.deepEqual(selectHomepageActivities(music).map((activity) => activity.title), ['latest']);
+});
+
+test('homepage gives YouTube its own budget and keeps one video per Taipei day', () => {
+  const activities: Activity[] = [];
+  for (let index = 0; index < 50; index++) {
+    activities.push(homepageActivity(
+      `movie-${index}`,
+      'movie',
+      `2026-06-${String(28 - Math.floor(index / 2)).padStart(2, '0')}T12:00:00+08:00`,
+    ));
+  }
+  for (let index = 0; index < 20; index++) {
+    activities.push(homepageActivity(
+      `track-${index}`,
+      'music',
+      `2026-07-${String(28 - Math.floor(index / 2)).padStart(2, '0')}T12:00:00+08:00`,
+    ));
+    activities.push(homepageActivity(
+      `video-${index}`,
+      'video',
+      `2026-07-${String(28 - Math.floor(index / 2)).padStart(2, '0')}T11:00:00+08:00`,
+      'youtube',
+    ));
+  }
+  const selected = selectHomepageActivities(activities);
+  const music = selected.filter((activity) => activity.mediaKind === 'music');
+  const youtube = selected.filter((activity) => activity.source === 'youtube');
+  assert.equal(selected.length, 40);
+  assert.equal(music.length, 4);
+  assert.equal(youtube.length, 4);
+  assert.equal(new Set(youtube.map((activity) => activity.occurredAt?.slice(0, 10))).size, 4);
 });
