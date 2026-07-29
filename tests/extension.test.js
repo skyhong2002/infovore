@@ -11,7 +11,7 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.2.0');
+  assert.equal(manifest.version, '1.3.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, ['https://infovore.skyhong.tw/*']);
   assert.deepEqual(manifest.content_scripts[0].matches, [
@@ -32,6 +32,23 @@ test('dashboard bridge exposes import status without exposing capture credential
   assert.match(source, /history-import-cancel/);
   assert.match(source, /historyImportStatus/);
   assert.doesNotMatch(source, /captureSettings|captureToken|authorization|Bearer/);
+});
+
+test('history import reports long-running completion without holding the start message open', () => {
+  const background = readFileSync(
+    new URL('../chrome-extension/background.js', import.meta.url),
+    'utf8',
+  );
+  const content = readFileSync(
+    new URL('../chrome-extension/content.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(content, /history-import-complete/);
+  assert.match(content, /history-import-error/);
+  assert.match(content, /sendResponse\(\{ ok: true, started: true \}\)/);
+  assert.match(background, /status\.scanId !== scanId \|\| status\.state !== 'running'/);
+  assert.match(background, /finishHistoryImport\(message\.scanId/);
+  assert.doesNotMatch(background, /videos: result\.videos/);
 });
 
 test('capture retry queue keeps only the newest cumulative session update', () => {

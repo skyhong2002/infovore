@@ -228,12 +228,6 @@ async function startHistoryImport() {
         observedAt,
       });
       if (!result?.ok) throw new Error(result?.error || 'YouTube History import failed');
-      await historyStatus({
-        state: 'complete',
-        videos: result.videos,
-        completedAt: new Date().toISOString(),
-        lastError: '',
-      });
     } catch (error) {
       const storedStatus = await chrome.storage.local.get(HISTORY_STATUS_KEY);
       if (storedStatus[HISTORY_STATUS_KEY]?.state === 'cancelled') return;
@@ -258,6 +252,17 @@ async function cancelHistoryImport() {
     completedAt: new Date().toISOString(),
     lastError: '',
   });
+}
+
+async function finishHistoryImport(scanId, patch) {
+  const stored = await chrome.storage.local.get(HISTORY_STATUS_KEY);
+  const status = stored[HISTORY_STATUS_KEY] ?? {};
+  if (status.scanId !== scanId || status.state !== 'running') return false;
+  await historyStatus({
+    ...patch,
+    completedAt: new Date().toISOString(),
+  });
+  return true;
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -303,6 +308,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       pass: message.pass,
     })
       .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+  if (message?.type === 'history-import-complete') {
+    finishHistoryImport(message.scanId, {
+      state: 'complete',
+      videos: message.videos,
+      lastError: '',
+    })
+      .then((updated) => sendResponse({ ok: true, updated }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+  if (message?.type === 'history-import-error') {
+    finishHistoryImport(message.scanId, {
+      state: 'error',
+      lastError: String(message.error || 'YouTube History import failed'),
+    })
+      .then((updated) => sendResponse({ ok: true, updated }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }

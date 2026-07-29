@@ -242,12 +242,18 @@
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'start-history-import') {
       runHistoryImport(message.scanId, message.observedAt)
-        .then((videos) => sendResponse({ ok: true, videos }))
-        .catch((error) => sendResponse({
-          ok: false,
+        .then((videos) => chrome.runtime.sendMessage({
+          type: 'history-import-complete',
+          scanId: message.scanId,
+          videos,
+        }))
+        .catch((error) => chrome.runtime.sendMessage({
+          type: 'history-import-error',
+          scanId: message.scanId,
           error: error instanceof Error ? error.message : String(error),
         }));
-      return true;
+      sendResponse({ ok: true, started: true });
+      return false;
     }
     if (message?.type === 'cancel-history-import') {
       historyImportCancelled = true;
