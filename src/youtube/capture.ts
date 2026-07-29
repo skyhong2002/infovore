@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { YoutubeCapturedWatch } from './types.js';
+import {
+  MAX_YOUTUBE_DURATION_SECONDS,
+  type YoutubeCapturedWatch,
+} from './types.js';
 
 const captureSchema = z.object({
   sessionId: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/),
@@ -10,7 +13,7 @@ const captureSchema = z.object({
   channelTitle: z.string().trim().min(1).max(200).nullable().optional(),
   watchedAt: z.string().datetime({ offset: true }),
   actualWatchedSeconds: z.number().int().min(5).max(86_400),
-  durationSeconds: z.number().int().min(1).max(172_800).nullable().optional(),
+  durationSeconds: z.number().int().min(1).max(MAX_YOUTUBE_DURATION_SECONDS).nullable().optional(),
 }).strict();
 
 function canonicalYoutubeUrl(raw: string, videoId: string): string {

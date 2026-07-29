@@ -1,3 +1,5 @@
+export const MAX_YOUTUBE_DURATION_SECONDS = 366 * 24 * 60 * 60;
+
 export type YoutubeRange = '7d' | '28d' | '90d' | 'all';
 
 export interface YoutubeWatchInput {

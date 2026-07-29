@@ -1,11 +1,15 @@
 import { z } from 'zod';
-import type { YoutubeProgressBatchInput, YoutubeProgressInput } from './types.js';
+import {
+  MAX_YOUTUBE_DURATION_SECONDS,
+  type YoutubeProgressBatchInput,
+  type YoutubeProgressInput,
+} from './types.js';
 
 const itemSchema = z.object({
   videoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
   progressPercent: z.number().min(0).max(100).nullable(),
-  resumeSeconds: z.number().int().min(0).max(172_800).nullable(),
-  durationSeconds: z.number().int().min(1).max(172_800).nullable(),
+  resumeSeconds: z.number().int().min(0).max(MAX_YOUTUBE_DURATION_SECONDS).nullable(),
+  durationSeconds: z.number().int().min(1).max(MAX_YOUTUBE_DURATION_SECONDS).nullable(),
 }).strict().refine(
   (item) => item.progressPercent !== null || item.resumeSeconds !== null,
   'A progress percentage or resume position is required',

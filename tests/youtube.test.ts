@@ -315,11 +315,18 @@ test('YouTube progress validation prefers exact resume positions and rejects sta
         resumeSeconds: 90,
         durationSeconds: 100,
       },
+      {
+        videoId: 'LONGSTREAM1',
+        progressPercent: 12.5,
+        resumeSeconds: null,
+        durationSeconds: 1_802_839,
+      },
     ],
   }, now);
-  assert.equal(batch.items.length, 1);
+  assert.equal(batch.items.length, 2);
   assert.equal(batch.items[0].resumeSeconds, 90);
   assert.equal(progressSeconds(batch.items[0]), 90);
+  assert.equal(progressSeconds(batch.items[1]), 225_355);
   assert.equal(progressSeconds({
     videoId: 'BBBBBBBBBBB',
     progressPercent: 25,

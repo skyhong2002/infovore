@@ -292,7 +292,7 @@ test('YouTube progress import is private, authenticated, bounded, and aggregate-
       videoId: 'PROGRESS001',
       progressPercent: 37.5,
       resumeSeconds: 321,
-      durationSeconds: 900,
+      durationSeconds: 1_802_839,
     }],
   };
   const unauthorized = await ingestApp.request('/api/ingest/youtube/progress', {
