@@ -57,17 +57,22 @@
     };
   }
 
-  function collectProgress(documentRoot = document) {
+  function collectProgressFromRoots(roots) {
     const items = new Map();
-    for (const root of documentRoot.querySelectorAll('yt-lockup-view-model')) {
+    for (const root of roots) {
       const item = progressFromLockup(root);
       if (item) items.set(item.videoId, mergeProgress(items.get(item.videoId), item));
     }
     return [...items.values()];
   }
 
+  function collectProgress(documentRoot = document) {
+    return collectProgressFromRoots(documentRoot.querySelectorAll('yt-lockup-view-model'));
+  }
+
   globalThis.infovoreYoutubeHistory = {
     collectProgress,
+    collectProgressFromRoots,
     mergeProgress,
     parseDurationText,
   };

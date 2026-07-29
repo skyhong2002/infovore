@@ -180,44 +180,61 @@
     return response;
   }
 
+  function queueHistoryLockups(node, pendingRoots) {
+    if (!(node instanceof Element)) return;
+    if (node.matches('yt-lockup-view-model')) pendingRoots.add(node);
+    for (const root of node.querySelectorAll('yt-lockup-view-model')) {
+      pendingRoots.add(root);
+    }
+  }
+
   async function runHistoryImport(scanId, observedAt) {
     if (location.pathname !== '/feed/history') {
       throw new Error('History import must run on the YouTube History page');
     }
     historyImportCancelled = false;
     const sent = new Map();
-    let unchangedPasses = 0;
-    let lastHeight = 0;
-    let lastItems = 0;
-    for (let pass = 0; pass < 900; pass++) {
-      if (historyImportCancelled) throw new Error('History import cancelled');
-      const items = globalThis.infovoreYoutubeHistory.collectProgress();
-      const changed = items.filter((item) => {
-        const fingerprint = progressFingerprint(item);
-        if (sent.get(item.videoId) === fingerprint) return false;
-        sent.set(item.videoId, fingerprint);
-        return true;
-      });
-      for (let index = 0; index < changed.length; index += 250) {
-        await sendProgressBatch(scanId, observedAt, changed.slice(index, index + 250));
+    const pendingRoots = new Set();
+    const historyObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) queueHistoryLockups(node, pendingRoots);
       }
-      await chrome.runtime.sendMessage({
-        type: 'history-import-progress',
-        scanId,
-        videos: sent.size,
-        pass,
-      });
-      const height = document.documentElement.scrollHeight;
-      if (height === lastHeight && items.length === lastItems && changed.length === 0) {
-        unchangedPasses++;
-      } else {
-        unchangedPasses = 0;
+    });
+    historyObserver.observe(document.documentElement, { childList: true, subtree: true });
+    for (const root of document.querySelectorAll('yt-lockup-view-model')) {
+      pendingRoots.add(root);
+    }
+    let idlePasses = 0;
+    try {
+      for (let pass = 0; pass < 900; pass++) {
+        if (historyImportCancelled) throw new Error('History import cancelled');
+        const roots = [...pendingRoots];
+        pendingRoots.clear();
+        const items = globalThis.infovoreYoutubeHistory.collectProgressFromRoots(roots);
+        const changed = items.filter((item) => {
+          const fingerprint = progressFingerprint(item);
+          if (sent.get(item.videoId) === fingerprint) return false;
+          sent.set(item.videoId, fingerprint);
+          return true;
+        });
+        for (let index = 0; index < changed.length; index += 250) {
+          await sendProgressBatch(scanId, observedAt, changed.slice(index, index + 250));
+        }
+        await chrome.runtime.sendMessage({
+          type: 'history-import-progress',
+          scanId,
+          videos: sent.size,
+          pass,
+        });
+        idlePasses = roots.length === 0 && changed.length === 0
+          ? idlePasses + 1
+          : 0;
+        if (idlePasses >= 20) break;
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+        await wait(700);
       }
-      if (unchangedPasses >= 5) break;
-      lastHeight = height;
-      lastItems = items.length;
-      window.scrollTo({ top: height, behavior: 'instant' });
-      await wait(700);
+    } finally {
+      historyObserver.disconnect();
     }
     await sendProgressBatch(scanId, observedAt, [], true);
     return sent.size;

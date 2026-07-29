@@ -11,7 +11,7 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.3.0');
+  assert.equal(manifest.version, '1.4.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, ['https://infovore.skyhong.tw/*']);
   assert.deepEqual(manifest.content_scripts[0].matches, [
@@ -112,4 +112,24 @@ test('history helper parses duration and merges duplicate resume progress', () =
     resumeSeconds: 120,
     durationSeconds: 600,
   }]);
+  assert.deepEqual(helper.collectProgressFromRoots([
+    lockup({ progress: 25, resume: 75, duration: '10:00' }),
+  ]), [{
+    videoId: 'ABCDEFGHIJK',
+    progressPercent: 25,
+    resumeSeconds: 75,
+    durationSeconds: 600,
+  }]);
+});
+
+test('history import processes only newly added lockups and stops after an idle window', () => {
+  const source = readFileSync(
+    new URL('../chrome-extension/content.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /new MutationObserver/);
+  assert.match(source, /collectProgressFromRoots\(roots\)/);
+  assert.match(source, /pendingRoots\.clear\(\)/);
+  assert.match(source, /idlePasses >= 20/);
+  assert.doesNotMatch(source, /infovoreYoutubeHistory\.collectProgress\(\)/);
 });
