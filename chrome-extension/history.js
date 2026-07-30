@@ -70,23 +70,30 @@
     return collectProgressFromRoots(documentRoot.querySelectorAll('yt-lockup-view-model'));
   }
 
-  function retainRecentRoots(retainedRoots, roots, maximum = 250) {
-    for (let index = retainedRoots.length - 1; index >= 0; index--) {
-      if (retainedRoots[index].isConnected === false) retainedRoots.splice(index, 1);
+  function compactHistorySections(documentRoot = document, maximum = 80) {
+    const sections = [...documentRoot.querySelectorAll(
+      'ytd-item-section-renderer:not([data-infovore-compacted])'
+    )];
+    const expired = sections.slice(0, Math.max(0, sections.length - maximum));
+    for (const section of expired) {
+      const height = Math.max(
+        1,
+        Math.ceil(section.getBoundingClientRect?.().height ?? section.offsetHeight ?? 0),
+      );
+      section.replaceChildren();
+      section.setAttribute('data-infovore-compacted', '');
+      section.style.height = `${height}px`;
+      section.style.minHeight = `${height}px`;
+      section.style.contain = 'strict';
     }
-    for (const root of roots) {
-      if (root.isConnected !== false) retainedRoots.push(root);
-    }
-    const expired = retainedRoots.splice(0, Math.max(0, retainedRoots.length - maximum));
-    for (const root of expired) root.remove();
     return expired.length;
   }
 
   globalThis.infovoreYoutubeHistory = {
+    compactHistorySections,
     collectProgress,
     collectProgressFromRoots,
     mergeProgress,
     parseDurationText,
-    retainRecentRoots,
   };
 })();

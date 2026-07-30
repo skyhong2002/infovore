@@ -11,7 +11,7 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.9.0');
+  assert.equal(manifest.version, '1.10.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, [
     'https://infovore.skyhong.tw/*',
@@ -160,29 +160,43 @@ test('history import processes only newly added lockups and stops after an idle 
   assert.match(source, /new MutationObserver/);
   assert.match(source, /collectProgressFromRoots\(roots\)/);
   assert.match(source, /pendingRoots\.clear\(\)/);
-  assert.match(source, /retainRecentRoots\(retainedRoots, roots\)/);
+  assert.match(source, /compactHistorySections\(document\)/);
   assert.match(source, /idlePasses >= 20/);
   assert.doesNotMatch(source, /infovoreYoutubeHistory\.collectProgress\(\)/);
 });
 
-test('history import releases old cards while retaining a bounded recent window', () => {
+test('history import compacts old sections without collapsing scroll geometry', () => {
   const helper = globalThis.infovoreYoutubeHistory;
-  const removed = [];
-  const roots = Array.from({ length: 6 }, (_, index) => ({
+  const compacted = [];
+  const sections = Array.from({ length: 6 }, (_, index) => ({
     id: index,
-    isConnected: true,
-    remove() {
-      removed.push(index);
-      this.isConnected = false;
+    style: {},
+    getBoundingClientRect() {
+      return { height: 100 + index };
+    },
+    replaceChildren() {
+      compacted.push(index);
+    },
+    setAttribute(name, value) {
+      this[name] = value;
     },
   }));
-  const retained = [];
-  assert.equal(helper.retainRecentRoots(retained, roots.slice(0, 3), 4), 0);
-  assert.equal(helper.retainRecentRoots(retained, roots.slice(3), 4), 2);
-  assert.deepEqual(removed, [0, 1]);
-  assert.deepEqual(retained.map((root) => root.id), [2, 3, 4, 5]);
-
-  roots[2].isConnected = false;
-  assert.equal(helper.retainRecentRoots(retained, [], 4), 0);
-  assert.deepEqual(retained.map((root) => root.id), [3, 4, 5]);
+  const documentRoot = {
+    querySelectorAll(selector) {
+      assert.equal(
+        selector,
+        'ytd-item-section-renderer:not([data-infovore-compacted])',
+      );
+      return sections;
+    },
+  };
+  assert.equal(helper.compactHistorySections(documentRoot, 4), 2);
+  assert.deepEqual(compacted, [0, 1]);
+  assert.equal(sections[0]['data-infovore-compacted'], '');
+  assert.deepEqual(sections[0].style, {
+    height: '100px',
+    minHeight: '100px',
+    contain: 'strict',
+  });
+  assert.equal(sections[2]['data-infovore-compacted'], undefined);
 });
