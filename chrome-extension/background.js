@@ -196,6 +196,11 @@ async function waitForTab(tabId) {
   });
 }
 
+async function closeHistoryImportTab(tabId) {
+  if (!Number.isInteger(tabId)) return;
+  await chrome.tabs.remove(tabId).catch(() => {});
+}
+
 async function startHistoryImport() {
   const config = await settings();
   if (!config.enabled || !config.token) throw new Error('Capture token is not configured');
@@ -236,6 +241,7 @@ async function startHistoryImport() {
         completedAt: new Date().toISOString(),
         lastError: error instanceof Error ? error.message : String(error),
       });
+      await closeHistoryImportTab(tab.id);
     }
   })();
   return { scanId, observedAt, tabId: tab.id };
@@ -247,6 +253,7 @@ async function cancelHistoryImport() {
   if (status.tabId) {
     await chrome.tabs.sendMessage(status.tabId, { type: 'cancel-history-import' }).catch(() => {});
   }
+  await closeHistoryImportTab(status.tabId);
   await historyStatus({
     state: 'cancelled',
     completedAt: new Date().toISOString(),
@@ -257,12 +264,14 @@ async function cancelHistoryImport() {
 async function finishHistoryImport(scanId, patch) {
   const stored = await chrome.storage.local.get(HISTORY_STATUS_KEY);
   const status = stored[HISTORY_STATUS_KEY] ?? {};
-  if (status.scanId !== scanId || status.state !== 'running') return false;
+  if (status.scanId !== scanId || status.state !== 'running') {
+    return { updated: false, tabId: null };
+  }
   await historyStatus({
     ...patch,
     completedAt: new Date().toISOString(),
   });
-  return true;
+  return { updated: true, tabId: status.tabId ?? null };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -317,7 +326,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       videos: message.videos,
       lastError: '',
     })
-      .then((updated) => sendResponse({ ok: true, updated }))
+      .then(({ updated, tabId }) => {
+        sendResponse({ ok: true, updated });
+        void closeHistoryImportTab(tabId);
+      })
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
@@ -326,7 +338,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       state: 'error',
       lastError: String(message.error || 'YouTube History import failed'),
     })
-      .then((updated) => sendResponse({ ok: true, updated }))
+      .then(({ updated, tabId }) => {
+        sendResponse({ ok: true, updated });
+        void closeHistoryImportTab(tabId);
+      })
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
@@ -334,12 +349,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const stored = await chrome.storage.local.get(SETTINGS_KEY);
+  const stored = await chrome.storage.local.get([SETTINGS_KEY, HISTORY_STATUS_KEY]);
   if (!stored[SETTINGS_KEY]) {
     await chrome.storage.local.set({
       [SETTINGS_KEY]: { endpoint: DEFAULT_ENDPOINT, token: '', enabled: true },
     });
     await chrome.runtime.openOptionsPage();
+  }
+  const historyImport = stored[HISTORY_STATUS_KEY] ?? {};
+  if (historyImport.state === 'running') {
+    await closeHistoryImportTab(historyImport.tabId);
+    await historyStatus({
+      state: 'cancelled',
+      completedAt: new Date().toISOString(),
+      lastError: '',
+    });
   }
   await chrome.alarms.create('flush-captures', { periodInMinutes: 1 });
   void flushQueue();

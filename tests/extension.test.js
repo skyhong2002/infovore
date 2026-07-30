@@ -11,7 +11,7 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.4.0');
+  assert.equal(manifest.version, '1.5.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, ['https://infovore.skyhong.tw/*']);
   assert.deepEqual(manifest.content_scripts[0].matches, [
@@ -49,6 +49,18 @@ test('history import reports long-running completion without holding the start m
   assert.match(background, /status\.scanId !== scanId \|\| status\.state !== 'running'/);
   assert.match(background, /finishHistoryImport\(message\.scanId/);
   assert.doesNotMatch(background, /videos: result\.videos/);
+});
+
+test('history import tabs close after completion, cancellation, errors, and extension reloads', () => {
+  const background = readFileSync(
+    new URL('../chrome-extension/background.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(background, /chrome\.tabs\.remove\(tabId\)/);
+  assert.match(background, /void closeHistoryImportTab\(tabId\)/);
+  assert.match(background, /await closeHistoryImportTab\(status\.tabId\)/);
+  assert.match(background, /historyImport\.state === 'running'/);
+  assert.match(background, /await closeHistoryImportTab\(historyImport\.tabId\)/);
 });
 
 test('capture retry queue keeps only the newest cumulative session update', () => {
