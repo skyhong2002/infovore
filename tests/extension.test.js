@@ -11,9 +11,12 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.6.0');
+  assert.equal(manifest.version, '1.7.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
-  assert.deepEqual(manifest.host_permissions, ['https://infovore.skyhong.tw/*']);
+  assert.deepEqual(manifest.host_permissions, [
+    'https://infovore.skyhong.tw/*',
+    'https://www.youtube.com/*',
+  ]);
   assert.deepEqual(manifest.content_scripts[0].matches, [
     'https://infovore.skyhong.tw/platforms/youtube*',
   ]);
