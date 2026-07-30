@@ -64,6 +64,9 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(homeHtml, /href="\/" aria-current="page">Home/);
   assert.match(homeHtml, /property="og:image" content="http:\/\/localhost:3000\/og\.png"/);
   assert.doesNotMatch(homeHtml, /src="\/card\//);
+  assert.match(homeHtml, /img\[data-adaptive-media\]\{aspect-ratio:var\(--media-ratio,.75\)/);
+  assert.match(homeHtml, /Math\.min\(2, Math\.max\(0\.5, naturalRatio\)\)/);
+  assert.match(homeHtml, /class="activity-cover" data-adaptive-media/);
   const og = await app.request('/og.png');
   assert.equal(og.status, 200);
   assert.equal(og.headers.get('content-type'), 'image/png');
@@ -464,6 +467,8 @@ test('platform index and dedicated mirrors render source-native content', async 
   assert.match(mirrorHtml, /src="\/card\/statsfm\.webp\?v=/);
   assert.match(mirrorHtml, /src="\/card\/statsfm-albums\.webp\?v=/);
   assert.match(mirrorHtml, /src="\/card\/statsfm-artists\.webp\?v=/);
+  assert.match(mirrorHtml, /<img data-adaptive-media src="https:\/\/example\.test\/song\.jpg"/);
+  assert.match(mirrorHtml, /<img data-adaptive-media src="https:\/\/example\.test\/album\.jpg"/);
   assert.match(mirrorHtml, /\.platform-card-grid a\{border-radius:10px;display:block;flex:0 1 520px/);
   assert.match(mirrorHtml, /\.platform-card-grid img\{display:block;height:auto;max-width:100%;width:520px\}/);
 

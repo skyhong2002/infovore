@@ -68,7 +68,7 @@ function entryCard(entry: MediaEntry): string {
     ? `<div class="platform-tags">${entry.extra.tags.map((tag) => `<span>${html(tag)}</span>`).join('')}</div>`
     : '';
   return `<article class="platform-entry">
-    ${entry.image ? `<img src="${html(entry.image)}" alt="" loading="lazy">` : '<div class="platform-entry-placeholder" aria-hidden="true"></div>'}
+    ${entry.image ? `<img data-adaptive-media src="${html(entry.image)}" alt="" loading="lazy">` : '<div class="platform-entry-placeholder" aria-hidden="true"></div>'}
     <div class="platform-entry-copy"><div class="pill">${html(entry.kind)}</div><h3>${html(entry.title)}</h3>
     <div class="platform-entry-meta">${entryMeta(entry)}</div>${tags}</div>
   </article>`;
@@ -81,7 +81,7 @@ function leaderboard(title: string, value: unknown): string {
   return `<section><div class="platform-section-heading"><h2>${html(title)}</h2><span>${items.length} ranked</span></div>
     <div class="platform-leaderboard">${items.map((item, index) => `<article>
       <span class="platform-rank">${index + 1}</span>
-      ${item.image ? `<img src="${html(item.image)}" alt="" loading="lazy">` : ''}
+      ${item.image ? `<img data-adaptive-media src="${html(item.image)}" alt="" loading="lazy">` : ''}
       <div><h3>${html(item.name)}</h3><p>${item.artist ? `${html(item.artist)} · ` : ''}${html(item.streams)} streams</p></div>
     </article>`).join('')}</div></section>`;
 }
