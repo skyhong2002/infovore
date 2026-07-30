@@ -201,6 +201,13 @@ async function closeHistoryImportTab(tabId) {
   await chrome.tabs.remove(tabId).catch(() => {});
 }
 
+async function closeHistoryImportTabs() {
+  const tabs = await chrome.tabs.query({
+    url: 'https://www.youtube.com/feed/history*',
+  }).catch(() => []);
+  await Promise.all(tabs.map((tab) => closeHistoryImportTab(tab.id)));
+}
+
 async function startHistoryImport() {
   const config = await settings();
   if (!config.enabled || !config.token) throw new Error('Capture token is not configured');
@@ -208,6 +215,7 @@ async function startHistoryImport() {
   if (stored[HISTORY_STATUS_KEY]?.state === 'running') {
     throw new Error('A history import is already running');
   }
+  await closeHistoryImportTabs();
   const scanId = crypto.randomUUID();
   const observedAt = new Date().toISOString();
   const tab = await chrome.tabs.create({
@@ -350,6 +358,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 chrome.runtime.onInstalled.addListener(async () => {
   const stored = await chrome.storage.local.get([SETTINGS_KEY, HISTORY_STATUS_KEY]);
+  await closeHistoryImportTabs();
   if (!stored[SETTINGS_KEY]) {
     await chrome.storage.local.set({
       [SETTINGS_KEY]: { endpoint: DEFAULT_ENDPOINT, token: '', enabled: true },

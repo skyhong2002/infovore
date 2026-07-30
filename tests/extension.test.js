@@ -11,7 +11,7 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.5.0');
+  assert.equal(manifest.version, '1.6.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, ['https://infovore.skyhong.tw/*']);
   assert.deepEqual(manifest.content_scripts[0].matches, [
@@ -59,6 +59,8 @@ test('history import tabs close after completion, cancellation, errors, and exte
   assert.match(background, /chrome\.tabs\.remove\(tabId\)/);
   assert.match(background, /void closeHistoryImportTab\(tabId\)/);
   assert.match(background, /await closeHistoryImportTab\(status\.tabId\)/);
+  assert.match(background, /chrome\.tabs\.query\(\{\s+url: 'https:\/\/www\.youtube\.com\/feed\/history\*'/);
+  assert.match(background, /await closeHistoryImportTabs\(\)/);
   assert.match(background, /historyImport\.state === 'running'/);
   assert.match(background, /await closeHistoryImportTab\(historyImport\.tabId\)/);
 });
