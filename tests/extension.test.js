@@ -12,7 +12,7 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.11.0');
+  assert.equal(manifest.version, '1.11.1');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, [
     'https://infovore.skyhong.tw/*',
@@ -41,6 +41,7 @@ test('dashboard bridge exposes import status without exposing capture credential
   assert.match(source, /lifelog-sync-cancel/);
   assert.match(source, /lifelogSyncStatus/);
   assert.doesNotMatch(source, /captureSettings|captureToken|authorization|Bearer/);
+  assert.match(source, /Extension was updated\. Reload this page and try again\./);
 });
 
 test('daily lifelog sync has startup catch-up, overlap, and an hourly due check', () => {

@@ -4,6 +4,11 @@
   const requestEvent = 'infovore-youtube-import-request';
   const statusEvent = 'infovore-youtube-import-status';
 
+  function dispatchStatus(status) {
+    control.dataset.extensionStatus = JSON.stringify(status);
+    window.dispatchEvent(new Event(statusEvent));
+  }
+
   async function emitStatus(extra = {}) {
     const stored = await chrome.storage.local.get([
       'historyImportStatus',
@@ -11,7 +16,7 @@
     ]);
     const history = stored.historyImportStatus ?? {};
     const status = stored.lifelogSyncStatus ?? {};
-    control.dataset.extensionStatus = JSON.stringify({
+    dispatchStatus({
       extensionReady: true,
       state: status.state ?? 'idle',
       stage: status.stage ?? 'idle',
@@ -23,10 +28,17 @@
       lastError: String(status.lastError ?? ''),
       ...extra,
     });
-    window.dispatchEvent(new Event(statusEvent));
   }
 
   window.addEventListener(requestEvent, () => {
+    if (!chrome.runtime?.sendMessage) {
+      dispatchStatus({
+        extensionReady: false,
+        state: 'error',
+        lastError: 'Extension was updated. Reload this page and try again.',
+      });
+      return;
+    }
     const action = control.dataset.importAction;
     const type = action === 'cancel'
       ? 'lifelog-sync-cancel'
