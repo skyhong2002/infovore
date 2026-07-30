@@ -11,7 +11,7 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.8.0');
+  assert.equal(manifest.version, '1.9.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, [
     'https://infovore.skyhong.tw/*',
@@ -160,6 +160,29 @@ test('history import processes only newly added lockups and stops after an idle 
   assert.match(source, /new MutationObserver/);
   assert.match(source, /collectProgressFromRoots\(roots\)/);
   assert.match(source, /pendingRoots\.clear\(\)/);
+  assert.match(source, /retainRecentRoots\(retainedRoots, roots\)/);
   assert.match(source, /idlePasses >= 20/);
   assert.doesNotMatch(source, /infovoreYoutubeHistory\.collectProgress\(\)/);
+});
+
+test('history import releases old cards while retaining a bounded recent window', () => {
+  const helper = globalThis.infovoreYoutubeHistory;
+  const removed = [];
+  const roots = Array.from({ length: 6 }, (_, index) => ({
+    id: index,
+    isConnected: true,
+    remove() {
+      removed.push(index);
+      this.isConnected = false;
+    },
+  }));
+  const retained = [];
+  assert.equal(helper.retainRecentRoots(retained, roots.slice(0, 3), 4), 0);
+  assert.equal(helper.retainRecentRoots(retained, roots.slice(3), 4), 2);
+  assert.deepEqual(removed, [0, 1]);
+  assert.deepEqual(retained.map((root) => root.id), [2, 3, 4, 5]);
+
+  roots[2].isConnected = false;
+  assert.equal(helper.retainRecentRoots(retained, [], 4), 0);
+  assert.deepEqual(retained.map((root) => root.id), [3, 4, 5]);
 });

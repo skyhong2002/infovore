@@ -195,6 +195,7 @@
     historyImportCancelled = false;
     const sent = new Map();
     const pendingRoots = new Set();
+    const retainedRoots = [];
     const historyObserver = new MutationObserver((records) => {
       for (const record of records) {
         for (const node of record.addedNodes) queueHistoryLockups(node, pendingRoots);
@@ -226,6 +227,7 @@
           videos: sent.size,
           pass,
         });
+        globalThis.infovoreYoutubeHistory.retainRecentRoots(retainedRoots, roots);
         idlePasses = roots.length === 0 && changed.length === 0
           ? idlePasses + 1
           : 0;

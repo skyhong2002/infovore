@@ -70,10 +70,23 @@
     return collectProgressFromRoots(documentRoot.querySelectorAll('yt-lockup-view-model'));
   }
 
+  function retainRecentRoots(retainedRoots, roots, maximum = 250) {
+    for (let index = retainedRoots.length - 1; index >= 0; index--) {
+      if (retainedRoots[index].isConnected === false) retainedRoots.splice(index, 1);
+    }
+    for (const root of roots) {
+      if (root.isConnected !== false) retainedRoots.push(root);
+    }
+    const expired = retainedRoots.splice(0, Math.max(0, retainedRoots.length - maximum));
+    for (const root of expired) root.remove();
+    return expired.length;
+  }
+
   globalThis.infovoreYoutubeHistory = {
     collectProgress,
     collectProgressFromRoots,
     mergeProgress,
     parseDurationText,
+    retainRecentRoots,
   };
 })();
