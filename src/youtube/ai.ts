@@ -20,7 +20,11 @@ function defaultClient(): YoutubeAiClient {
 }
 
 function configured(client: YoutubeAiClient): boolean {
-  return Boolean(client.apiKey && client.model);
+  return Boolean(
+    client.apiKey
+    && client.model
+    && (client.fetchImpl || config.ai.enabled)
+  );
 }
 
 function parseJson(content: string): unknown {

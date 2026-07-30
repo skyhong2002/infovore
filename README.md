@@ -158,6 +158,11 @@ require reauthorization every seven days. For local Compose, the OAuth callback
 uses the ingest service at `http://localhost:3001`; production reverse proxies
 route the same `/api/ingest/*` path on the public domain.
 
+AI topic classification is disabled by default, even when AI credentials are
+present. Set `AI_CLASSIFICATION_ENABLED=true` only for an intentional bootstrap
+or classification run, then disable it again. Existing taxonomy and topic
+assignments remain available while classification is disabled.
+
 ### Capture new YouTube viewing
 
 Google Data Portability is not available for every account country. The

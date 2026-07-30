@@ -677,6 +677,14 @@ test('AI taxonomy is versioned, validated, cached, and receives only public meta
       fetchImpl,
     };
 
+    assert.deepEqual(
+      await ensureYoutubeTaxonomyWithClient(
+        repository,
+        false,
+        { ...client, fetchImpl: undefined }
+      ),
+      [],
+    );
     const firstTopics = await ensureYoutubeTaxonomyWithClient(repository, false, client);
     assert.equal(firstTopics.length, 12);
     assert.equal(firstTopics[0].version, 1);

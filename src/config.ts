@@ -13,6 +13,9 @@ const publicBaseUrl = (process.env.PUBLIC_BASE_URL ?? (process.env.DOMAIN ? `htt
 const youtubePrivateDataKey = process.env.YOUTUBE_PRIVATE_DATA_KEY ?? '';
 const youtubeCaptureToken = process.env.YOUTUBE_CAPTURE_TOKEN ?? '';
 const youtubeSyncHour = Number(process.env.YOUTUBE_SYNC_HOUR ?? 4);
+const aiClassificationEnabled = /^(1|true|yes)$/i.test(
+  process.env.AI_CLASSIFICATION_ENABLED ?? ''
+);
 
 const invalidSources = sources.filter((source) => !knownSources.includes(source as typeof knownSources[number]));
 if (invalidSources.length) throw new Error(`Unknown SOURCES: ${invalidSources.join(', ')}`);
@@ -65,6 +68,7 @@ export const config = {
     syncHour: youtubeSyncHour,
   },
   ai: {
+    enabled: aiClassificationEnabled,
     baseUrl: (process.env.AI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, ''),
     apiKey: process.env.AI_API_KEY ?? '',
     model: process.env.AI_MODEL ?? '',
