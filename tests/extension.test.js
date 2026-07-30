@@ -11,7 +11,7 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.7.0');
+  assert.equal(manifest.version, '1.8.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, [
     'https://infovore.skyhong.tw/*',
@@ -52,6 +52,19 @@ test('history import reports long-running completion without holding the start m
   assert.match(background, /status\.scanId !== scanId \|\| status\.state !== 'running'/);
   assert.match(background, /finishHistoryImport\(message\.scanId/);
   assert.doesNotMatch(background, /videos: result\.videos/);
+});
+
+test('history progress uploads time out and retry instead of stalling the scan', () => {
+  const background = readFileSync(
+    new URL('../chrome-extension/background.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(background, /PROGRESS_REQUEST_TIMEOUT_MS = 20_000/);
+  assert.match(background, /new AbortController\(\)/);
+  assert.match(background, /signal: controller\.signal/);
+  assert.match(background, /controller\.abort\(\)/);
+  assert.match(background, /clearTimeout\(timeout\)/);
+  assert.match(background, /for \(let attempt = 0; attempt < 3; attempt\+\+\)/);
 });
 
 test('history import tabs close after completion, cancellation, errors, and extension reloads', () => {

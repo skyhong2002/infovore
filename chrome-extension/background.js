@@ -4,6 +4,7 @@ const QUEUE_KEY = 'captureQueue';
 const SETTINGS_KEY = 'captureSettings';
 const STATUS_KEY = 'captureStatus';
 const HISTORY_STATUS_KEY = 'historyImportStatus';
+const PROGRESS_REQUEST_TIMEOUT_MS = 20_000;
 let queueMutation = Promise.resolve();
 let flushPromise = null;
 
@@ -153,6 +154,8 @@ async function sendProgressBatch(payload) {
   if (!config.enabled || !config.token) throw new Error('Capture token is not configured');
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), PROGRESS_REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(progressEndpoint(config.endpoint), {
         method: 'POST',
@@ -161,6 +164,7 @@ async function sendProgressBatch(payload) {
           'content-type': 'application/json',
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
       if (response.ok) return await response.json();
       const body = await response.json().catch(() => ({}));
@@ -168,6 +172,8 @@ async function sendProgressBatch(payload) {
     } catch (error) {
       lastError = error;
       if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1000 * (2 ** attempt)));
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw lastError;
