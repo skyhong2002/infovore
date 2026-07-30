@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "infovore YouTube Capture",
-  "version": "1.10.0",
-  "description": "Privately records measured YouTube watch time and imports saved viewing progress to infovore.",
+  "version": "1.11.0",
+  "description": "Privately syncs cross-device YouTube history, saved progress, and measured Chrome viewing to infovore.",
   "minimum_chrome_version": "120",
   "permissions": [
     "alarms",
@@ -10,6 +10,7 @@
   ],
   "host_permissions": [
     "https://infovore.skyhong.tw/*",
+    "https://myactivity.google.com/*",
     "https://www.youtube.com/*"
   ],
   "background": {
@@ -28,6 +29,15 @@
       ],
       "js": [
         "dashboard.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://myactivity.google.com/product/youtube*"
+      ],
+      "js": [
+        "myactivity.js"
       ],
       "run_at": "document_idle"
     },

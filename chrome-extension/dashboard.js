@@ -5,13 +5,21 @@
   const statusEvent = 'infovore-youtube-import-status';
 
   async function emitStatus(extra = {}) {
-    const stored = await chrome.storage.local.get('historyImportStatus');
-    const status = stored.historyImportStatus ?? {};
+    const stored = await chrome.storage.local.get([
+      'historyImportStatus',
+      'lifelogSyncStatus',
+    ]);
+    const history = stored.historyImportStatus ?? {};
+    const status = stored.lifelogSyncStatus ?? {};
     control.dataset.extensionStatus = JSON.stringify({
       extensionReady: true,
       state: status.state ?? 'idle',
-      videos: Number(status.videos ?? 0),
-      pass: Number(status.pass ?? 0),
+      stage: status.stage ?? 'idle',
+      events: Number(status.events ?? 0),
+      videos: Number(status.videos ?? history.videos ?? 0),
+      pass: Number(status.pass ?? history.pass ?? 0),
+      lastSuccessAt: status.lastSuccessAt ?? null,
+      nextSyncAt: status.nextSyncAt ?? null,
       lastError: String(status.lastError ?? ''),
       ...extra,
     });
@@ -21,8 +29,8 @@
   window.addEventListener(requestEvent, () => {
     const action = control.dataset.importAction;
     const type = action === 'cancel'
-      ? 'history-import-cancel'
-      : 'history-import-start';
+      ? 'lifelog-sync-cancel'
+      : 'lifelog-sync-start';
     chrome.runtime.sendMessage({ type })
       .then((response) => emitStatus(response?.ok
         ? {}
@@ -34,7 +42,10 @@
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes.historyImportStatus) void emitStatus();
+    if (
+      areaName === 'local'
+      && (changes.historyImportStatus || changes.lifelogSyncStatus)
+    ) void emitStatus();
   });
   void emitStatus();
 })();

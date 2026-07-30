@@ -4,6 +4,7 @@ const form = document.querySelector('#settings');
 const endpoint = document.querySelector('#endpoint');
 const token = document.querySelector('#token');
 const enabled = document.querySelector('#enabled');
+const autoSync = document.querySelector('#auto-sync');
 const result = document.querySelector('#result');
 
 async function load() {
@@ -12,6 +13,7 @@ async function load() {
   endpoint.value = settings.endpoint ?? DEFAULT_ENDPOINT;
   token.value = settings.token ?? '';
   enabled.checked = settings.enabled ?? true;
+  autoSync.checked = settings.autoSync ?? true;
 }
 
 function values() {
@@ -28,6 +30,7 @@ function values() {
     endpoint: url.toString().replace(/\/$/, ''),
     token: token.value,
     enabled: enabled.checked,
+    autoSync: autoSync.checked,
   };
 }
 
@@ -36,7 +39,7 @@ form.addEventListener('submit', async (event) => {
   try {
     await chrome.storage.local.set({ [SETTINGS_KEY]: values() });
     result.textContent = 'Settings saved.';
-    await chrome.runtime.sendMessage({ type: 'flush' });
+    await chrome.runtime.sendMessage({ type: 'settings-updated' });
   } catch (error) {
     result.textContent = error instanceof Error ? error.message : String(error);
   }

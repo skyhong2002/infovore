@@ -188,7 +188,7 @@
     }
   }
 
-  async function runHistoryImport(scanId, observedAt) {
+  async function runHistoryImport(scanId, observedAt, mode = 'full') {
     if (location.pathname !== '/feed/history') {
       throw new Error('History import must run on the YouTube History page');
     }
@@ -205,8 +205,11 @@
       pendingRoots.add(root);
     }
     let idlePasses = 0;
+    const passLimit = mode === 'incremental' ? 120 : 900;
+    const videoLimit = mode === 'incremental' ? 1_200 : Number.POSITIVE_INFINITY;
+    const idleLimit = mode === 'incremental' ? 10 : 20;
     try {
-      for (let pass = 0; pass < 900; pass++) {
+      for (let pass = 0; pass < passLimit; pass++) {
         if (historyImportCancelled) throw new Error('History import cancelled');
         const roots = [...pendingRoots];
         pendingRoots.clear();
@@ -230,7 +233,7 @@
         idlePasses = roots.length === 0 && changed.length === 0
           ? idlePasses + 1
           : 0;
-        if (idlePasses >= 20) break;
+        if (idlePasses >= idleLimit || sent.size >= videoLimit) break;
         window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
         await wait(700);
       }
@@ -259,7 +262,7 @@
   window.addEventListener('pagehide', () => flush(true));
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'start-history-import') {
-      runHistoryImport(message.scanId, message.observedAt)
+      runHistoryImport(message.scanId, message.observedAt, message.mode)
         .then((videos) => chrome.runtime.sendMessage({
           type: 'history-import-complete',
           scanId: message.scanId,

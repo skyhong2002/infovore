@@ -4,6 +4,7 @@ import test from 'node:test';
 import { mergeQueue, retryDelayMs } from '../chrome-extension/queue.js';
 
 await import('../chrome-extension/history.js');
+await import('../chrome-extension/myactivity.js');
 
 test('Chrome extension manifest is least-privilege and captures YouTube SPA pages', () => {
   const manifest = JSON.parse(readFileSync(
@@ -11,18 +12,23 @@ test('Chrome extension manifest is least-privilege and captures YouTube SPA page
     'utf8',
   ));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.10.0');
+  assert.equal(manifest.version, '1.11.0');
   assert.deepEqual(manifest.permissions.sort(), ['alarms', 'storage']);
   assert.deepEqual(manifest.host_permissions, [
     'https://infovore.skyhong.tw/*',
+    'https://myactivity.google.com/*',
     'https://www.youtube.com/*',
   ]);
   assert.deepEqual(manifest.content_scripts[0].matches, [
     'https://infovore.skyhong.tw/platforms/youtube*',
   ]);
   assert.deepEqual(manifest.content_scripts[0].js, ['dashboard.js']);
-  assert.deepEqual(manifest.content_scripts[1].matches, ['https://www.youtube.com/*']);
-  assert.deepEqual(manifest.content_scripts[1].js, ['history.js', 'content.js']);
+  assert.deepEqual(manifest.content_scripts[1].matches, [
+    'https://myactivity.google.com/product/youtube*',
+  ]);
+  assert.deepEqual(manifest.content_scripts[1].js, ['myactivity.js']);
+  assert.deepEqual(manifest.content_scripts[2].matches, ['https://www.youtube.com/*']);
+  assert.deepEqual(manifest.content_scripts[2].js, ['history.js', 'content.js']);
   assert.equal(manifest.background.type, 'module');
 });
 
@@ -31,10 +37,78 @@ test('dashboard bridge exposes import status without exposing capture credential
     new URL('../chrome-extension/dashboard.js', import.meta.url),
     'utf8',
   );
-  assert.match(source, /history-import-start/);
-  assert.match(source, /history-import-cancel/);
-  assert.match(source, /historyImportStatus/);
+  assert.match(source, /lifelog-sync-start/);
+  assert.match(source, /lifelog-sync-cancel/);
+  assert.match(source, /lifelogSyncStatus/);
   assert.doesNotMatch(source, /captureSettings|captureToken|authorization|Bearer/);
+});
+
+test('daily lifelog sync has startup catch-up, overlap, and an hourly due check', () => {
+  const background = readFileSync(
+    new URL('../chrome-extension/background.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(background, /DAILY_SYNC_DUE_MS = 20 \* 60 \* 60_000/);
+  assert.match(background, /DAILY_SYNC_OVERLAP_MS = 2 \* 60 \* 60_000/);
+  assert.match(background, /periodInMinutes: 60/);
+  assert.match(background, /chrome\.runtime\.onStartup/);
+  assert.match(background, /void maybeStartLifelogSync\(\)/);
+  assert.match(background, /mode: 'incremental'/);
+  assert.match(background, /active: false/);
+});
+
+test('My Activity helper parses cross-device watches, searches, and local timestamps', () => {
+  const helper = globalThis.infovoreYoutubeActivity;
+  const occurredAt = new Date(2026, 6, 30, 20, 11, 0).toISOString();
+  const watch = helper.activityFromParts({
+    dateValue: '20260730',
+    timeText: '8:11\u202fPM • Details',
+    durationText: '1:03',
+    links: [
+      {
+        href: 'https://www.youtube.com/watch?v=OjgytNhTjtI',
+        text: 'Persona 5 Secret Egg Room',
+        ariaLabel: 'Persona 5 Secret Egg Room (Opens in new tab)',
+      },
+      {
+        href: 'https://www.youtube.com/channel/UCEevYX4rCcfF0ZrxmnnONXA',
+        text: 'Faz',
+        ariaLabel: 'Faz (Opens in new tab)',
+      },
+      {
+        href: 'https://www.youtube.com/watch?v=OjgytNhTjtI',
+        text: '1:03',
+        ariaLabel: 'Play video Persona 5 Secret Egg Room (Opens in new tab)',
+      },
+    ],
+  });
+  assert.deepEqual(watch, {
+    kind: 'watch',
+    occurredAt,
+    videoId: 'OjgytNhTjtI',
+    title: 'Persona 5 Secret Egg Room',
+    url: 'https://www.youtube.com/watch?v=OjgytNhTjtI',
+    channelId: 'UCEevYX4rCcfF0ZrxmnnONXA',
+    channelTitle: 'Faz',
+    durationSeconds: 63,
+    activityType: 'video',
+  });
+  const search = helper.activityFromParts({
+    dateValue: '20260730',
+    timeText: '20:10 • Details',
+    durationText: '',
+    links: [{
+      href: 'https://www.youtube.com/results?search_query=private+term',
+      text: 'private term',
+      ariaLabel: 'private term (Opens in new tab)',
+    }],
+  });
+  assert.deepEqual(search, {
+    kind: 'search',
+    occurredAt: new Date(2026, 6, 30, 20, 10, 0).toISOString(),
+    query: 'private term',
+    activityType: 'search',
+  });
 });
 
 test('history import reports long-running completion without holding the start message open', () => {
@@ -67,7 +141,7 @@ test('history progress uploads time out and retry instead of stalling the scan',
   assert.match(background, /for \(let attempt = 0; attempt < 3; attempt\+\+\)/);
 });
 
-test('history import tabs close after completion, cancellation, errors, and extension reloads', () => {
+test('owned sync tabs close after completion, cancellation, errors, and extension reloads', () => {
   const background = readFileSync(
     new URL('../chrome-extension/background.js', import.meta.url),
     'utf8',
@@ -75,8 +149,8 @@ test('history import tabs close after completion, cancellation, errors, and exte
   assert.match(background, /chrome\.tabs\.remove\(tabId\)/);
   assert.match(background, /void closeHistoryImportTab\(tabId\)/);
   assert.match(background, /await closeHistoryImportTab\(status\.tabId\)/);
-  assert.match(background, /chrome\.tabs\.query\(\{\s+url: 'https:\/\/www\.youtube\.com\/feed\/history\*'/);
-  assert.match(background, /await closeHistoryImportTabs\(\)/);
+  assert.match(background, /closeActivitySyncTab/);
+  assert.doesNotMatch(background, /chrome\.tabs\.query\(\{\s+url: 'https:\/\/www\.youtube\.com\/feed\/history\*'/);
   assert.match(background, /historyImport\.state === 'running'/);
   assert.match(background, /await closeHistoryImportTab\(historyImport\.tabId\)/);
 });
@@ -161,7 +235,8 @@ test('history import processes only newly added lockups and stops after an idle 
   assert.match(source, /collectProgressFromRoots\(roots\)/);
   assert.match(source, /pendingRoots\.clear\(\)/);
   assert.match(source, /compactHistorySections\(document\)/);
-  assert.match(source, /idlePasses >= 20/);
+  assert.match(source, /idlePasses >= idleLimit \|\| sent\.size >= videoLimit/);
+  assert.match(source, /mode === 'incremental' \? 1_200/);
   assert.doesNotMatch(source, /infovoreYoutubeHistory\.collectProgress\(\)/);
 });
 

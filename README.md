@@ -103,6 +103,8 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /api/wrapped/{year}.json` — machine-readable annual recap
 - `POST /api/ingest/events` — authenticated private-ingest service (JSON)
 - `POST /api/ingest/youtube/capture` — dedicated-token Chrome viewing capture
+- `GET /api/ingest/youtube/history/status` — private cross-device sync checkpoint
+- `POST /api/ingest/youtube/history` — private Google My Activity event batches
 - `POST /api/ingest/youtube/progress` — explicit history progress import
 - `POST /mcp` — stateless MCP Streamable HTTP endpoint
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
@@ -175,20 +177,31 @@ incremental fallback:
    and select this repository's `chrome-extension` directory.
 3. Enter the capture token in the extension settings and test the connection.
 
-The extension starts a viewing session only after playback, records it after
-five non-ad playback seconds, and sends cumulative measured watch time
-every 30 seconds. Failed requests remain in `chrome.storage.local`, retry with
-bounded exponential backoff, and survive browser restarts. One session is
-idempotently updated server-side, so retries never add duplicate watch events.
-The dedicated token can only access the capture and progress endpoints. Search
-terms, cookies, and browsing outside `www.youtube.com` are not collected.
+The extension has three separate private inputs:
 
-The popup's explicit **Import history** action opens the signed-in YouTube
-History page and imports only video ids plus the resume/progress and duration
-shown there. It does not import titles, channels, history timestamps, searches,
-or event order. These rows remain private and contribute only aggregate
-content-coverage statistics. Automatic viewing capture does not collect
-playback position.
+- Chrome playback capture starts after five non-ad playback seconds and sends
+  cumulative measured watch time every 30 seconds.
+- Daily account sync reads the signed-in Google My Activity YouTube page. This
+  covers watches and searches performed on phones, TVs, and other devices using
+  the same Google account. It runs when Chrome starts if the last successful
+  sync is over 20 hours old, and checks hourly while Chrome remains open.
+- YouTube History supplies recent resume positions and playback progress after
+  each daily account sync. A manual full progress scan remains available.
+
+Failed measured captures remain in `chrome.storage.local`, retry with bounded
+exponential backoff, and survive browser restarts. Account sync overlaps its
+checkpoint by two hours and the server deduplicates retries. Search terms are
+sent only to the private ingest service over HTTPS and encrypted before storage.
+The dedicated token can access only the capture, history, and progress
+endpoints; cookies and unrelated browsing data are never collected.
+
+The popup's **Sync now** action runs the same two-stage account-history and
+recent-progress workflow immediately. **Full progress scan** opens the signed-in
+YouTube History page and scans the entire available history for video ids,
+resume/progress, and duration. Progress rows remain private and contribute only
+aggregate content-coverage statistics. Automatic viewing capture does not
+collect playback position, and non-Chrome playback time remains estimated
+rather than measured.
 
 ### Behind a reverse proxy
 

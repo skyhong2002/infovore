@@ -12,6 +12,7 @@ import { decryptPrivateValue, encryptPrivateValue } from '../src/youtube/crypto.
 import { fetchYoutubeChannelMetadata, fetchYoutubeMetadata } from '../src/youtube/metadata.js';
 import { extractYoutubeKeywords } from '../src/youtube/keywords.js';
 import { normalizeYoutubeCapture } from '../src/youtube/capture.js';
+import { normalizeYoutubeHistoryBatch } from '../src/youtube/history-sync.js';
 import { runYoutubePortabilityStep } from '../src/youtube/portability.js';
 import {
   normalizeYoutubeProgressBatch,
@@ -294,6 +295,50 @@ test('Chrome captures validate YouTube URLs and idempotently increase measured w
   } finally {
     repository.close();
   }
+});
+
+test('extension history batches canonicalize watches and encrypt searches server-side', () => {
+  const now = new Date('2026-07-30T13:00:00.000Z');
+  const parsed = normalizeYoutubeHistoryBatch({
+    syncId: 'history-sync-123456789',
+    observedAt: '2026-07-30T12:59:00.000Z',
+    events: [
+      {
+        kind: 'watch',
+        occurredAt: '2026-07-30T12:11:00.000Z',
+        videoId: 'OjgytNhTjtI',
+        title: 'Persona 5 Secret Egg Room',
+        url: 'https://www.youtube.com/watch?v=OjgytNhTjtI&feature=share',
+        channelId: 'UCEevYX4rCcfF0ZrxmnnONXA',
+        channelTitle: 'Faz',
+        durationSeconds: 63,
+        activityType: 'video',
+      },
+      {
+        kind: 'search',
+        occurredAt: '2026-07-30T12:10:00.000Z',
+        query: 'private account query',
+        activityType: 'search',
+      },
+    ],
+  }, SECRET, now);
+  assert.equal(parsed.source, 'extension');
+  assert.equal(parsed.watches[0].url, 'https://www.youtube.com/watch?v=OjgytNhTjtI');
+  assert.equal(parsed.watches[0].durationSeconds, 63);
+  assert.equal(decryptPrivateValue(parsed.searches[0].queryCiphertext, SECRET), 'private account query');
+  assert.match(parsed.archiveHash, /^[a-f0-9]{64}$/);
+  assert.throws(() => normalizeYoutubeHistoryBatch({
+    syncId: 'history-sync-123456789',
+    observedAt: '2026-07-30T12:59:00.000Z',
+    events: [{
+      kind: 'watch',
+      occurredAt: '2026-07-30T12:11:00.000Z',
+      videoId: 'OjgytNhTjtI',
+      title: 'Wrong host',
+      url: 'https://example.com/watch?v=OjgytNhTjtI',
+      activityType: 'video',
+    }],
+  }, SECRET, now), /youtube\.com/);
 });
 
 test('YouTube progress validation prefers exact resume positions and rejects stale observations', () => {

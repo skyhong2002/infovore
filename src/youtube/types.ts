@@ -12,6 +12,7 @@ export interface YoutubeWatchInput {
   channelUrl: string | null;
   watchedAt: string;
   actualWatchedSeconds: number | null;
+  durationSeconds?: number | null;
   activityType: 'video' | 'post' | 'other';
 }
 
@@ -24,7 +25,7 @@ export interface YoutubeSearchInput {
 
 export interface YoutubeParsedArchive {
   archiveHash: string;
-  source: 'takeout' | 'dataportability';
+  source: 'takeout' | 'dataportability' | 'extension';
   watches: YoutubeWatchInput[];
   searches: YoutubeSearchInput[];
 }
@@ -84,6 +85,14 @@ export interface YoutubeProgressImportResult {
   stored: number;
   totalStored: number;
   completed: boolean;
+}
+
+export interface YoutubeHistoryStatus {
+  latestEventAt: string | null;
+  latestWatchAt: string | null;
+  latestSearchAt: string | null;
+  watches: number;
+  searches: number;
 }
 
 export interface YoutubeVideoMetadata {

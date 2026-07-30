@@ -159,7 +159,7 @@ test('YouTube exposes projections while raw watch and search history stay privat
   const dashboardPage = await app.request('/platforms/youtube');
   const dashboardHtml = await dashboardPage.text();
   assert.match(dashboardHtml, /data-youtube-import-control hidden/);
-  assert.match(dashboardHtml, /Import progress/);
+  assert.match(dashboardHtml, /Sync now/);
   assert.match(dashboardHtml, /href="\?range=28d&sort=duration" aria-current="page"/);
   assert.match(dashboardHtml, /data-chase-range/);
   assert.match(dashboardHtml, /class="yt-keywords"/);
@@ -342,6 +342,86 @@ test('YouTube progress import is private, authenticated, bounded, and aggregate-
     await (await app.request('/feed.xml')).text(),
   ].join('\n');
   assert.doesNotMatch(publicBodies, /api-progress-123456789|resumeSeconds|PROGRESS001/);
+});
+
+test('YouTube account history sync uses the capture token and stays idempotent and private', async () => {
+  const occurredAt = new Date(Date.now() - 60_000).toISOString();
+  const payload = {
+    syncId: 'account-sync-123456789',
+    observedAt: new Date().toISOString(),
+    events: [
+      {
+        kind: 'watch',
+        occurredAt,
+        videoId: 'ACCOUNT0001',
+        title: 'Cross-device watch',
+        url: 'https://www.youtube.com/watch?v=ACCOUNT0001',
+        channelId: 'account-channel',
+        channelTitle: 'Account Channel',
+        durationSeconds: 321,
+        activityType: 'video',
+      },
+      {
+        kind: 'search',
+        occurredAt,
+        query: 'private cross-device search',
+        activityType: 'search',
+      },
+    ],
+  };
+  const unauthorized = await ingestApp.request('/api/ingest/youtube/history', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(unauthorized.status, 401);
+  const broadToken = await ingestApp.request('/api/ingest/youtube/history/status', {
+    headers: { authorization: 'Bearer test-token-with-at-least-32-characters' },
+  });
+  assert.equal(broadToken.status, 401);
+  const headers = {
+    'content-type': 'application/json',
+    authorization: 'Bearer test-youtube-capture-token-with-at-least-32-characters',
+  };
+  const accepted = await ingestApp.request('/api/ingest/youtube/history', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  assert.equal(accepted.status, 200);
+  const result = await accepted.json() as {
+    watchesInserted: number;
+    searchesInserted: number;
+    history: { latestEventAt: string | null };
+  };
+  assert.equal(result.watchesInserted, 1);
+  assert.equal(result.searchesInserted, 1);
+  assert.ok(
+    result.history.latestEventAt
+    && result.history.latestEventAt >= occurredAt,
+  );
+
+  const repeated = await ingestApp.request('/api/ingest/youtube/history', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  const repeatedResult = await repeated.json() as {
+    watchesInserted: number;
+    searchesInserted: number;
+  };
+  assert.equal(repeatedResult.watchesInserted, 0);
+  assert.equal(repeatedResult.searchesInserted, 0);
+
+  const status = await ingestApp.request('/api/ingest/youtube/history/status', { headers });
+  assert.equal(status.status, 200);
+  const publicBodies = [
+    await (await app.request('/api/youtube/summary.json?range=all')).text(),
+    await (await app.request('/api/youtube/recent.json')).text(),
+    await (await app.request('/feed.json')).text(),
+    await (await app.request('/feed.xml')).text(),
+  ].join('\n');
+  assert.doesNotMatch(publicBodies, /private cross-device search/);
 });
 
 test('platform index and dedicated mirrors render source-native content', async () => {

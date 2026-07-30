@@ -8,6 +8,7 @@ import type {
   YoutubeChannelSummary,
   YoutubeChannelTrendFrame,
   YoutubeDashboardData,
+  YoutubeHistoryStatus,
   YoutubeCapturedWatch,
   YoutubeCaptureResult,
   YoutubeImportResult,
@@ -140,6 +141,8 @@ export class Repository {
     if (afterActivityTypes.user_version < 4) this.migrateYoutubeChannels();
     const afterYoutubeChannels = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterYoutubeChannels.user_version < 5) this.migrateYoutubeProgress();
+    const afterYoutubeProgress = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterYoutubeProgress.user_version < 6) this.migrateYoutubeExtensionImports();
   }
 
   private migrateYoutube(): void {
@@ -322,6 +325,26 @@ export class Repository {
       CREATE INDEX youtube_video_progress_scan_idx
         ON youtube_video_progress(scan_id, observed_at DESC);
       PRAGMA user_version = 5;
+      COMMIT;
+    `);
+  }
+
+  private migrateYoutubeExtensionImports(): void {
+    this.db.exec(`
+      BEGIN;
+      ALTER TABLE youtube_imports RENAME TO youtube_imports_v5;
+      CREATE TABLE youtube_imports (
+        archive_hash TEXT PRIMARY KEY,
+        source TEXT NOT NULL CHECK (source IN ('takeout', 'dataportability', 'extension')),
+        imported_at TEXT NOT NULL,
+        watches_seen INTEGER NOT NULL,
+        watches_inserted INTEGER NOT NULL,
+        searches_seen INTEGER NOT NULL,
+        searches_inserted INTEGER NOT NULL
+      );
+      INSERT INTO youtube_imports SELECT * FROM youtube_imports_v5;
+      DROP TABLE youtube_imports_v5;
+      PRAGMA user_version = 6;
       COMMIT;
     `);
   }
@@ -513,13 +536,14 @@ export class Repository {
     `);
     const insertVideo = this.db.prepare(`
       INSERT INTO youtube_videos (
-        video_id, title, channel_id, channel_title, thumbnail_url
-      ) VALUES (?, ?, ?, ?, ?)
+        video_id, title, channel_id, channel_title, thumbnail_url, duration_seconds
+      ) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(video_id) DO UPDATE SET
         title=CASE WHEN youtube_videos.metadata_fetched_at IS NULL THEN excluded.title ELSE youtube_videos.title END,
         channel_id=COALESCE(youtube_videos.channel_id, excluded.channel_id),
         channel_title=COALESCE(youtube_videos.channel_title, excluded.channel_title),
-        thumbnail_url=CASE WHEN youtube_videos.thumbnail_url='' THEN excluded.thumbnail_url ELSE youtube_videos.thumbnail_url END
+        thumbnail_url=CASE WHEN youtube_videos.thumbnail_url='' THEN excluded.thumbnail_url ELSE youtube_videos.thumbnail_url END,
+        duration_seconds=COALESCE(youtube_videos.duration_seconds, excluded.duration_seconds)
     `);
     const insertWatch = this.db.prepare(`
       INSERT OR IGNORE INTO youtube_watch_events (
@@ -544,19 +568,34 @@ export class Repository {
       SELECT substr(searched_at, 1, 19) searched_second
       FROM youtube_search_events
     `).all().map((row) => String((row as { searched_second: string }).searched_second)));
+    const watchMinuteKeys = new Set(this.db.prepare(`
+      SELECT substr(watched_at, 1, 16) watched_minute,
+        COALESCE(video_id, NULLIF(raw_url, ''), raw_title) identity
+      FROM youtube_watch_events
+    `).all().map((row) => {
+      const value = row as { watched_minute: string; identity: string };
+      return `${value.watched_minute}\u001f${value.identity}`;
+    }));
 
     this.db.exec('BEGIN IMMEDIATE');
     try {
       for (const watch of archive.watches) {
         const identity = watch.videoId ?? (watch.url || watch.title);
         const secondKey = `${watch.watchedAt.slice(0, 19)}\u001f${identity}`;
+        const minuteKey = `${watch.watchedAt.slice(0, 16)}\u001f${identity}`;
         // HTML Takeout records omit milliseconds. Match at second precision so
         // importing HTML after JSON does not duplicate the overlapping window.
-        if (watchSecondKeys.has(secondKey)) continue;
         const thumbnail = watch.videoId ? `https://i.ytimg.com/vi/${watch.videoId}/hqdefault.jpg` : '';
         if (watch.videoId) {
-          insertVideo.run(watch.videoId, watch.title, watch.channelId, watch.channelTitle, thumbnail);
+          insertVideo.run(
+            watch.videoId, watch.title, watch.channelId, watch.channelTitle,
+            thumbnail, watch.durationSeconds ?? null,
+          );
         }
+        if (
+          watchSecondKeys.has(secondKey)
+          || (archive.source === 'extension' && watchMinuteKeys.has(minuteKey))
+        ) continue;
         const activity = activityFromEntry({
           source: 'youtube',
           sourceItemId: watch.videoId ?? watch.eventId,
@@ -589,6 +628,7 @@ export class Repository {
         if (Number(result.changes) > 0) {
           watchesInserted++;
           watchSecondKeys.add(secondKey);
+          watchMinuteKeys.add(minuteKey);
         }
         // A prior interrupted import can leave the generic activity but not the
         // YouTube event. Count only the canonical event insert.
@@ -850,6 +890,26 @@ export class Repository {
       searches: Number(row.searches),
       searchQueries: Number(row.search_queries),
       channels: Number(row.channels),
+    };
+  }
+
+  youtubeHistoryStatus(): YoutubeHistoryStatus {
+    const watch = this.db.prepare(`
+      SELECT MAX(watched_at) latest_at, COUNT(*) count FROM youtube_watch_events
+    `).get() as { latest_at: string | null; count: number };
+    const search = this.db.prepare(`
+      SELECT MAX(searched_at) latest_at, COUNT(*) count FROM youtube_search_events
+    `).get() as { latest_at: string | null; count: number };
+    const latest = [watch.latest_at, search.latest_at]
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+    return {
+      latestEventAt: latest,
+      latestWatchAt: watch.latest_at,
+      latestSearchAt: search.latest_at,
+      watches: Number(watch.count),
+      searches: Number(search.count),
     };
   }
 
