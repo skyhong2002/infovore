@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { taipeiDay } from './time.js';
 import type { Activity, ActivityTimePrecision, MediaEntry } from './types.js';
 
 function canonical(value: string): string {
@@ -50,13 +51,8 @@ export function activityFromEntry(entry: MediaEntry, seenAt = new Date().toISOSt
   };
 }
 
-function taipeiDay(activity: Activity): string {
-  const raw = activity.occurredAt ?? activity.firstSeenAt;
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return raw;
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(parsed);
+function activityTaipeiDay(activity: Activity): string {
+  return taipeiDay(activity.occurredAt ?? activity.firstSeenAt);
 }
 
 /**
@@ -96,12 +92,12 @@ export function selectHomepageActivities(
 
   for (const activity of activities) {
     if (isMusic(activity)) {
-      const day = taipeiDay(activity);
+      const day = activityTaipeiDay(activity);
       if (musicCount >= musicBudget || seenMusicDays.has(day)) continue;
       seenMusicDays.add(day);
       musicCount++;
     } else if (isYoutube(activity)) {
-      const day = taipeiDay(activity);
+      const day = activityTaipeiDay(activity);
       if (youtubeCount >= youtubeBudget || seenYoutubeDays.has(day)) continue;
       seenYoutubeDays.add(day);
       youtubeCount++;

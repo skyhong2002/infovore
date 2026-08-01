@@ -1,6 +1,6 @@
 import type { YoutubeDashboardData, YoutubeRange } from '../youtube/types.js';
 import { h, renderCard, textFont, toDataUri, truncate } from './render.js';
-import { html, shell } from './pages.js';
+import { duration, hours, html, shell } from './pages.js';
 
 const C = {
   bg: '#101114',
@@ -15,18 +15,6 @@ const C = {
 
 function compact(value: number): string {
   return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
-}
-
-function hours(seconds: number | null): string {
-  if (seconds === null) return '—';
-  return `${Math.round(seconds / 360) / 10}h`;
-}
-
-function duration(seconds: number | null): string {
-  if (seconds === null) return 'Unknown length';
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 function rangeLabel(range: YoutubeRange): string {

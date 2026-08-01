@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { activityFromEntry } from './activity.js';
+import { taipeiDay, taipeiWindowStarts } from './time.js';
 import type { Activity, SourceSnapshot } from './types.js';
 import type {
   YoutubeChannelMetadata,
@@ -66,10 +67,86 @@ export interface WrappedSummary {
   lastActivityAt: string | null;
 }
 
+export type TimeMethod = 'measured' | 'estimated' | 'unavailable';
+
+// Seconds per window. `last24h` rolls; the rest are Taipei calendar windows.
+export interface TimeWindows {
+  last24h: number;
+  day: number;
+  week: number;
+  month: number;
+  year: number;
+  allTime: number;
+}
+
+export interface SourceTimeSpent {
+  source: string;
+  method: TimeMethod;
+  windows: TimeWindows;
+}
+
+export interface TimeSpentSummary {
+  generatedAt: string;
+  sources: SourceTimeSpent[];
+  total: TimeWindows;
+  measuredTotal: TimeWindows;
+}
+
 function youtubeCutoff(range: YoutubeRange, now: Date): string | null {
   if (range === 'all') return null;
   const days = Number.parseInt(range, 10);
   return new Date(now.getTime() - days * 86_400_000).toISOString();
+}
+
+// Shared by youtubeDashboard() and timeSpent(). Per-event watch seconds: the
+// measured value when the extension captured one, zero when a measured event
+// for the same video sits within five minutes (a duplicate sighting of the
+// same session), otherwise the gap to the next watch/search event capped at
+// the video length.
+const YOUTUBE_ESTIMATED_EVENTS_CTE = `
+      WITH timeline AS (
+        SELECT 'watch' kind, event_id, watched_at occurred_at
+        FROM youtube_watch_events WHERE activity_type='video'
+        UNION ALL
+        SELECT 'search' kind, event_id, searched_at occurred_at
+        FROM youtube_search_events
+      ), ordered AS (
+        SELECT kind, event_id, occurred_at,
+          LEAD(occurred_at) OVER (ORDER BY occurred_at, kind, event_id) next_activity_at
+        FROM timeline
+      ), estimated_events AS (
+        SELECT w.*,
+          CASE
+            WHEN w.actual_watched_seconds IS NOT NULL THEN w.actual_watched_seconds
+            WHEN EXISTS (
+              SELECT 1 FROM youtube_watch_events measured
+              WHERE measured.video_id=w.video_id
+                AND measured.actual_watched_seconds IS NOT NULL
+                AND ABS((julianday(measured.watched_at)-julianday(w.watched_at))*86400)<=300
+            ) THEN 0
+            WHEN v.duration_seconds IS NULL OR o.next_activity_at IS NULL THEN 0
+            ELSE MIN(
+              v.duration_seconds,
+              MAX(0, CAST((julianday(o.next_activity_at)-julianday(w.watched_at))*86400 AS INTEGER))
+            )
+          END estimated_watch_seconds
+        FROM youtube_watch_events w
+        JOIN ordered o ON o.kind='watch' AND o.event_id=w.event_id
+        LEFT JOIN youtube_videos v ON v.video_id=w.video_id
+        WHERE w.activity_type='video'
+      )
+    `;
+
+// Lifetime totals the delta-based time ledger can watch. Only sources whose
+// platform reports a cumulative time figure but no per-session durations.
+function ledgerLifetimeSeconds(snapshot: SourceSnapshot<unknown>): number | null {
+  const stats = snapshot.stats ?? {};
+  const value = snapshot.source === 'simkl'
+    ? Number(stats.totalMinutes) * 60
+    : snapshot.source === 'kitsu'
+      ? Number(stats.animeSeconds)
+      : NaN;
+  return Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
 }
 
 export class Repository {
@@ -143,6 +220,8 @@ export class Repository {
     if (afterYoutubeChannels.user_version < 5) this.migrateYoutubeProgress();
     const afterYoutubeProgress = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterYoutubeProgress.user_version < 6) this.migrateYoutubeExtensionImports();
+    const afterExtensionImports = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterExtensionImports.user_version < 7) this.migrateTimeLedger();
   }
 
   private migrateYoutube(): void {
@@ -345,6 +424,31 @@ export class Repository {
       INSERT INTO youtube_imports SELECT * FROM youtube_imports_v5;
       DROP TABLE youtube_imports_v5;
       PRAGMA user_version = 6;
+      COMMIT;
+    `);
+  }
+
+  private migrateTimeLedger(): void {
+    this.db.exec(`
+      BEGIN;
+      CREATE TABLE time_ledger (
+        day TEXT NOT NULL,
+        source TEXT NOT NULL,
+        seconds INTEGER NOT NULL CHECK (seconds >= 0),
+        method TEXT NOT NULL CHECK (method IN ('measured', 'estimated')),
+        detail_json TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (day, source)
+      );
+      CREATE INDEX time_ledger_source_idx ON time_ledger(source, day DESC);
+      CREATE TABLE time_ledger_state (
+        source TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value INTEGER NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (source, key)
+      );
+      PRAGMA user_version = 7;
       COMMIT;
     `);
   }
@@ -920,39 +1024,7 @@ export class Repository {
       : "WHERE w.activity_type='video'";
     const params = cutoff ? [cutoff] : [];
     const estimatedWhere = cutoff ? 'WHERE e.watched_at>=?' : 'WHERE 1=1';
-    const estimatedEvents = `
-      WITH timeline AS (
-        SELECT 'watch' kind, event_id, watched_at occurred_at
-        FROM youtube_watch_events WHERE activity_type='video'
-        UNION ALL
-        SELECT 'search' kind, event_id, searched_at occurred_at
-        FROM youtube_search_events
-      ), ordered AS (
-        SELECT kind, event_id, occurred_at,
-          LEAD(occurred_at) OVER (ORDER BY occurred_at, kind, event_id) next_activity_at
-        FROM timeline
-      ), estimated_events AS (
-        SELECT w.*,
-          CASE
-            WHEN w.actual_watched_seconds IS NOT NULL THEN w.actual_watched_seconds
-            WHEN EXISTS (
-              SELECT 1 FROM youtube_watch_events measured
-              WHERE measured.video_id=w.video_id
-                AND measured.actual_watched_seconds IS NOT NULL
-                AND ABS((julianday(measured.watched_at)-julianday(w.watched_at))*86400)<=300
-            ) THEN 0
-            WHEN v.duration_seconds IS NULL OR o.next_activity_at IS NULL THEN 0
-            ELSE MIN(
-              v.duration_seconds,
-              MAX(0, CAST((julianday(o.next_activity_at)-julianday(w.watched_at))*86400 AS INTEGER))
-            )
-          END estimated_watch_seconds
-        FROM youtube_watch_events w
-        JOIN ordered o ON o.kind='watch' AND o.event_id=w.event_id
-        LEFT JOIN youtube_videos v ON v.video_id=w.video_id
-        WHERE w.activity_type='video'
-      )
-    `;
+    const estimatedEvents = YOUTUBE_ESTIMATED_EVENTS_CTE;
     const stats = this.db.prepare(`
       ${estimatedEvents},
       selected_videos AS (
@@ -1448,6 +1520,172 @@ export class Repository {
       topTitles: topTitles.map((row) => ({ ...row, count: Number(row.count) })),
       averageRating: totals.average_rating === null ? null : Math.round(Number(totals.average_rating) * 10) / 10,
       firstActivityAt: totals.first_at, lastActivityAt: totals.last_at,
+    };
+  }
+
+  // Fold a refreshed snapshot into the time ledger for sources that only
+  // report a lifetime total (Simkl, Kitsu): the growth since the previous
+  // refresh becomes estimated seconds on the day it happened. No-op for
+  // sources with real per-event durations. Missing state seeds the watermark
+  // without recording time, so a platform's whole history cannot land on
+  // deploy day.
+  recordTimeLedger(snapshot: SourceSnapshot<unknown>, now = new Date()): void {
+    const total = ledgerLifetimeSeconds(snapshot);
+    if (total === null) return;
+    const nowIso = now.toISOString();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const state = this.db.prepare(
+        "SELECT value, updated_at FROM time_ledger_state WHERE source=? AND key='total_seconds'"
+      ).get(snapshot.source) as { value: number; updated_at: string } | undefined;
+      // Negative deltas (platform-side recounts, removed items) clamp to zero.
+      const delta = state ? Math.max(0, total - Number(state.value)) : 0;
+      if (state && delta > 0) {
+        // Attribute progress to when it happened rather than when this
+        // refresh saw it: the newest entry activity since the watermark.
+        const observed = snapshot.entries
+          .map((entry) => entry.activityAt)
+          .filter((at) => /^\d{4}-\d{2}-\d{2}/.test(at) && at >= state.updated_at)
+          .sort()
+          .at(-1);
+        this.db.prepare(`
+          INSERT INTO time_ledger(day, source, seconds, method, detail_json, updated_at)
+          VALUES (?, ?, ?, 'estimated', ?, ?)
+          ON CONFLICT(day, source) DO UPDATE SET
+            seconds=seconds+excluded.seconds,
+            detail_json=excluded.detail_json,
+            updated_at=excluded.updated_at
+        `).run(
+          taipeiDay(observed ?? now), snapshot.source, delta,
+          JSON.stringify({ basis: 'lifetime-delta', deltaSeconds: delta }), nowIso
+        );
+      }
+      this.db.prepare(`
+        INSERT INTO time_ledger_state(source, key, value, updated_at)
+        VALUES (?, 'total_seconds', ?, ?)
+        ON CONFLICT(source, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+      `).run(snapshot.source, total, nowIso);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private statsfmSnapshotStats(): { stats: Record<string, unknown>; fetchedAt: string } | null {
+    const row = this.db.prepare(
+      "SELECT payload_json, fetched_at FROM snapshots WHERE source='statsfm'"
+    ).get() as { payload_json: string | null; fetched_at: string | null } | undefined;
+    if (!row?.payload_json || !row.fetched_at) return null;
+    try {
+      const parsed = JSON.parse(row.payload_json) as SourceSnapshot<unknown>;
+      return { stats: (parsed.stats ?? {}) as Record<string, unknown>, fetchedAt: row.fetched_at };
+    } catch {
+      return null;
+    }
+  }
+
+  // Time recorded with each platform across rolling-24h, Taipei-calendar, and
+  // all-time windows. YouTube and stats.fm are measured (per-event durations);
+  // Simkl and Kitsu come from the estimated time ledger.
+  timeSpent(now = new Date()): TimeSpentSummary {
+    const starts = taipeiWindowStarts(now);
+    const cutoffs = {
+      last24h: new Date(now.getTime() - 86_400_000).toISOString(),
+      day: starts.day.toISOString(),
+      week: starts.week.toISOString(),
+      month: starts.month.toISOString(),
+      year: starts.year.toISOString(),
+    };
+    const sources: SourceTimeSpent[] = [];
+    const windowsFrom = (row: Record<string, number | null>): TimeWindows => ({
+      last24h: Math.round(Number(row.last24h ?? 0)),
+      day: Math.round(Number(row.day ?? 0)),
+      week: Math.round(Number(row.week ?? 0)),
+      month: Math.round(Number(row.month ?? 0)),
+      year: Math.round(Number(row.year ?? 0)),
+      allTime: Math.round(Number(row.all_time ?? 0)),
+    });
+
+    const youtube = windowsFrom(this.db.prepare(`
+      ${YOUTUBE_ESTIMATED_EVENTS_CTE}
+      SELECT
+        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) last24h,
+        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) day,
+        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) week,
+        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) month,
+        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) year,
+        COALESCE(SUM(e.estimated_watch_seconds), 0) all_time
+      FROM estimated_events e
+    `).get(cutoffs.last24h, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year) as Record<string, number>);
+    if (youtube.allTime > 0) sources.push({ source: 'youtube', method: 'measured', windows: youtube });
+
+    const local = windowsFrom(this.db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) last24h,
+        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) day,
+        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) week,
+        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) month,
+        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) year,
+        COALESCE(SUM(seconds), 0) all_time
+      FROM (
+        SELECT occurred_at, COALESCE(json_extract(extra_json, '$.durationMs'), 0) / 1000.0 seconds
+        FROM activities WHERE source='statsfm' AND media_kind='music' AND occurred_at IS NOT NULL
+      )
+    `).get(cutoffs.last24h, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year) as Record<string, number>);
+    // Local streams only reach back to when infovore started syncing; the
+    // snapshot carries stats.fm-side totals for the longer windows. A remote
+    // value only applies while the fetch that produced it happened inside the
+    // current window (fetched before Monday ⇒ stale for "this week").
+    const remote = this.statsfmSnapshotStats();
+    const remoteSeconds = (key: string, windowStart: string | null): number | null => {
+      if (!remote) return null;
+      if (windowStart !== null && remote.fetchedAt < windowStart) return null;
+      const minutes = Number(remote.stats[key]);
+      return Number.isFinite(minutes) ? Math.round(minutes * 60) : null;
+    };
+    const statsfm: TimeWindows = {
+      last24h: local.last24h,
+      day: local.day,
+      week: remoteSeconds('weekMinutes', cutoffs.week) ?? local.week,
+      month: remoteSeconds('monthMinutes', cutoffs.month) ?? local.month,
+      year: remoteSeconds('yearMinutes', cutoffs.year) ?? local.year,
+      allTime: remoteSeconds('lifetimeMinutes', null) ?? local.allTime,
+    };
+    if (statsfm.allTime > 0) sources.push({ source: 'statsfm', method: 'measured', windows: statsfm });
+
+    const ledgerQuery = this.db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) day,
+        COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) week,
+        COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) month,
+        COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) year,
+        COALESCE(SUM(seconds), 0) all_time
+      FROM time_ledger WHERE source=?
+    `);
+    for (const source of ['simkl', 'kitsu']) {
+      const row = ledgerQuery.get(
+        taipeiDay(starts.day), taipeiDay(starts.week), taipeiDay(starts.month), taipeiDay(starts.year), source
+      ) as Record<string, number>;
+      // Ledger data is day-granular, so "last 24 h" honestly approximates to
+      // today's Taipei day.
+      const windows = windowsFrom({ ...row, last24h: row.day });
+      if (windows.allTime > 0) sources.push({ source, method: 'estimated', windows });
+    }
+
+    sources.sort((a, b) => b.windows.allTime - a.windows.allTime);
+    const sum = (included: SourceTimeSpent[]): TimeWindows => {
+      const total: TimeWindows = { last24h: 0, day: 0, week: 0, month: 0, year: 0, allTime: 0 };
+      for (const entry of included) {
+        for (const key of Object.keys(total) as Array<keyof TimeWindows>) total[key] += entry.windows[key];
+      }
+      return total;
+    };
+    return {
+      generatedAt: now.toISOString(),
+      sources,
+      total: sum(sources),
+      measuredTotal: sum(sources.filter((entry) => entry.method === 'measured')),
     };
   }
 

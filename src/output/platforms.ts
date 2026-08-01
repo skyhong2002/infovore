@@ -1,5 +1,6 @@
+import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
-import { html, shell } from './pages.js';
+import { html, shell, timeAmount } from './pages.js';
 
 export interface PlatformDefinition {
   source: string;
@@ -27,6 +28,28 @@ const kindLabels: Record<string, string> = {
   video: 'Videos',
   event: 'Events',
 };
+
+// Machine-facing snapshot stats (raw units for the time ledger and
+// timeSpent()) that would render as absurd tiles.
+const hiddenStats = new Set(['animeSeconds', 'weekMinutes', 'monthMinutes', 'yearMinutes', 'lifetimeMinutes']);
+
+const timeNotes: Record<string, string> = {
+  statsfm: "Measured from individual stream durations; the longer windows come from stats.fm's full listening history.",
+  simkl: "Estimated from the growth of Simkl's lifetime watch total between syncs — accumulating since this tracking was deployed.",
+  kitsu: "Estimated from the growth of Kitsu's lifetime anime time between syncs — accumulating since this tracking was deployed.",
+};
+
+function timeSection(timeSpent: SourceTimeSpent): string {
+  const windows = timeSpent.windows;
+  if (!windows.allTime) return '';
+  const approx = timeSpent.method === 'estimated' ? '~' : '';
+  const tile = (name: string, seconds: number) =>
+    `<div class="platform-stat"><span>${name}</span><strong>${seconds ? approx + timeAmount(seconds) : '—'}</strong></div>`;
+  const note = timeNotes[timeSpent.source];
+  return `<section><div class="platform-section-heading"><h2>Time spent</h2><span>${html(timeSpent.method)}</span></div>
+    <div class="platform-stats">${tile('today', windows.day)}${tile('this week', windows.week)}${tile('this month', windows.month)}${tile('this year', windows.year)}${tile('all time', windows.allTime)}</div>
+    ${note ? `<div class="platform-note">${html(note)}</div>` : ''}</section>`;
+}
 
 function number(value: number): string {
   return new Intl.NumberFormat('en').format(value);
@@ -132,9 +155,10 @@ export function platformPage(
   snapshot: SourceSnapshot<unknown>,
   fetchedAt: string | null,
   cardVersions: Record<string, string> = {},
+  timeSpent: SourceTimeSpent | null = null,
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
-  const stats = Object.entries(snapshot.stats).map(([key, value]) =>
+  const stats = Object.entries(snapshot.stats).filter(([key]) => !hiddenStats.has(key)).map(([key, value]) =>
     `<div class="platform-stat"><span>${html(label(key))}</span><strong>${number(value)}</strong></div>`
   ).join('');
   const groups = [...new Set(snapshot.entries.map((entry) => entry.kind))];
@@ -168,7 +192,7 @@ export function platformPage(
       <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">View original ↗</a>` : ''}
       <a href="/api/activities.json?source=${html(definition.source)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : 'Stored manually'}</div>
-    </section>${cards}
+    </section>${cards}${timeSpent ? timeSection(timeSpent) : ''}
     <section><div class="platform-section-heading"><h2>Overview</h2><span>${snapshot.entries.length} synced entries</span></div>
     <div class="platform-stats">${stats}</div></section>${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, body, 'platforms');

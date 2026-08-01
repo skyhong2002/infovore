@@ -1,9 +1,27 @@
 import type { Activity } from '../data/types.js';
-import type { WrappedSummary } from '../data/database.js';
+import type { TimeSpentSummary, WrappedSummary } from '../data/database.js';
 import { config } from '../config.js';
 
 export function html(value: unknown): string {
   return String(value ?? '').replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&#39;', '"': '&quot;' }[char]!));
+}
+
+export function hours(seconds: number | null): string {
+  if (seconds === null) return '—';
+  return `${Math.round(seconds / 360) / 10}h`;
+}
+
+export function duration(seconds: number | null): string {
+  if (seconds === null) return 'Unknown length';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+// Sub-hour amounts read better in minutes ("24m", not "0.4h").
+export function timeAmount(seconds: number): string {
+  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))}m`;
+  return hours(seconds);
 }
 
 const styles = `
@@ -19,12 +37,15 @@ const styles = `
   .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px}.entry{align-items:center;display:grid;gap:13px;grid-template-columns:auto minmax(0,1fr)}.entry img{background:#222;border-radius:7px;height:70px}.entry h3{font-size:15px;margin:0 0 4px}.pill{color:#aab4c1;font-size:10px;letter-spacing:.09em;text-transform:uppercase}.count{font-size:30px;font-weight:700;letter-spacing:-.035em}.bar{background:#252a32;border-radius:9px;height:8px;overflow:hidden}.bar span{background:var(--blue);display:block;height:100%}.empty{border:1px dashed #343b46;border-radius:12px;color:#818b98;padding:30px}.metric-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.metric-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;color:inherit;padding:16px;text-decoration:none}.metric-card:hover{border-color:#4c5663}.metric-card .count{display:block}.metric-card .pill{display:block}.archive-actions{display:grid;gap:12px;grid-template-columns:repeat(2,1fr);margin:28px 0 46px}.archive-action{background:linear-gradient(145deg,#171a20,#111318);border:1px solid var(--line);border-radius:16px;color:inherit;padding:20px;text-decoration:none}.archive-action strong{display:block;font-size:18px}.archive-action span{color:var(--muted);display:block;font-size:12px;margin-top:4px}
   .platform-nav{display:flex;gap:7px;margin:-12px 0 30px;overflow-x:auto;padding:4px 0}.platform-nav a{border:1px solid var(--line);border-radius:999px;color:#8e98a5;padding:6px 11px;text-decoration:none;white-space:nowrap}.platform-nav a:hover,.platform-nav a[aria-current=page]{background:#20242b;border-color:#414955;color:var(--text)}.platform-intro{margin-bottom:20px}.platform-index{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.platform-tile{--platform-accent:var(--blue);background:linear-gradient(145deg,color-mix(in srgb,var(--platform-accent) 9%,var(--surface)),var(--surface) 48%);border:1px solid var(--line);border-radius:18px;color:inherit;padding:20px;text-decoration:none;transition:border-color .15s ease,transform .15s ease}.platform-tile:hover{border-color:var(--platform-accent);transform:translateY(-2px)}.platform-tile-top{align-items:center;display:flex;gap:13px}.platform-tile-top img,.platform-monogram{border-radius:13px;height:52px;object-fit:cover;width:52px}.platform-monogram{align-items:center;background:var(--platform-accent);color:#0d0e11;display:inline-flex;font-size:23px;font-weight:700;justify-content:center}.platform-eyebrow{color:var(--platform-accent);font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase}.platform-tile h2,.platform-hero h2{color:#f4f5f7;font-size:21px;margin:2px 0 0}.platform-tile p{color:var(--muted);margin:0}.platform-description{font-size:13px;min-height:40px;padding-top:15px}.platform-tile-stats{border-top:1px solid var(--line);color:#75808d;font-size:12px;margin-top:14px;padding-top:12px}.platform-tile-stats strong{color:#e9ebee;font-size:18px}.platform-tile-footer{color:var(--quiet);display:flex;font-size:11px;justify-content:space-between;margin-top:10px}.platform-tile-footer span{color:var(--platform-accent)}
   .platform-hero{--platform-accent:var(--blue);align-items:center;background:linear-gradient(135deg,color-mix(in srgb,var(--platform-accent) 12%,var(--surface)),var(--surface) 54%);border:1px solid var(--line);border-radius:20px;display:grid;gap:18px;grid-template-columns:auto minmax(0,1fr) auto;padding:24px}.platform-avatar{border-radius:18px;height:78px;object-fit:cover;width:78px}.platform-avatar.platform-monogram{font-size:30px}.platform-hero p{color:var(--muted);margin:4px 0 10px}.platform-actions{display:flex;gap:12px}.platform-actions a{font-size:13px}.platform-freshness{align-self:start;color:var(--quiet);font-size:11px;white-space:nowrap}.platform-section-heading{align-items:baseline;display:flex;justify-content:space-between;margin:38px 0 13px}.platform-section-heading h2{font-size:18px;margin:0}.platform-section-heading span{color:var(--quiet);font-size:12px}.platform-card-grid{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px}.platform-card-grid a{border-radius:10px;display:block;flex:0 1 520px;line-height:0;max-width:100%;overflow:hidden;width:520px}.platform-card-grid a:hover{box-shadow:0 0 0 1px #4a5360}.platform-card-grid img{display:block;height:auto;max-width:100%;width:520px}.platform-stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}.platform-stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px}.platform-stat span{color:#7e8895;display:block;font-size:11px;text-transform:capitalize}.platform-stat strong{display:block;font-size:24px;margin-top:3px}.platform-note{background:var(--surface);border-left:3px solid var(--blue);border-radius:8px;color:#9ca5af;margin-top:18px;padding:12px 14px}.platform-entry-grid{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.platform-entry{align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;display:grid;gap:12px;grid-template-columns:auto minmax(0,1fr);min-height:92px;padding:10px}.platform-entry img,.platform-entry-placeholder{background:#20242a;border-radius:7px;height:76px}.platform-entry-placeholder{width:58px}.platform-entry-copy{min-width:0}.platform-entry h3{font-size:14px;line-height:1.3;margin:3px 0 5px}.platform-entry-meta{color:#7e8894;font-size:11px;line-height:1.45}.platform-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}.platform-tags span{border:1px solid var(--line-strong);border-radius:999px;color:#9ca5af;font-size:10px;padding:1px 6px}.platform-leaderboard{display:grid;gap:9px;grid-template-columns:repeat(2,minmax(0,1fr))}.platform-leaderboard article{align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:11px;display:grid;gap:10px;grid-template-columns:22px auto minmax(0,1fr);padding:8px}.platform-leaderboard img{border-radius:7px;height:46px}.platform-rank{color:var(--quiet);font-size:12px;text-align:center}.platform-leaderboard h3{font-size:13px;line-height:1.25;margin:0}.platform-leaderboard p{color:#747f8c;font-size:11px;margin:2px 0 0}
+  .board-time{color:#aeb6c1;font-size:13px;margin:10px 0 0}.board-time strong{color:var(--text);font-size:14px}.time-strip{align-items:center;display:flex;flex-wrap:wrap;gap:8px;margin:-26px 0 40px}.time-strip .pill{margin-right:2px}.time-chip{border:1px solid var(--line-strong);border-radius:999px;color:#aeb6c1;font-size:12px;padding:5px 11px;text-decoration:none}.time-chip:hover{border-color:#6b7584;color:var(--text)}.time-chip strong{color:var(--text);margin-left:4px}.time-strip-more{color:var(--quiet);font-size:12px;margin-left:auto;text-decoration:none}.time-strip-more:hover{color:var(--text)}
+  .time-table-wrap{overflow-x:auto}.time-table{border-collapse:collapse;margin-top:6px;width:100%}.time-table th{color:var(--quiet);font-size:10px;font-weight:600;letter-spacing:.08em;padding:8px 10px;text-align:right;text-transform:uppercase}.time-table td{border-top:1px solid var(--line);font-size:14px;padding:11px 10px;text-align:right;white-space:nowrap}.time-table th:first-child,.time-table td:first-child{padding-left:0;text-align:left}.time-table td:first-child a{color:var(--text);font-weight:600;text-decoration:none}.time-table td:first-child a:hover{color:var(--blue)}.time-table tfoot td{border-top:1px solid var(--line-strong);font-weight:700}.time-method{border:1px solid var(--line-strong);border-radius:999px;color:#9ca5af;font-size:10px;letter-spacing:.06em;padding:2px 8px;text-transform:uppercase}
+  .time-share{display:flex;flex-direction:column;gap:12px}.time-share-row{align-items:center;display:grid;gap:14px;grid-template-columns:120px minmax(0,1fr) 56px}.time-share-row .pill{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.time-share-row strong{font-size:13px;text-align:right}
   .card-gallery{margin-top:42px}.card-gallery-section{margin-bottom:42px}.card-gallery-title{align-items:baseline;display:flex;gap:12px;margin-bottom:12px}.card-gallery-title h2{font-size:17px;margin:0}.card-gallery-title a{color:inherit;text-decoration:none}.card-gallery-title .profile-link{color:var(--quiet);font-size:11px}.card-gallery-row{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px}.card-gallery-row a{border-radius:10px;display:block;flex:0 1 520px;line-height:0;max-width:100%;overflow:hidden;width:520px}.card-gallery-row a:hover{box-shadow:0 0 0 1px #4a5360}.card-gallery-row img{display:block;height:auto;max-width:100%;width:520px}
   @media(max-width:760px){.site-header{align-items:flex-start;flex-direction:column}.site-nav{max-width:100%;overflow-x:auto;padding-bottom:3px;width:100%}.site-main{padding-top:38px}.site-footer{grid-template-columns:repeat(3,1fr)}.footer-about{grid-column:1/-1}.priority-grid{grid-template-columns:1fr}.source-pulse{grid-template-columns:repeat(2,minmax(0,1fr))}.platform-index,.platform-entry-grid,.platform-leaderboard{grid-template-columns:1fr}.platform-hero{grid-template-columns:auto minmax(0,1fr)}.platform-freshness{grid-column:1/-1}.platform-description{min-height:0}}
   @media(max-width:560px){.site-header{padding-top:16px}.site-main{padding-bottom:58px}.site-nav a{padding-inline:9px}.page-intro,.board-head{align-items:flex-start;flex-direction:column}.page-intro-aside,.board-status{text-align:left}.board-stats{grid-template-columns:repeat(2,1fr)}.board-stat{border-bottom:1px solid var(--line);padding-left:14px}.board-stat:nth-child(odd){border-left:0;padding-left:0}.board-stat:nth-child(n+3){border-bottom:0}.source-pulse{grid-template-columns:1fr}.activity-row{gap:13px;grid-template-columns:auto minmax(0,1fr)}.activity-row time{grid-column:1/-1}.activity-cover{height:66px}.activity-cover.placeholder{width:48px}.activity-main h2{font-size:16px}.grid,.archive-actions{grid-template-columns:1fr}.site-footer{grid-template-columns:repeat(2,1fr)}.footer-about{grid-column:1/-1}.platform-hero{align-items:start;grid-template-columns:58px minmax(0,1fr);padding:18px}.platform-avatar{border-radius:13px;height:58px;width:58px}.platform-actions{flex-wrap:wrap}}
 `;
 
-export type PageKey = 'home' | 'now' | 'platforms' | 'profile' | 'cards';
+export type PageKey = 'home' | 'now' | 'platforms' | 'profile' | 'cards' | 'stats';
 
 const adaptiveMediaScript = `<script>
   (() => {
@@ -62,12 +83,12 @@ export function shell(title: string, body: string, active: PageKey): string {
   <main class="site-main">${body}</main>
   <footer class="site-footer"><div class="footer-about"><strong>infovore</strong><p>Sky's media, activities, and plans gathered into one personal home.</p></div>
   <div class="footer-group"><span>Explore</span><a href="/">Home</a><a href="/now">Now</a><a href="/platforms">Platforms</a></div>
-  <div class="footer-group"><span>Reflect</span><a href="/profile">Archive</a><a href="/wrapped">Wrapped</a><a href="/cards">Cards</a></div>
+  <div class="footer-group"><span>Reflect</span><a href="/profile">Archive</a><a href="/stats">Time</a><a href="/wrapped">Wrapped</a><a href="/cards">Cards</a></div>
   <div class="footer-group"><span>Data</span><a href="/feed.xml">RSS</a><a href="/api/activities.json">JSON</a><a href="/status">Status</a><a href="https://github.com/skyhong2002/infovore">Source</a></div></footer>
   ${adaptiveMediaScript}</body></html>`;
 }
 
-function sourceLabel(source: string): string {
+export function sourceLabel(source: string): string {
   return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', goodreads: 'Goodreads', youtube: 'YouTube', events: 'Manual' } as Record<string, string>)[source] ?? source;
 }
 
@@ -130,6 +151,30 @@ function priorityItem(activity: Activity): string {
     <h3>${html(activity.title)}</h3><div class="priority-item-meta">${details}</div></div></article>`;
 }
 
+// "~" marks windows an estimated source (Simkl/Kitsu lifetime deltas)
+// contributed to; measured windows show bare numbers.
+function timeApprox(timeSpent: TimeSpentSummary, window: 'last24h' | 'week'): string {
+  return timeSpent.sources.some((entry) => entry.method === 'estimated' && entry.windows[window] > 0) ? '~' : '';
+}
+
+function timeHeadline(timeSpent: TimeSpentSummary): string {
+  const recorded = `${timeApprox(timeSpent, 'last24h')}${timeAmount(timeSpent.total.last24h)}`;
+  const week = timeSpent.total.week > 0
+    ? ` · ${timeApprox(timeSpent, 'week')}${timeAmount(timeSpent.total.week)} this week`
+    : '';
+  return `<p class="board-time">In the last 24 hours this system recorded <strong>${recorded}</strong> of activity${week}.</p>`;
+}
+
+function timeStrip(timeSpent: TimeSpentSummary): string {
+  const chips = timeSpent.sources
+    .filter((entry) => entry.windows.last24h > 0)
+    .sort((a, b) => b.windows.last24h - a.windows.last24h)
+    .map((entry) => `<a class="time-chip" href="/platforms/${html(entry.source)}">${html(sourceLabel(entry.source))}
+      <strong>${entry.method === 'estimated' ? '~' : ''}${timeAmount(entry.windows.last24h)}</strong></a>`)
+    .join('');
+  return `<div class="time-strip"><span class="pill">Last 24h</span>${chips}<a class="time-strip-more" href="/stats">Full breakdown →</a></div>`;
+}
+
 export function homePage(
   ownerName: string,
   activities: Activity[],
@@ -139,14 +184,18 @@ export function homePage(
   current: Activity[],
   upcoming: Activity[],
   sourceHighlights: Activity[],
+  timeSpent: TimeSpentSummary | null = null,
 ): string {
+  const showTime = Boolean(timeSpent && timeSpent.total.last24h > 0);
   const board = `<section class="board-head"><div><div class="eyebrow">Personal infoboard</div><h1>${html(ownerName)}</h1>
-    <p>The useful things first: what is coming up, what is still in progress, and what has changed across your media life.</p></div>
+    <p>The useful things first: what is coming up, what is still in progress, and what has changed across your media life.</p>
+    ${showTime ? timeHeadline(timeSpent!) : ''}</div>
     <div class="board-status"><strong>${lastUpdated ? `Updated ${html(lastUpdated)}` : 'Waiting for the first sync'}</strong>Built from your connected platforms and manual events.</div></section>
     <div class="board-stats"><div class="board-stat"><strong>${upcoming.length}</strong><span>coming up</span></div>
     <div class="board-stat"><strong>${current.length}</strong><span>in progress</span></div>
     <div class="board-stat"><strong>${sourceCount}</strong><span>sources</span></div>
-    <div class="board-stat"><strong>${total}</strong><span>archive entries</span></div></div>`;
+    <div class="board-stat"><strong>${total}</strong><span>archive entries</span></div></div>
+    ${showTime ? timeStrip(timeSpent!) : ''}`;
   const priorities = `<section class="priority-grid"><div class="priority-panel"><div class="priority-panel-head"><h2>Up next</h2><a href="/now">All plans →</a></div>
     ${upcoming.length ? `<div class="priority-list">${upcoming.map(priorityItem).join('')}</div>` : '<div class="empty">No upcoming event has been recorded.</div>'}</div>
     <div class="priority-panel"><div class="priority-panel-head"><h2>In progress</h2><a href="/now">Open Now →</a></div>

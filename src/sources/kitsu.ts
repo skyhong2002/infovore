@@ -70,6 +70,8 @@ export async function fetchKitsu(): Promise<SourceSnapshot> {
       animeHours: Math.round((anime.time ?? 0) / 3600),
       mangaCompleted: manga.completed ?? 0,
       mangaChapters: manga.units ?? 0,
+      // Raw lifetime seconds for the time ledger; hidden from stat tiles.
+      animeSeconds: anime.time ?? 0,
     },
     entries: [...parseKitsuEntries(animeDoc, 'anime'), ...parseKitsuEntries(mangaDoc, 'manga')],
     extra: {},

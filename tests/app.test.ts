@@ -499,4 +499,51 @@ test('MCP Streamable HTTP exposes the managed lifelog tools', async () => {
   assert.equal(badHost.status, 421);
 });
 
+test('time spent surfaces on the homepage, platform pages, /stats, and the JSON API', async () => {
+  repository.ingestEntries([{
+    source: 'statsfm', sourceItemId: 'timed-track', kind: 'music', title: 'Timed Song',
+    image: '', status: 'listened', activityAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    rating: null, extra: { artist: 'Mirror Artist', durationMs: 3_600_000 },
+  }]);
+  const simkl = (totalMinutes: number): SourceSnapshot => ({
+    source: 'simkl', profile: { id: '1', name: 'Sky', avatar: '', url: '' },
+    stats: { totalMinutes }, entries: [], extra: {},
+  });
+  repository.recordTimeLedger(simkl(100), new Date(Date.now() - 60 * 60 * 1000));
+  repository.recordTimeLedger(simkl(130));
+
+  const homeHtml = await (await app.request('/')).text();
+  assert.match(homeHtml, /In the last 24 hours this system recorded <strong>/);
+  assert.match(homeHtml, /class="time-chip" href="\/platforms\/statsfm"/);
+  assert.match(homeHtml, /class="time-chip" href="\/platforms\/simkl">Simkl\s*<strong>~/);
+  assert.match(homeHtml, /href="\/stats">Full breakdown →/);
+
+  const mirrorHtml = await (await app.request('/platforms/statsfm')).text();
+  assert.match(mirrorHtml, /<h2>Time spent<\/h2>/);
+  assert.match(mirrorHtml, /individual stream durations/);
+
+  const stats = await app.request('/stats');
+  assert.equal(stats.status, 200);
+  const statsHtml = await stats.text();
+  assert.match(statsHtml, /Time by platform/);
+  assert.match(statsHtml, /class="time-method">measured</);
+  assert.match(statsHtml, /class="time-method">estimated</);
+  assert.match(statsHtml, /How these numbers are made/);
+  assert.match(statsHtml, /href="\/stats">Time</);
+
+  const json = await (await app.request('/api/time-spent.json')).json() as {
+    generatedAt: string;
+    sources: Array<{ source: string; method: string; windows: Record<string, number> }>;
+    total: Record<string, number>;
+    measuredTotal: Record<string, number>;
+  };
+  const statsfmSpent = json.sources.find((entry) => entry.source === 'statsfm');
+  assert.equal(statsfmSpent?.method, 'measured');
+  assert.ok((statsfmSpent?.windows.last24h ?? 0) >= 3600);
+  const simklSpent = json.sources.find((entry) => entry.source === 'simkl');
+  assert.equal(simklSpent?.method, 'estimated');
+  assert.equal(simklSpent?.windows.allTime, 1800);
+  assert.ok(json.total.last24h > json.measuredTotal.last24h);
+});
+
 test.after(() => repository.close());

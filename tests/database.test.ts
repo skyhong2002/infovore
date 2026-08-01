@@ -41,7 +41,7 @@ test('snapshots and activities survive reopen and duplicate syncs upsert', () =>
   }
 });
 
-test('version 1 databases migrate through YouTube schema version 6 without data loss', () => {
+test('version 1 databases migrate through schema version 7 without data loss', () => {
   const dir = mkdtempSync(join(tmpdir(), 'infovore-v1-'));
   const path = join(dir, 'data.sqlite');
   try {
@@ -116,7 +116,7 @@ test('version 1 databases migrate through YouTube schema version 6 without data 
     const activitiesSql = migrated.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
     ).get() as { sql: string };
-    assert.equal(version.user_version, 6);
+    assert.equal(version.user_version, 7);
     assert.ok(watchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(searchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(channelColumns.some((column) => column.name === 'thumbnail_url'));
@@ -127,6 +127,10 @@ test('version 1 databases migrate through YouTube schema version 6 without data 
     ).get() as { sql: string };
     assert.match(importSql.sql, /'extension'/);
     assert.match(activitiesSql.sql, /'summary'/);
+    const ledgerSql = migrated.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='time_ledger'"
+    ).get() as { sql: string } | undefined;
+    assert.ok(ledgerSql, 'time_ledger table exists after migration');
     migrated.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

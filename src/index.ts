@@ -17,6 +17,7 @@ import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
 import { homePage, html, nowPage, profilePage, shell, wrappedPage } from './output/pages.js';
 import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
+import { statsPage } from './output/stats.js';
 import { handleMcpRequest } from './mcp.js';
 import { buildBackloggdCard } from './output/backloggd.js';
 import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './output/kitsu.js';
@@ -113,6 +114,7 @@ async function refreshSource(name: string, isRetry = false): Promise<void> {
   try {
     const data = await fetchers[name]();
     const persisted = repository.finishSync(syncId, data);
+    repository.recordTimeLedger(data);
     setCache(`data:${name}`, data);
     await renderCards(name, data);
     console.log(`[refresh] ${name} ok (${persisted.inserted} new, ${persisted.updated} seen)`);
@@ -260,6 +262,7 @@ app.get('/', (c) => {
     currentActivities(all, 4),
     upcomingActivities(new Date(now).toISOString(), 4),
     latestSourceActivities(combined),
+    repository.timeSpent(),
   ));
 });
 
@@ -327,7 +330,10 @@ app.get('/platforms/:source', (c) => {
   if (!cached?.data) return c.text('Platform has not completed its first sync yet', 503);
   c.header('Cache-Control', 'no-cache');
   const cardVersions = Object.fromEntries((definition.cards ?? []).map((name) => [name, version(name)]));
-  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions));
+  const timeSpent = ['statsfm', 'simkl', 'kitsu'].includes(source)
+    ? repository.timeSpent().sources.find((entry) => entry.source === source) ?? null
+    : null;
+  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions, timeSpent));
 });
 
 app.get('/cards', (c) => {
@@ -488,6 +494,13 @@ app.get('/api/wrapped/:file{[0-9]{4}\\.json}', (c) => {
   try { return c.json(repository.wrapped(requestedYear(c.req.param('file').replace(/\.json$/, '')))); }
   catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 400); }
 });
+
+app.get('/stats', (c) => {
+  c.header('Cache-Control', 'no-cache');
+  return c.html(statsPage(config.ownerName, repository.timeSpent()));
+});
+
+app.get('/api/time-spent.json', (c) => c.json(repository.timeSpent()));
 
 app.get('/wrapped', (c) => c.redirect(`/wrapped/${new Date().getUTCFullYear()}`));
 app.get('/wrapped/:year', (c) => {
