@@ -251,16 +251,11 @@ app.get('/', (c) => {
   const combined = [...youtubeActivities, ...eligible]
     .sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
   const recent = selectHomepageActivities(combined, 24);
-  const youtubeWatchCount = config.sourceEnabled('youtube') ? repository.youtubeCounts().videoWatches : 0;
   c.header('Cache-Control', 'no-cache');
   return c.html(homePage(
     config.ownerName,
     recent,
-    repository.countPublicActivities() + youtubeWatchCount,
     lastUpdatedLabel(),
-    sections.length + 1,
-    currentActivities(all, 4),
-    upcomingActivities(new Date(now).toISOString(), 4),
     latestSourceActivities(combined),
     repository.timeSpent(),
   ));
