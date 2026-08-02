@@ -173,6 +173,83 @@ test('Kitsu snapshots feed the ledger through animeSeconds', () => {
   repository.close();
 });
 
+test('attended events count their scheduled span with a 2 h default, excluding private ones', () => {
+  const repository = new Repository(':memory:');
+  const event = (id: string, activityAt: string, overrides: Record<string, unknown> = {}) => ({
+    sourceItemId: id, source: 'events', kind: 'event' as const, title: `Event ${id}`, image: '',
+    status: 'attended', activityAt, rating: null, extra: {}, ...overrides,
+  });
+  repository.ingestEntries([
+    event('scheduled', '2026-08-02T08:00:00Z', { extra: { durationMinutes: 90 } }), // 90 min, every window
+    event('no-end', '2026-07-30T10:00:00Z'),                                        // defaults to 2 h, this week
+    event('ticketed', '2026-07-30T12:00:00Z', { status: 'ticketed' }),              // not confirmed attended
+    event('future', '2099-01-01T12:00:00Z'),                                        // has not happened
+    event('secret', '2026-08-02T09:00:00Z', { visibility: 'private' as const }),    // stays out of public totals
+  ]);
+  const events = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'events');
+  assert.equal(events?.method, 'estimated');
+  assert.deepEqual(events?.windows, {
+    last24h: 5400, day: 5400, week: 12600, month: 5400, year: 12600, allTime: 12600,
+  });
+  repository.close();
+});
+
+test('finished books estimate reading time from page counts', () => {
+  const repository = new Repository(':memory:');
+  const book = (id: string, status: string, extra: Record<string, number>) => ({
+    sourceItemId: id, source: 'goodreads', kind: 'book' as const, title: `Book ${id}`, image: '',
+    status, activityAt: '2026-08-02T09:00:00Z', rating: null, extra,
+  });
+  repository.ingestEntries([
+    book('finished', 'read', { pages: 300 }),   // 300 pages × 120 s
+    book('reading', 'reading', { pages: 500 }), // not finished yet
+    book('no-pages', 'read', {}),               // RSS had no page count
+  ]);
+  const goodreads = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'goodreads');
+  assert.equal(goodreads?.method, 'estimated');
+  assert.deepEqual(goodreads?.windows, {
+    last24h: 36000, day: 36000, week: 36000, month: 36000, year: 36000, allTime: 36000,
+  });
+  repository.close();
+});
+
+test('Backloggd per-game playtime deltas seed first, then accrue on the last-played day', () => {
+  const repository = new Repository(':memory:');
+  const snapshot = (games: Array<{ id: string; playtime: string; activityAt: string }>): SourceSnapshot => ({
+    source: 'backloggd',
+    profile: { id: 'sky', name: 'sky', avatar: '', url: '' },
+    stats: { gamesPlayed: games.length },
+    entries: games.map((game) => ({
+      sourceItemId: game.id, source: 'backloggd', kind: 'game' as const, title: game.id, image: '',
+      activityAt: game.activityAt, rating: null, extra: { playtime: game.playtime },
+    })),
+    extra: {},
+  });
+
+  // First sighting of each game seeds its watermark without recording time.
+  repository.recordTimeLedger(snapshot([{ id: 'game-a', playtime: '2h 30m', activityAt: '2026-08-01' }]),
+    new Date('2026-08-01T10:00:00Z'));
+  assert.equal(repository.timeSpent(NOW).sources.some((entry) => entry.source === 'backloggd'), false);
+
+  // +30 min on game-a lands on its last-played day; game-b only seeds.
+  repository.recordTimeLedger(snapshot([
+    { id: 'game-a', playtime: '3h 0m', activityAt: '2026-08-02' },
+    { id: 'game-b', playtime: '5h 0m', activityAt: '2026-08-02' },
+  ]), new Date('2026-08-02T09:00:00Z'));
+  let backloggd = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'backloggd');
+  assert.equal(backloggd?.method, 'estimated');
+  assert.deepEqual(backloggd?.windows, { last24h: 1800, day: 1800, week: 1800, month: 1800, year: 1800, allTime: 1800 });
+
+  // Shrinking totals clamp; growth on an already-seeded game accrues.
+  repository.recordTimeLedger(snapshot([
+    { id: 'game-a', playtime: '2h 0m', activityAt: '2026-08-02' },
+    { id: 'game-b', playtime: '5h 30m', activityAt: '2026-08-02' },
+  ]), new Date('2026-08-02T09:30:00Z'));
+  backloggd = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'backloggd');
+  assert.equal(backloggd?.windows.allTime, 3600);
+  repository.close();
+});
+
 test('summary totals aggregate sources and keep a measured-only figure', () => {
   const repository = new Repository(':memory:');
   repository.ingestEntries([{

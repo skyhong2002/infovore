@@ -5,6 +5,7 @@ export interface EventInput {
   id?: string;
   title?: string;
   startAt?: string;
+  endAt?: string;
   image?: string;
   tags?: string[];
   venue?: string;
@@ -58,6 +59,7 @@ export function parseEventMetadata(source: string, urlText: string): Partial<Eve
       if (!event) return;
       result.title ||= String(event.name ?? '');
       result.startAt ||= String(event.startDate ?? '');
+      result.endAt ||= String(event.endDate ?? '');
       result.image ||= Array.isArray(event.image) ? String(event.image[0] ?? '') : String(event.image ?? '');
       const location = event.location as Record<string, unknown> | undefined;
       result.venue ||= String(location?.name ?? '');
@@ -93,6 +95,19 @@ function normalizeStartAt(value: string | undefined): string {
   return parsed.toISOString();
 }
 
+// Scheduled duration from the event's start–end times. Only clock-precise
+// starts qualify (a date-only start has no meaningful span), and implausible
+// spans (non-positive, or beyond 24 h — multi-day festival listings) are
+// dropped rather than guessed at.
+function scheduledMinutes(startAt: string, endAt: string | undefined): number | null {
+  if (!endAt || /^\d{4}-\d{2}-\d{2}$/.test(startAt)) return null;
+  const start = new Date(startAt).getTime();
+  const end = new Date(endAt).getTime();
+  if (Number.isNaN(end)) throw new Error('Event endAt must be an ISO date/time');
+  const minutes = Math.round((end - start) / 60000);
+  return minutes > 0 && minutes <= 24 * 60 ? minutes : null;
+}
+
 function isFuture(startAt: string): boolean {
   const comparison = /^\d{4}-\d{2}-\d{2}$/.test(startAt)
     ? new Date(`${startAt}T23:59:59+08:00`).getTime()
@@ -116,6 +131,8 @@ export function normalizeEvent(input: EventInput): MediaEntry {
   for (const [key, value] of Object.entries({ venue: input.venue, organizer: input.organizer, platform: input.platform, url })) {
     if (value) extra[key] = value;
   }
+  const durationMinutes = scheduledMinutes(activityAt, input.endAt);
+  if (durationMinutes !== null) extra.durationMinutes = durationMinutes;
   if (tags.length) extra.tags = tags;
   return {
     sourceItemId: input.id || url || undefined,

@@ -324,13 +324,14 @@ app.get('/platforms/:source', (c) => {
   }
   if (source === 'events') {
     c.header('Cache-Control', 'no-cache');
-    return c.html(platformPage(config.ownerName, definition, manualEventsSnapshot(), null));
+    const eventsTime = repository.timeSpent().sources.find((entry) => entry.source === 'events') ?? null;
+    return c.html(platformPage(config.ownerName, definition, manualEventsSnapshot(), null, {}, eventsTime));
   }
   const cached = getCache<SourceSnapshot<unknown>>(`data:${source}`);
   if (!cached?.data) return c.text('Platform has not completed its first sync yet', 503);
   c.header('Cache-Control', 'no-cache');
   const cardVersions = Object.fromEntries((definition.cards ?? []).map((name) => [name, version(name)]));
-  const timeSpent = ['statsfm', 'simkl', 'kitsu'].includes(source)
+  const timeSpent = ['statsfm', 'simkl', 'kitsu', 'backloggd', 'goodreads'].includes(source)
     ? repository.timeSpent().sources.find((entry) => entry.source === source) ?? null
     : null;
   return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions, timeSpent));

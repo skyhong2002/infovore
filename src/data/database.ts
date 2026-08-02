@@ -137,6 +137,20 @@ const YOUTUBE_ESTIMATED_EVENTS_CTE = `
       )
     `;
 
+// Estimation rates for sources with schedules or page counts instead of
+// measured durations.
+const EVENT_DEFAULT_SECONDS = 2 * 3600; // attended event with no scheduled end time
+const SECONDS_PER_PAGE = 120;           // ~30 pages/hour reading pace
+
+// Backloggd playtime labels ("2h 30m", "45m") → minutes.
+function playtimeMinutes(label: unknown): number | null {
+  if (typeof label !== 'string' || !label) return null;
+  const hoursMatch = label.match(/(\d+)\s*h/);
+  const minutesMatch = label.match(/(\d+)\s*m/);
+  if (!hoursMatch && !minutesMatch) return null;
+  return (hoursMatch ? Number(hoursMatch[1]) * 60 : 0) + (minutesMatch ? Number(minutesMatch[1]) : 0);
+}
+
 // Lifetime totals the delta-based time ledger can watch. Only sources whose
 // platform reports a cumulative time figure but no per-session durations.
 function ledgerLifetimeSeconds(snapshot: SourceSnapshot<unknown>): number | null {
@@ -1530,6 +1544,7 @@ export class Repository {
   // without recording time, so a platform's whole history cannot land on
   // deploy day.
   recordTimeLedger(snapshot: SourceSnapshot<unknown>, now = new Date()): void {
+    if (snapshot.source === 'backloggd') return this.recordBackloggdLedger(snapshot, now);
     const total = ledgerLifetimeSeconds(snapshot);
     if (total === null) return;
     const nowIso = now.toISOString();
@@ -1565,6 +1580,52 @@ export class Repository {
         VALUES (?, 'total_seconds', ?, ?)
         ON CONFLICT(source, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
       `).run(snapshot.source, total, nowIso);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  // Backloggd reports a lifetime playtime total per game, so each game gets
+  // its own watermark (`game:<slug>` in time_ledger_state): the growth
+  // between syncs becomes estimated seconds on the game's last-played day.
+  // First sightings only seed, like the source-level ledger, so a game's
+  // pre-existing history never lands on one day.
+  private recordBackloggdLedger(snapshot: SourceSnapshot<unknown>, now = new Date()): void {
+    const games = snapshot.entries
+      .filter((entry) => entry.sourceItemId && playtimeMinutes(entry.extra.playtime) !== null);
+    if (!games.length) return;
+    const nowIso = now.toISOString();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const readState = this.db.prepare("SELECT value FROM time_ledger_state WHERE source='backloggd' AND key=?");
+      const writeState = this.db.prepare(`
+        INSERT INTO time_ledger_state(source, key, value, updated_at) VALUES ('backloggd', ?, ?, ?)
+        ON CONFLICT(source, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+      `);
+      const addLedger = this.db.prepare(`
+        INSERT INTO time_ledger(day, source, seconds, method, detail_json, updated_at)
+        VALUES (?, 'backloggd', ?, 'estimated', ?, ?)
+        ON CONFLICT(day, source) DO UPDATE SET
+          seconds=seconds+excluded.seconds,
+          detail_json=excluded.detail_json,
+          updated_at=excluded.updated_at
+      `);
+      for (const game of games) {
+        const totalSeconds = playtimeMinutes(game.extra.playtime)! * 60;
+        const key = `game:${game.sourceItemId}`;
+        const state = readState.get(key) as { value: number } | undefined;
+        const delta = state ? Math.max(0, totalSeconds - Number(state.value)) : 0;
+        if (state && delta > 0) {
+          const day = /^\d{4}-\d{2}-\d{2}/.test(game.activityAt) ? taipeiDay(game.activityAt) : taipeiDay(now);
+          addLedger.run(
+            day, delta,
+            JSON.stringify({ basis: 'playtime-delta', game: game.sourceItemId, deltaSeconds: delta }), nowIso
+          );
+        }
+        writeState.run(key, totalSeconds, nowIso);
+      }
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
@@ -1620,19 +1681,25 @@ export class Repository {
     `).get(cutoffs.last24h, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year) as Record<string, number>);
     if (youtube.allTime > 0) sources.push({ source: 'youtube', method: 'measured', windows: youtube });
 
-    const local = windowsFrom(this.db.prepare(`
-      SELECT
-        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) last24h,
-        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) day,
-        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) week,
-        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) month,
-        COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) year,
-        COALESCE(SUM(seconds), 0) all_time
-      FROM (
-        SELECT occurred_at, COALESCE(json_extract(extra_json, '$.durationMs'), 0) / 1000.0 seconds
-        FROM activities WHERE source='statsfm' AND media_kind='music' AND occurred_at IS NOT NULL
-      )
-    `).get(cutoffs.last24h, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year) as Record<string, number>);
+    // Bucket a (occurred_at, seconds) subquery into all six windows at once.
+    const activityWindows = (innerSql: string, ...innerParams: string[]): TimeWindows =>
+      windowsFrom(this.db.prepare(`
+        SELECT
+          COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) last24h,
+          COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) day,
+          COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) week,
+          COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) month,
+          COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) year,
+          COALESCE(SUM(seconds), 0) all_time
+        FROM (${innerSql})
+      `).get(
+        cutoffs.last24h, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year, ...innerParams
+      ) as Record<string, number>);
+
+    const local = activityWindows(`
+      SELECT occurred_at, COALESCE(json_extract(extra_json, '$.durationMs'), 0) / 1000.0 seconds
+      FROM activities WHERE source='statsfm' AND media_kind='music' AND occurred_at IS NOT NULL
+    `);
     // Local streams only reach back to when infovore started syncing; the
     // snapshot carries stats.fm-side totals for the longer windows. A remote
     // value only applies while the fetch that produced it happened inside the
@@ -1654,6 +1721,28 @@ export class Repository {
     };
     if (statsfm.allTime > 0) sources.push({ source: 'statsfm', method: 'measured', windows: statsfm });
 
+    // Manual events count their scheduled start–end span (default 2 h when no
+    // end time was recorded) — only once marked attended, and never from
+    // private entries, which stay out of public totals entirely.
+    const events = activityWindows(`
+      SELECT occurred_at,
+        COALESCE(json_extract(extra_json, '$.durationMinutes') * 60.0, ${EVENT_DEFAULT_SECONDS}) seconds
+      FROM activities
+      WHERE source='events' AND status='attended' AND visibility IN ('public', 'summary')
+        AND occurred_at IS NOT NULL AND occurred_at<=?
+    `, now.toISOString());
+    if (events.allTime > 0) sources.push({ source: 'events', method: 'estimated', windows: events });
+
+    // Books: pages × reading pace, attributed to the day the book was
+    // finished. Books without a page count in the shelf RSS are skipped.
+    const goodreads = activityWindows(`
+      SELECT occurred_at, json_extract(extra_json, '$.pages') * ${SECONDS_PER_PAGE}.0 seconds
+      FROM activities
+      WHERE source='goodreads' AND status='read' AND occurred_at IS NOT NULL
+        AND json_extract(extra_json, '$.pages') > 0
+    `);
+    if (goodreads.allTime > 0) sources.push({ source: 'goodreads', method: 'estimated', windows: goodreads });
+
     const ledgerQuery = this.db.prepare(`
       SELECT
         COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) day,
@@ -1663,7 +1752,7 @@ export class Repository {
         COALESCE(SUM(seconds), 0) all_time
       FROM time_ledger WHERE source=?
     `);
-    for (const source of ['simkl', 'kitsu']) {
+    for (const source of ['simkl', 'kitsu', 'backloggd']) {
       const row = ledgerQuery.get(
         taipeiDay(starts.day), taipeiDay(starts.week), taipeiDay(starts.month), taipeiDay(starts.year), source
       ) as Record<string, number>;

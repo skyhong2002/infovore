@@ -30,6 +30,10 @@ export function parseGoodreadsRss(xml: string, limit: number, status: 'reading' 
   return items.slice(0, limit).map((it) => {
     const rating = Number(field(it, 'user_rating'));
     const readAt = field(it, 'user_read_at') || field(it, 'pubDate');
+    const pages = Number(field(it, 'num_pages'));
+    const extra: MediaEntry['extra'] = { author: field(it, 'author_name') };
+    // Page count feeds the reading-time estimate in Repository.timeSpent().
+    if (Number.isFinite(pages) && pages > 0) extra.pages = pages;
     return {
       sourceItemId: field(it, 'book_id') || field(it, 'guid'),
       source: 'goodreads',
@@ -39,7 +43,7 @@ export function parseGoodreadsRss(xml: string, limit: number, status: 'reading' 
       status,
       activityAt: readAt ? new Date(readAt).toISOString() : '',
       rating: rating > 0 ? { value: rating, scale: 5 } : null,
-      extra: { author: field(it, 'author_name') },
+      extra,
     };
   });
 }

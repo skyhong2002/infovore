@@ -37,6 +37,9 @@ const timeNotes: Record<string, string> = {
   statsfm: "Measured from individual stream durations; the longer windows come from stats.fm's full listening history.",
   simkl: "Estimated from the growth of Simkl's lifetime watch total between syncs — accumulating since this tracking was deployed.",
   kitsu: "Estimated from the growth of Kitsu's lifetime anime time between syncs — accumulating since this tracking was deployed.",
+  backloggd: "Estimated from the growth of each game's logged playtime between syncs — accumulating since this tracking was deployed.",
+  goodreads: 'Estimated from page counts at a ~30 pages/hour pace, attributed to the day each book was finished.',
+  events: 'Estimated from each attended event’s scheduled start–end time, defaulting to 2 h when no end time was recorded.',
 };
 
 function timeSection(timeSpent: SourceTimeSpent): string {

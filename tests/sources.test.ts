@@ -80,6 +80,17 @@ test('event normalization keeps only public-safe metadata and rejects arbitrary 
   await assert.rejects(() => enrichPublicEvent('https://127.0.0.1/private'), /supported public/);
 });
 
+test('event scheduled times become a duration estimate only when plausible', () => {
+  const base = { title: 'Concert', image: 'https://example.test/concert.webp' };
+  const timed = normalizeEvent({ ...base, startAt: '2026-08-02T19:30:00+08:00', endAt: '2026-08-02T21:45:00+08:00' });
+  assert.equal(timed.extra.durationMinutes, 135);
+  // Date-only starts have no meaningful span; multi-day listings are dropped.
+  assert.equal(normalizeEvent({ ...base, startAt: '2026-08-02', endAt: '2026-08-03T21:00:00+08:00' }).extra.durationMinutes, undefined);
+  assert.equal(normalizeEvent({ ...base, startAt: '2026-08-02T19:30:00+08:00', endAt: '2026-08-05T19:30:00+08:00' }).extra.durationMinutes, undefined);
+  assert.equal(normalizeEvent({ ...base, startAt: '2026-08-02T19:30:00+08:00', endAt: '2026-08-02T19:00:00+08:00' }).extra.durationMinutes, undefined);
+  assert.throws(() => normalizeEvent({ ...base, startAt: '2026-08-02T19:30:00+08:00', endAt: 'not-a-date' }), /endAt/);
+});
+
 test('public event-page fixture enriches safe schema.org metadata', () => {
   const metadata = parseEventMetadata(`<html><head><meta property="og:title" content="Festival"><meta property="og:image" content="cover.jpg"><script type="application/ld+json">{"@type":"Event","startDate":"2099-03-02T19:30:00+08:00","location":{"name":"Arts Center"},"organizer":{"name":"Orchestra"}}</script></head></html>`, 'https://kktix.com/events/festival');
   assert.equal(metadata.title, 'Festival');
