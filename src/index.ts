@@ -11,11 +11,13 @@ import type { Activity, SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
 import { fetchStatsfm } from './sources/statsfm.js';
+import type { StatsfmExtra } from './sources/statsfm.js';
 import { fetchSimkl } from './sources/simkl.js';
 import { fetchGoodreads } from './sources/goodreads.js';
 import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
-import { homePage, html, nowPage, profilePage, shell, wrappedPage } from './output/pages.js';
+import { html, nowPage, profilePage, shell, wrappedPage } from './output/pages.js';
+import { homePage } from './output/home.js';
 import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
 import { statsPage } from './output/stats.js';
 import { handleMcpRequest } from './mcp.js';
@@ -251,14 +253,28 @@ app.get('/', (c) => {
   const combined = [...youtubeActivities, ...eligible]
     .sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
   const recent = selectHomepageActivities(combined, 24);
+  const statsfm = getCache<SourceSnapshot<StatsfmExtra>>('data:statsfm')?.data;
+  const sourceCounts = repository.countBySource();
+  const publicActivityCount = repository.countPublicActivities()
+    + (config.sourceEnabled('youtube') ? repository.youtubeCounts().videoWatches : 0);
+  const connectedSources = sections.length + (sourceCounts.events ? 1 : 0);
   c.header('Cache-Control', 'no-cache');
-  return c.html(homePage(
-    config.ownerName,
-    recent,
-    lastUpdatedLabel(),
-    latestSourceActivities(combined),
-    repository.timeSpent(),
-  ));
+  return c.html(homePage({
+    ownerName: config.ownerName,
+    handle: config.statsfm.username,
+    avatar: statsfm?.profile.avatar ?? '',
+    profileUrl: statsfm?.profile.url ?? `https://stats.fm/${config.statsfm.username}`,
+    lastUpdated: lastUpdatedLabel(),
+    allActivities: combined,
+    recentActivities: recent,
+    sourceHighlights: latestSourceActivities(combined),
+    timeSpent: repository.timeSpent(),
+    statsfmStats: statsfm?.stats ?? {},
+    topAlbums: statsfm?.extra.topAlbums ?? [],
+    topArtists: statsfm?.extra.topArtists ?? [],
+    publicActivityCount,
+    connectedSources,
+  }));
 });
 
 function manualEventsSnapshot(): SourceSnapshot {

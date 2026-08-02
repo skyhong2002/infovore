@@ -1,5 +1,5 @@
 import type { Activity } from '../data/types.js';
-import type { TimeSpentSummary, WrappedSummary } from '../data/database.js';
+import type { WrappedSummary } from '../data/database.js';
 import { config } from '../config.js';
 
 export function html(value: unknown): string {
@@ -25,10 +25,10 @@ export function timeAmount(seconds: number): string {
 }
 
 const styles = `
-  :root{color-scheme:dark;--bg:#0b0c0f;--surface:#121419;--surface-raised:#171a20;--line:#262b33;--line-strong:#39414d;--text:#f2f4f7;--muted:#8c96a3;--quiet:#626c79;--blue:#91bfff;--violet:#b9a3ff;--green:#8dd3a8}
-  *{box-sizing:border-box}html{scroll-behavior:smooth}body{background:radial-gradient(circle at 78% -15%,#172039 0,transparent 34rem),var(--bg);color:var(--text);font:15px/1.55 Inter,system-ui,sans-serif;margin:0;min-height:100vh}a{color:var(--blue)}a:focus-visible{border-radius:5px;outline:2px solid var(--blue);outline-offset:4px}
-  .site-header{align-items:center;border-bottom:1px solid rgba(255,255,255,.07);display:flex;gap:28px;justify-content:space-between;margin:0 auto;max-width:1120px;padding:22px 20px}.site-brand{align-items:center;color:var(--text);display:flex;gap:11px;text-decoration:none}.brand-mark{align-items:center;background:linear-gradient(145deg,#a9cfff,#a995ff);border-radius:10px;color:#0b0c0f;display:flex;font-size:18px;font-weight:800;height:38px;justify-content:center;width:38px}.site-brand strong,.site-brand small{display:block}.site-brand strong{font-size:16px;letter-spacing:.02em}.site-brand small{color:var(--quiet);font-size:10px;letter-spacing:.08em;text-transform:uppercase}.site-nav{display:flex;gap:5px}.site-nav a{border-radius:999px;color:#8e98a6;font-size:13px;padding:7px 11px;text-decoration:none}.site-nav a:hover,.site-nav a[aria-current=page]{background:#1d2128;color:var(--text)}
-  .site-main{margin:0 auto;max-width:1120px;padding:54px 20px 82px}.site-footer{border-top:1px solid rgba(255,255,255,.07);display:grid;gap:30px;grid-template-columns:minmax(220px,1fr) repeat(3,minmax(110px,auto));margin:0 auto;max-width:1120px;padding:34px 20px 56px}.site-footer strong{display:block;font-size:14px;margin-bottom:5px}.site-footer p{color:var(--quiet);font-size:12px;margin:0;max-width:320px}.footer-group span{color:var(--quiet);display:block;font-size:10px;letter-spacing:.1em;margin-bottom:8px;text-transform:uppercase}.footer-group a{color:#9ca6b3;display:block;font-size:12px;margin:4px 0;text-decoration:none}.footer-group a:hover{color:var(--text)}
+  :root{color-scheme:dark;--bg:#111112;--surface:#18181c;--surface-raised:#202024;--line:#29292e;--line-strong:#3a3a40;--text:#fff;--muted:#a3a3a3;--quiet:#727272;--blue:#1ed760;--violet:#b8b8bd;--green:#1ed760}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}body{background:var(--bg);color:var(--text);font:15px/1.55 Inter,system-ui,sans-serif;margin:0;min-height:100vh}a{color:var(--blue)}a:focus-visible{border-radius:5px;outline:2px solid var(--blue);outline-offset:4px}
+  .site-header{align-items:center;border-bottom:1px solid var(--line);display:flex;gap:28px;justify-content:space-between;margin:0 auto;max-width:1280px;padding:18px 20px}.site-brand{align-items:center;color:var(--text);display:flex;gap:11px;text-decoration:none}.brand-mark{align-items:center;background:var(--blue);border-radius:7px;color:#111112;display:flex;font-size:18px;font-weight:800;height:36px;justify-content:center;width:36px}.site-brand strong,.site-brand small{display:block}.site-brand strong{font-size:16px;letter-spacing:.02em}.site-brand small{color:var(--quiet);font-size:10px;letter-spacing:.08em;text-transform:uppercase}.site-nav{display:flex;gap:5px}.site-nav a{border-radius:999px;color:#8f8f94;font-size:13px;padding:7px 11px;text-decoration:none}.site-nav a:hover,.site-nav a[aria-current=page]{background:var(--surface);color:var(--text)}
+  .site-main{margin:0 auto;max-width:1280px;padding:42px 20px 82px}.site-footer{border-top:1px solid var(--line);display:grid;gap:30px;grid-template-columns:minmax(220px,1fr) repeat(3,minmax(110px,auto));margin:0 auto;max-width:1280px;padding:34px 20px 56px}.site-footer strong{display:block;font-size:14px;margin-bottom:5px}.site-footer p{color:var(--quiet);font-size:12px;margin:0;max-width:320px}.footer-group span{color:var(--quiet);display:block;font-size:10px;letter-spacing:.1em;margin-bottom:8px;text-transform:uppercase}.footer-group a{color:#9ca6b3;display:block;font-size:12px;margin:4px 0;text-decoration:none}.footer-group a:hover{color:var(--text)}
   h1,h2,h3,p{overflow-wrap:anywhere}.eyebrow{color:var(--blue);font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase}.muted{color:var(--muted)}.button{border:1px solid var(--line-strong);border-radius:999px;color:var(--text);display:inline-flex;font-size:13px;padding:9px 14px;text-decoration:none}.button.primary{background:var(--text);border-color:var(--text);color:#0b0c0f;font-weight:700}.button:hover{border-color:#6b7584}.hero-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:24px}
   .page-intro{align-items:end;display:flex;gap:30px;justify-content:space-between;margin-bottom:34px}.page-intro h1{font-size:clamp(32px,5vw,54px);letter-spacing:-.045em;line-height:1.02;margin:7px 0 12px}.page-intro p{color:var(--muted);margin:0;max-width:670px}.page-intro-aside{color:var(--quiet);font-size:12px;max-width:220px;text-align:right}.context-line{align-items:center;color:var(--quiet);display:flex;flex-wrap:wrap;font-size:12px;gap:8px;margin:-14px 0 32px}.context-line a{color:#9ca6b3;text-decoration:none}.context-line strong{color:var(--text);font-weight:600}
   img[data-adaptive-media]{aspect-ratio:var(--media-ratio,.75);display:block;max-width:100%;object-fit:cover;width:auto}
@@ -70,7 +70,7 @@ const navigation: Array<{ key: PageKey; label: string; href: string }> = [
   { key: 'cards', label: 'Cards', href: '/cards' },
 ];
 
-export function shell(title: string, body: string, active: PageKey): string {
+export function shell(title: string, body: string, active: PageKey, extraStyles = ''): string {
   const nav = navigation.map((item) =>
     `<a href="${item.href}"${item.key === active ? ' aria-current="page"' : ''}>${item.label}</a>`
   ).join('');
@@ -78,7 +78,7 @@ export function shell(title: string, body: string, active: PageKey): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="${description}">
   <meta property="og:type" content="website"><meta property="og:title" content="${html(title)} · infovore"><meta property="og:description" content="${description}"><meta property="og:image" content="${html(config.publicBaseUrl)}/og.png">
   <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${html(title)} · infovore"><meta name="twitter:description" content="${description}"><meta name="twitter:image" content="${html(config.publicBaseUrl)}/og.png">
-  <link rel="alternate" type="application/rss+xml" title="infovore" href="/feed.xml"><title>${html(title)} · infovore</title><style>${styles}</style></head><body>
+  <link rel="alternate" type="application/rss+xml" title="infovore" href="/feed.xml"><title>${html(title)} · infovore</title><style>${styles}${extraStyles}</style></head><body>
   <header class="site-header"><a class="site-brand" href="/"><span class="brand-mark">i</span><span><strong>infovore</strong><small>Sky's personal infoboard</small></span></a><nav class="site-nav" aria-label="Primary">${nav}</nav></header>
   <main class="site-main">${body}</main>
   <footer class="site-footer"><div class="footer-about"><strong>infovore</strong><p>Sky's media, activities, and plans gathered into one personal home.</p></div>
@@ -90,101 +90,6 @@ export function shell(title: string, body: string, active: PageKey): string {
 
 export function sourceLabel(source: string): string {
   return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', goodreads: 'Goodreads', youtube: 'YouTube', events: 'Manual' } as Record<string, string>)[source] ?? source;
-}
-
-function activityWhen(activity: Activity): { date: string; time: string; datetime: string } {
-  const raw = activity.occurredAt ?? activity.firstSeenAt;
-  if (activity.occurredAtPrecision === 'label') return { date: raw, time: '', datetime: '' };
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return { date: raw, time: '', datetime: '' };
-  const date = new Intl.DateTimeFormat('en', {
-    timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric',
-  }).format(parsed);
-  const time = activity.occurredAtPrecision === 'exact'
-    ? new Intl.DateTimeFormat('en', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(parsed)
-    : '';
-  return { date, time, datetime: parsed.toISOString() };
-}
-
-function activityMeta(activity: Activity): string {
-  const details: string[] = [];
-  const add = (value: unknown) => details.push(html(value));
-  if (activity.status) add(activity.status.replaceAll('_', ' '));
-  if (activity.extra.artist) add(activity.extra.artist);
-  else if (activity.extra.author) add(`by ${activity.extra.author}`);
-  else if (activity.extra.channel) add(activity.extra.channel);
-  if (activity.extra.watchedEpisodes != null && activity.extra.totalEpisodes != null) {
-    add(`${activity.extra.watchedEpisodes}/${activity.extra.totalEpisodes} episodes`);
-  } else if (activity.extra.progress) {
-    add(`progress ${activity.extra.progress}`);
-  }
-  if (activity.extra.platform) add(activity.extra.platform);
-  if (activity.extra.playtime) add(activity.extra.playtime);
-  if (activity.extra.venue) add(activity.extra.venue);
-  if (activity.extra.year) add(activity.extra.year);
-  if (Array.isArray(activity.extra.tags)) {
-    details.push(activity.extra.tags.map((tag) => `<span class="activity-tag">${html(tag)}</span>`).join(' '));
-  }
-  if (activity.rating) {
-    details.push(`<span class="rating">★ ${html(activity.rating.value)}/${html(activity.rating.scale)}</span>`);
-  }
-  return details.join(' · ');
-}
-
-function activityRow(activity: Activity): string {
-  const when = activityWhen(activity);
-  const time = `<time${when.datetime ? ` datetime="${html(when.datetime)}"` : ''}>${html(when.date)}${when.time ? `<span>${html(when.time)} GMT+8</span>` : ''}</time>`;
-  const cover = activity.image
-    ? `<img class="activity-cover" data-adaptive-media src="${html(activity.image)}" alt="" loading="lazy">`
-    : '<span class="activity-cover placeholder" aria-hidden="true"></span>';
-  return `<article class="activity-row" id="activity-${activity.id}">${time}${cover}<div class="activity-main"><div class="activity-labels"><a class="source-label" href="/platforms/${html(activity.source)}">${html(sourceLabel(activity.source))}</a><span class="kind-label">${html(activity.mediaKind)}</span></div><h2>${html(activity.title)}</h2><div class="activity-meta">${activityMeta(activity)}</div></div></article>`;
-}
-
-// "~" marks windows an estimated source (Simkl/Kitsu lifetime deltas)
-// contributed to; measured windows show bare numbers.
-function timeApprox(timeSpent: TimeSpentSummary, window: 'last24h' | 'week'): string {
-  return timeSpent.sources.some((entry) => entry.method === 'estimated' && entry.windows[window] > 0) ? '~' : '';
-}
-
-function timeHeadline(timeSpent: TimeSpentSummary): string {
-  const recorded = `${timeApprox(timeSpent, 'last24h')}${timeAmount(timeSpent.total.last24h)}`;
-  const week = timeSpent.total.week > 0
-    ? ` · ${timeApprox(timeSpent, 'week')}${timeAmount(timeSpent.total.week)} this week`
-    : '';
-  return `<p class="board-time">In the last 24 hours this system recorded <strong>${recorded}</strong> of activity${week}.</p>`;
-}
-
-function timeStrip(timeSpent: TimeSpentSummary): string {
-  const chips = timeSpent.sources
-    .filter((entry) => entry.windows.last24h > 0)
-    .sort((a, b) => b.windows.last24h - a.windows.last24h)
-    .map((entry) => `<a class="time-chip" href="/platforms/${html(entry.source)}">${html(sourceLabel(entry.source))}
-      <strong>${entry.method === 'estimated' ? '~' : ''}${timeAmount(entry.windows.last24h)}</strong></a>`)
-    .join('');
-  return `<div class="time-strip"><span class="pill">Last 24h</span>${chips}<a class="time-strip-more" href="/stats">Full breakdown →</a></div>`;
-}
-
-export function homePage(
-  ownerName: string,
-  activities: Activity[],
-  lastUpdated: string | null,
-  sourceHighlights: Activity[],
-  timeSpent: TimeSpentSummary | null = null,
-): string {
-  const showTime = Boolean(timeSpent && timeSpent.total.last24h > 0);
-  const board = `<section class="board-head"><div><div class="eyebrow">Personal infoboard</div><h1>${html(ownerName)}</h1>
-    <p>A clear view of what has changed across your media life.</p>
-    ${showTime ? timeHeadline(timeSpent!) : ''}</div>
-    <div class="board-status"><strong>${lastUpdated ? `Updated ${html(lastUpdated)}` : 'Waiting for the first sync'}</strong>Built from your connected platforms and manual events.</div></section>
-    ${showTime ? timeStrip(timeSpent!) : ''}`;
-  const pulse = `<section><div class="section-heading"><div><div class="eyebrow">New from your sources</div><h2>Latest signal from each platform</h2></div><a href="/platforms">Browse platforms →</a></div>
-    ${sourceHighlights.length ? `<div class="source-pulse">${sourceHighlights.map(activityCard).join('')}</div>` : '<div class="empty">No source activity has been collected yet.</div>'}</section>`;
-  const timeline = activities.length
-    ? `<div class="activity-list">${activities.map(activityRow).join('')}</div>`
-    : '<div class="empty">No activity has been collected yet.</div>';
-  const recent = `<section class="content-section" id="recent"><div class="section-heading"><div><div class="eyebrow">Balanced timeline</div><h2>More recent highlights</h2></div></div>${timeline}
-    <div class="feed-note">${lastUpdated ? `Last synced ${html(lastUpdated)} · ` : ''}High-frequency music and YouTube activity are sampled so every medium remains visible.</div></section>`;
-  return shell(`${ownerName} · infoboard`, board + pulse + recent, 'home');
 }
 
 function activityCard(activity: Activity): string {
