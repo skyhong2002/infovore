@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseBackloggdRecentFixture } from '../src/sources/backloggd.js';
+import { parseBackloggdLogFixture, parseBackloggdRecentFixture } from '../src/sources/backloggd.js';
 import { parseGoodreadsRss } from '../src/sources/goodreads.js';
 import { parseKitsuEntries } from '../src/sources/kitsu.js';
 import { parseSimklEntries } from '../src/sources/simkl.js';
@@ -15,6 +15,34 @@ test('Backloggd profile fixture normalizes a recent game', () => {
     sourceItemId: 'chrono-trigger', source: 'backloggd', kind: 'game', title: 'Chrono Trigger', image: 'cover.jpg',
     activityAt: '2026-07-07', rating: null, extra: { displayDate: 'Jul 7' },
   });
+});
+
+test('Backloggd log fixture pairs per-day playtimes with their month headers', () => {
+  const sessions = parseBackloggdLogFixture(`
+    <div class="col-12 my-auto"><p class="time-played"><i class="fa-solid fa-tv"></i> Borrowed</p></div>
+    <div class="col playthrough-dates">
+      <div class="row playdate-month"><div class="col"><h3>August 2026</h3></div></div>
+      <div class="row playdate-view">
+        <div class="col-auto my-auto number-date"><h4></h4><h4 class="date-through-line">|</h4><h4>01</h4></div>
+        <div class="col time-played"><p><i class="fa-solid fa-stopwatch"></i> 0h 5m</p></div>
+      </div>
+      <div class="row playdate-month"><div class="col"><h3>July 2026</h3></div></div>
+      <div class="row playdate-view">
+        <div class="col-auto my-auto number-date"><h4>17</h4><h4 class="date-through-line">|</h4><h4>22</h4></div>
+        <div class="col time-played"><p><i></i> 1h 30m</p></div>
+      </div>
+      <div class="row playdate-view">
+        <div class="col-auto my-auto number-date"><h4></h4><h4>10</h4></div>
+        <div class="col-12 note-view"></div>
+      </div>
+    </div>
+  `);
+  // The sidebar "Borrowed" label is not a session; a date range attributes
+  // to its end day; a status-only row without a stopwatch time is skipped.
+  assert.deepEqual(sessions, [
+    { day: '2026-08-01', minutes: 5 },
+    { day: '2026-07-22', minutes: 90 },
+  ]);
 });
 
 test('Goodreads RSS fixture preserves ids, author, rating and timestamp', () => {

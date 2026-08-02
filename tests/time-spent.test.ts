@@ -33,10 +33,10 @@ test('Taipei calendar helpers anchor windows to UTC+8', () => {
   assert.equal(starts.year.toISOString(), '2025-12-31T16:00:00.000Z');
 });
 
-test('migration v7 creates the time ledger tables', () => {
+test('migration creates the time ledger tables', () => {
   const repository = new Repository(':memory:');
   const raw = (repository as any).db;
-  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 7);
+  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 8);
   const tables = raw.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('time_ledger', 'time_ledger_state')"
   ).all() as Array<{ name: string }>;
@@ -213,40 +213,51 @@ test('finished books estimate reading time from page counts', () => {
   repository.close();
 });
 
-test('Backloggd per-game playtime deltas seed first, then accrue on the last-played day', () => {
+test('Backloggd daily playtime logs backfill history and accrue idempotently', () => {
   const repository = new Repository(':memory:');
-  const snapshot = (games: Array<{ id: string; playtime: string; activityAt: string }>): SourceSnapshot => ({
+  const snapshot = (sessions: Array<{ game: string; day: string; minutes: number }>): SourceSnapshot<unknown> => ({
     source: 'backloggd',
     profile: { id: 'sky', name: 'sky', avatar: '', url: '' },
-    stats: { gamesPlayed: games.length },
-    entries: games.map((game) => ({
-      sourceItemId: game.id, source: 'backloggd', kind: 'game' as const, title: game.id, image: '',
-      activityAt: game.activityAt, rating: null, extra: { playtime: game.playtime },
-    })),
-    extra: {},
+    stats: { gamesPlayed: 2 },
+    entries: [],
+    extra: { yearExtras: '', sessions },
   });
+  const history = [
+    { game: 'game-a', day: '2026-08-02', minutes: 5 },
+    { game: 'game-a', day: '2026-07-30', minutes: 30 },
+    { game: 'game-b', day: '2026-04-10', minutes: 60 },
+  ];
 
-  // First sighting of each game seeds its watermark without recording time.
-  repository.recordTimeLedger(snapshot([{ id: 'game-a', playtime: '2h 30m', activityAt: '2026-08-01' }]),
-    new Date('2026-08-01T10:00:00Z'));
-  assert.equal(repository.timeSpent(NOW).sources.some((entry) => entry.source === 'backloggd'), false);
-
-  // +30 min on game-a lands on its last-played day; game-b only seeds.
-  repository.recordTimeLedger(snapshot([
-    { id: 'game-a', playtime: '3h 0m', activityAt: '2026-08-02' },
-    { id: 'game-b', playtime: '5h 0m', activityAt: '2026-08-02' },
-  ]), new Date('2026-08-02T09:00:00Z'));
+  // First sighting records the full visible history on its actual days —
+  // dated logs backfill instead of seeding.
+  repository.recordTimeLedger(snapshot(history), new Date('2026-08-02T08:00:00Z'));
   let backloggd = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'backloggd');
-  assert.equal(backloggd?.method, 'estimated');
-  assert.deepEqual(backloggd?.windows, { last24h: 1800, day: 1800, week: 1800, month: 1800, year: 1800, allTime: 1800 });
+  assert.equal(backloggd?.method, 'measured');
+  assert.deepEqual(backloggd?.windows, { last24h: 300, day: 300, week: 2100, month: 300, year: 5700, allTime: 5700 });
 
-  // Shrinking totals clamp; growth on an already-seeded game accrues.
+  // Re-scraping the same history adds nothing.
+  repository.recordTimeLedger(snapshot(history), new Date('2026-08-02T09:00:00Z'));
+  assert.equal(repository.timeSpent(NOW).sources.find((entry) => entry.source === 'backloggd')?.windows.allTime, 5700);
+
+  // Growth on an already-recorded day accrues only the difference; a shrunk
+  // log keeps what was already recorded.
   repository.recordTimeLedger(snapshot([
-    { id: 'game-a', playtime: '2h 0m', activityAt: '2026-08-02' },
-    { id: 'game-b', playtime: '5h 30m', activityAt: '2026-08-02' },
+    { game: 'game-a', day: '2026-08-02', minutes: 25 },
+    { game: 'game-b', day: '2026-04-10', minutes: 30 },
   ]), new Date('2026-08-02T09:30:00Z'));
   backloggd = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'backloggd');
-  assert.equal(backloggd?.windows.allTime, 3600);
+  assert.equal(backloggd?.windows.day, 1500);
+  assert.equal(backloggd?.windows.allTime, 6900);
+
+  // Duplicate (game, day) rows — separate playthroughs — aggregate before
+  // the watermark comparison.
+  repository.recordTimeLedger(snapshot([
+    { game: 'game-a', day: '2026-08-02', minutes: 20 },
+    { game: 'game-a', day: '2026-08-02', minutes: 15 },
+  ]), new Date('2026-08-02T09:45:00Z'));
+  backloggd = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'backloggd');
+  assert.equal(backloggd?.windows.day, 2100);
+  assert.equal(backloggd?.windows.allTime, 7500);
   repository.close();
 });
 

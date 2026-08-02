@@ -14,12 +14,23 @@ interface RawRecentGame {
   activityAt: string; // ISO date when Backloggd exposes a year
   playtime: string; // e.g. "1h 0m", '' if no sessions logged
   rating: number | null; // out of 5, e.g. 3.5
+  sessions?: Array<{ day: string; minutes: number }>; // per-day playtime from the log page
+}
+
+// One per-day playtime log for one game, as shown on its log page. Feeds
+// the time ledger via Repository.recordTimeLedger().
+export interface BackloggdSession {
+  game: string;
+  day: string; // 'YYYY-MM-DD'
+  minutes: number;
 }
 
 // Backloggd's yearExtras tooltip line has no natural fit in `entries` or
-// `stats` (it's a formatted summary, not a counter or an activity item).
+// `stats` (it's a formatted summary, not a counter or an activity item);
+// sessions are per-day data about games, not activities themselves.
 export interface BackloggdExtra {
   yearExtras: string; // e.g. "+14 extras: 10 Updates · 3 Expansions · 1 DLC"
+  sessions: BackloggdSession[];
 }
 
 const ORIGIN = 'https://backloggd.com';
@@ -81,8 +92,45 @@ function sumSessions(times: string[]): string {
   return h > 0 ? `${h}h ${mins % 60}m` : `${mins}m`;
 }
 
-// Per-game log page: last played date, summed session time, platform,
-// and the log's star rating (stars-top width % of 5 stars).
+// Per-day playtime rows from a game's log page: ".playdate-month h3"
+// headers ("August 2026") set the month context for the ".playdate-view"
+// rows that follow (day number + stopwatch time like "0h 5m"). Rows without
+// a logged time are status-only and skipped; a date range's last number is
+// its end day.
+function parseLogSessions($: cheerio.CheerioAPI): Array<{ day: string; minutes: number }> {
+  const sessions: Array<{ day: string; minutes: number }> = [];
+  let year = '';
+  let month = '';
+  $('.playthrough-dates').find('.playdate-month, .playdate-view').each((_, el) => {
+    const $el = $(el);
+    if ($el.hasClass('playdate-month')) {
+      const match = $el.find('h3').first().text().trim().match(/([A-Z][a-z]+)\s+(\d{4})/);
+      const monthNumber = match ? Object.keys(MONTHS).indexOf(match[1]) + 1 : 0;
+      month = monthNumber > 0 ? String(monthNumber).padStart(2, '0') : '';
+      year = match ? match[2] : '';
+      return;
+    }
+    if (!year || !month) return;
+    const day = $el.find('.number-date h4').toArray()
+      .map((h4) => $(h4).text().trim())
+      .filter((text) => /^\d{1,2}$/.test(text))
+      .at(-1);
+    const time = $el.find('.time-played p').first().text().trim();
+    const hoursMatch = time.match(/(\d+)\s*h/);
+    const minutesMatch = time.match(/(\d+)\s*m/);
+    if (!day || (!hoursMatch && !minutesMatch)) return;
+    const minutes = (hoursMatch ? Number(hoursMatch[1]) * 60 : 0) + (minutesMatch ? Number(minutesMatch[1]) : 0);
+    if (minutes > 0) sessions.push({ day: `${year}-${month}-${day.padStart(2, '0')}`, minutes });
+  });
+  return sessions;
+}
+
+export function parseBackloggdLogFixture(html: string): Array<{ day: string; minutes: number }> {
+  return parseLogSessions(cheerio.load(html));
+}
+
+// Per-game log page: last played date, summed session time, per-day
+// sessions, platform, and the log's star rating (stars-top width % of 5).
 async function fetchLog(slug: string): Promise<Partial<RawRecentGame>> {
   try {
     const $ = await getHtml(`/u/${config.backloggd.username}/logs/${slug}/`);
@@ -107,6 +155,7 @@ async function fetchLog(slug: string): Promise<Partial<RawRecentGame>> {
     const times: string[] = [];
     $('.time-played p').each((_, el) => { times.push($(el).text().trim()); });
     out.playtime = sumSessions(times);
+    out.sessions = parseLogSessions($);
     return out;
   } catch {
     return {};
@@ -239,6 +288,11 @@ export async function fetchBackloggd(): Promise<SourceSnapshot<BackloggdExtra>> 
     recent = profileRecent($profile);
   }
 
+  const sessions: BackloggdSession[] = recent.flatMap((g) =>
+    g.sourceItemId && g.sessions
+      ? g.sessions.map((session) => ({ game: g.sourceItemId!, ...session }))
+      : []);
+
   return {
     source: 'backloggd',
     profile: {
@@ -253,6 +307,6 @@ export async function fetchBackloggd(): Promise<SourceSnapshot<BackloggdExtra>> 
       backlog: byLabel('backloggd'),
     },
     entries: recent.map(toEntry),
-    extra: { yearExtras },
+    extra: { yearExtras, sessions },
   };
 }

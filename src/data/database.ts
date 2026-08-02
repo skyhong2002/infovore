@@ -142,13 +142,33 @@ const YOUTUBE_ESTIMATED_EVENTS_CTE = `
 const EVENT_DEFAULT_SECONDS = 2 * 3600; // attended event with no scheduled end time
 const SECONDS_PER_PAGE = 120;           // ~30 pages/hour reading pace
 
-// Backloggd playtime labels ("2h 30m", "45m") → minutes.
-function playtimeMinutes(label: unknown): number | null {
-  if (typeof label !== 'string' || !label) return null;
-  const hoursMatch = label.match(/(\d+)\s*h/);
-  const minutesMatch = label.match(/(\d+)\s*m/);
-  if (!hoursMatch && !minutesMatch) return null;
-  return (hoursMatch ? Number(hoursMatch[1]) * 60 : 0) + (minutesMatch ? Number(minutesMatch[1]) : 0);
+// Per-day Backloggd playtime logs carried in the snapshot's extra. Kept
+// structural (not imported from sources/) so the data layer stays below the
+// source layer.
+interface BackloggdDailySession {
+  game: string;
+  day: string;
+  minutes: number;
+}
+
+function backloggdSessions(snapshot: SourceSnapshot<unknown>): BackloggdDailySession[] {
+  const raw = (snapshot.extra as { sessions?: unknown } | null)?.sessions;
+  if (!Array.isArray(raw)) return [];
+  // Aggregate duplicate (game, day) rows — e.g. two playthroughs logged on
+  // the same day — so the watermark compares against the day's full total.
+  const byGameDay = new Map<string, BackloggdDailySession>();
+  for (const value of raw) {
+    const session = value as Partial<BackloggdDailySession> | null;
+    if (!session || typeof session !== 'object') continue;
+    if (typeof session.game !== 'string' || !session.game) continue;
+    if (typeof session.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(session.day)) continue;
+    if (typeof session.minutes !== 'number' || !Number.isFinite(session.minutes) || session.minutes <= 0) continue;
+    const key = `${session.game}${session.day}`;
+    const existing = byGameDay.get(key);
+    if (existing) existing.minutes += session.minutes;
+    else byGameDay.set(key, { game: session.game, day: session.day, minutes: session.minutes });
+  }
+  return [...byGameDay.values()];
 }
 
 // Lifetime totals the delta-based time ledger can watch. Only sources whose
@@ -236,6 +256,8 @@ export class Repository {
     if (afterYoutubeProgress.user_version < 6) this.migrateYoutubeExtensionImports();
     const afterExtensionImports = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterExtensionImports.user_version < 7) this.migrateTimeLedger();
+    const afterTimeLedger = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterTimeLedger.user_version < 8) this.migrateBackloggdDailyLedger();
   }
 
   private migrateYoutube(): void {
@@ -463,6 +485,19 @@ export class Repository {
         PRIMARY KEY (source, key)
       );
       PRAGMA user_version = 7;
+      COMMIT;
+    `);
+  }
+
+  // The Backloggd ledger switched from per-game lifetime deltas to per-day
+  // playtime logs, which re-derive the full history from the log pages —
+  // drop the old accumulation so the backfill cannot double-count.
+  private migrateBackloggdDailyLedger(): void {
+    this.db.exec(`
+      BEGIN;
+      DELETE FROM time_ledger WHERE source = 'backloggd';
+      DELETE FROM time_ledger_state WHERE source = 'backloggd';
+      PRAGMA user_version = 8;
       COMMIT;
     `);
   }
@@ -1587,15 +1622,15 @@ export class Repository {
     }
   }
 
-  // Backloggd reports a lifetime playtime total per game, so each game gets
-  // its own watermark (`game:<slug>` in time_ledger_state): the growth
-  // between syncs becomes estimated seconds on the game's last-played day.
-  // First sightings only seed, like the source-level ledger, so a game's
-  // pre-existing history never lands on one day.
+  // Backloggd logs playtime per game per day, and each (game, day) gets its
+  // own watermark (`day:<slug>:<date>` in time_ledger_state) so re-scraped
+  // history never double-counts while same-day growth keeps accruing. Unlike
+  // the lifetime-delta sources these are explicit dated logs, so first
+  // sightings record in full — that is what backfills each recently-played
+  // game's whole visible history into the ledger.
   private recordBackloggdLedger(snapshot: SourceSnapshot<unknown>, now = new Date()): void {
-    const games = snapshot.entries
-      .filter((entry) => entry.sourceItemId && playtimeMinutes(entry.extra.playtime) !== null);
-    if (!games.length) return;
+    const sessions = backloggdSessions(snapshot);
+    if (!sessions.length) return;
     const nowIso = now.toISOString();
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -1606,25 +1641,27 @@ export class Repository {
       `);
       const addLedger = this.db.prepare(`
         INSERT INTO time_ledger(day, source, seconds, method, detail_json, updated_at)
-        VALUES (?, 'backloggd', ?, 'estimated', ?, ?)
+        VALUES (?, 'backloggd', ?, 'measured', ?, ?)
         ON CONFLICT(day, source) DO UPDATE SET
           seconds=seconds+excluded.seconds,
           detail_json=excluded.detail_json,
           updated_at=excluded.updated_at
       `);
-      for (const game of games) {
-        const totalSeconds = playtimeMinutes(game.extra.playtime)! * 60;
-        const key = `game:${game.sourceItemId}`;
+      for (const session of sessions) {
+        const seconds = Math.round(session.minutes) * 60;
+        const key = `day:${session.game}:${session.day}`;
         const state = readState.get(key) as { value: number } | undefined;
-        const delta = state ? Math.max(0, totalSeconds - Number(state.value)) : 0;
-        if (state && delta > 0) {
-          const day = /^\d{4}-\d{2}-\d{2}/.test(game.activityAt) ? taipeiDay(game.activityAt) : taipeiDay(now);
+        // A shrunk log (user edited a day downwards) keeps the old watermark:
+        // recorded time cannot be taken back, and only growth past the old
+        // value will accrue again.
+        const delta = Math.max(0, seconds - Number(state?.value ?? 0));
+        if (delta > 0) {
           addLedger.run(
-            day, delta,
-            JSON.stringify({ basis: 'playtime-delta', game: game.sourceItemId, deltaSeconds: delta }), nowIso
+            session.day, delta,
+            JSON.stringify({ basis: 'daily-log', game: session.game, deltaSeconds: delta }), nowIso
           );
+          writeState.run(key, seconds, nowIso);
         }
-        writeState.run(key, totalSeconds, nowIso);
       }
       this.db.exec('COMMIT');
     } catch (error) {
@@ -1752,14 +1789,21 @@ export class Repository {
         COALESCE(SUM(seconds), 0) all_time
       FROM time_ledger WHERE source=?
     `);
-    for (const source of ['simkl', 'kitsu', 'backloggd']) {
+    // Backloggd's ledger rows are explicit per-day playtime logs; Simkl's and
+    // Kitsu's are lifetime-total deltas.
+    const ledgerSources: Array<{ source: string; method: TimeMethod }> = [
+      { source: 'simkl', method: 'estimated' },
+      { source: 'kitsu', method: 'estimated' },
+      { source: 'backloggd', method: 'measured' },
+    ];
+    for (const { source, method } of ledgerSources) {
       const row = ledgerQuery.get(
         taipeiDay(starts.day), taipeiDay(starts.week), taipeiDay(starts.month), taipeiDay(starts.year), source
       ) as Record<string, number>;
       // Ledger data is day-granular, so "last 24 h" honestly approximates to
       // today's Taipei day.
       const windows = windowsFrom({ ...row, last24h: row.day });
-      if (windows.allTime > 0) sources.push({ source, method: 'estimated', windows });
+      if (windows.allTime > 0) sources.push({ source, method, windows });
     }
 
     sources.sort((a, b) => b.windows.allTime - a.windows.allTime);
