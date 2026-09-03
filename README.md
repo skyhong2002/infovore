@@ -72,7 +72,7 @@ change.
 | [stats.fm](https://stats.fm/skyhong2002) | Public API |
 | [Simkl](https://simkl.com) | Official API (client ID + OAuth token via PIN flow) |
 | [Goodreads](https://www.goodreads.com/user/show/160195773-skychopath) | Shelf RSS feeds + profile scrape |
-| YouTube | Google Takeout import + private Chrome capture; Data API metadata |
+| [YouTube](https://urtube.observe.tw/skyhong.tw) | Mirrored from [urtube](https://urtube.observe.tw)'s public per-handle summary (stats, top channels, topics, per-day time) |
 
 ## Cards
 
@@ -97,8 +97,6 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /card/{name}.{svg,png,webp}` — a card; `?scale=1..3` for raster (default 2)
 - `GET /api/{source}.json` — a source's normalized `SourceSnapshot` (raw cached data)
 - `GET /api/activities.json?limit=100` — persisted, deduplicated public activity timeline
-- `GET /api/youtube/summary.json?range=28d` — public-safe YouTube aggregates
-- `GET /api/youtube/recent.json` — ten recently watched distinct videos
 - `GET /feed.json` / `GET /feed.xml` — JSON and RSS activity feeds
 - `GET /api/wrapped/{year}.json` — machine-readable annual recap
 - `POST /api/ingest/events` — authenticated private-ingest service (JSON)
@@ -134,6 +132,13 @@ overlay routes only `/api/ingest/*` to the write service.
 Set only the sources you use via `SOURCES` in `.env` (e.g. `SOURCES=kitsu,statsfm`);
 the rest are hidden. Every account id/username is an env var — see the comments
 in `.env.example`, including how to get a Simkl client id + OAuth token.
+
+YouTube tracking itself lives in [urtube](https://urtube.observe.tw): the
+`youtube` source mirrors the public `/u/<handle>/summary.json` of
+`URTUBE_HANDLE` (on `URTUBE_BASE_URL`) for the platform page, the cards and
+the per-day time ledger. The urtube dashboard must be public. The legacy
+import/capture endpoints below still exist but are no longer what the site
+displays.
 
 ### Import YouTube history
 

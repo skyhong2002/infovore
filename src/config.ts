@@ -67,6 +67,12 @@ export const config = {
       ?? `${publicBaseUrl}/api/ingest/youtube/oauth/callback`,
     syncHour: youtubeSyncHour,
   },
+  // YouTube tracking lives in urtube; infovore mirrors its public per-handle
+  // aggregates.
+  urtube: {
+    baseUrl: (process.env.URTUBE_BASE_URL ?? 'https://urtube.observe.tw').replace(/\/$/, ''),
+    handle: process.env.URTUBE_HANDLE ?? 'skyhong.tw',
+  },
   ai: {
     enabled: aiClassificationEnabled,
     baseUrl: (process.env.AI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, ''),

@@ -40,6 +40,7 @@ const timeNotes: Record<string, string> = {
   backloggd: 'From the per-day playtime logged on Backloggd; recently played games sync their full session history.',
   goodreads: 'Estimated from page counts at a ~30 pages/hour pace, attributed to the day each book was finished.',
   events: 'Estimated from each attended event’s scheduled start–end time, defaulting to 2 h when no end time was recorded.',
+  youtube: 'Per-day estimates mirrored from urtube — extension-measured seconds where available, otherwise saved progress and video length; every sync replaces the whole daily series.',
 };
 
 function timeSection(timeSpent: SourceTimeSpent): string {
@@ -75,6 +76,8 @@ function entryMeta(entry: MediaEntry): string {
   if (entry.status) details.push(entry.status.replaceAll('_', ' '));
   if (entry.extra.artist) details.push(String(entry.extra.artist));
   else if (entry.extra.author) details.push(`by ${entry.extra.author}`);
+  else if (entry.extra.channel) details.push(String(entry.extra.channel));
+  if (entry.extra.plays) details.push(`${entry.extra.plays} plays`);
   if (entry.extra.album) details.push(String(entry.extra.album));
   if (entry.extra.progress) details.push(`progress ${entry.extra.progress}`);
   if (entry.extra.watchedEpisodes != null && entry.extra.totalEpisodes != null) {
@@ -100,16 +103,32 @@ function entryCard(entry: MediaEntry): string {
   </article>`;
 }
 
-function leaderboard(title: string, value: unknown): string {
-  if (!Array.isArray(value) || !value.length) return '';
-  const items = value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+type RankedItem = Record<string, unknown>;
+
+function objectItems(value: unknown): RankedItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is RankedItem => Boolean(item && typeof item === 'object'));
+}
+
+function ranked(title: string, value: unknown, describe: (item: RankedItem) => string, imageKey = 'image'): string {
+  const items = objectItems(value);
   if (!items.length) return '';
   return `<section><div class="platform-section-heading"><h2>${html(title)}</h2><span>${items.length} ranked</span></div>
     <div class="platform-leaderboard">${items.map((item, index) => `<article>
       <span class="platform-rank">${index + 1}</span>
-      ${item.image ? `<img data-adaptive-media src="${html(item.image)}" alt="" loading="lazy">` : ''}
-      <div><h3>${html(item.name)}</h3><p>${item.artist ? `${html(item.artist)} · ` : ''}${html(item.streams)} streams</p></div>
+      ${item[imageKey] ? `<img data-adaptive-media src="${html(item[imageKey])}" alt="" loading="lazy">` : ''}
+      <div><h3>${html(item.name)}</h3><p>${describe(item)}</p></div>
     </article>`).join('')}</div></section>`;
+}
+
+const streams = (item: RankedItem) => `${item.artist ? `${html(item.artist)} · ` : ''}${html(item.streams)} streams`;
+const watchTime = (item: RankedItem) => `${timeAmount(Number(item.estimatedWatchSeconds) || 0)} · ${html(item.watches)} plays`;
+
+function topicChips(title: string, value: unknown): string {
+  const items = objectItems(value);
+  if (!items.length) return '';
+  return `<section><div class="platform-section-heading"><h2>${html(title)}</h2><span>AI-classified</span></div>
+    <div class="platform-tags">${items.map((item) => `<span>${html(item.name)} · ${html(item.watches)}</span>`).join('')}</div></section>`;
 }
 
 function platformNav(active?: string): string {
@@ -175,8 +194,10 @@ export function platformPage(
     typeof extra.yearExtras === 'string' && extra.yearExtras
       ? `<div class="platform-note">${html(extra.yearExtras)}</div>`
       : '',
-    leaderboard('Top albums this week', extra.topAlbums),
-    leaderboard('Top artists this week', extra.topArtists),
+    ranked('Top albums this week', extra.topAlbums, streams),
+    ranked('Top artists this week', extra.topArtists, streams),
+    ranked('Top channels · last 28 days', extra.topChannels, watchTime, 'thumbnailUrl'),
+    topicChips('Topics · last 28 days', extra.topics),
   ].join('');
   const cards = definition.cards?.length
     ? `<section><div class="platform-section-heading"><h2>Cards</h2><span>${definition.cards.length} available</span></div>

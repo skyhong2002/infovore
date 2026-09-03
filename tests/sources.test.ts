@@ -5,7 +5,53 @@ import { parseGoodreadsRss } from '../src/sources/goodreads.js';
 import { parseKitsuEntries } from '../src/sources/kitsu.js';
 import { parseSimklEntries } from '../src/sources/simkl.js';
 import { normalizeStatsfm } from '../src/sources/statsfm.js';
+import { normalizeYoutube } from '../src/sources/youtube.js';
 import { enrichPublicEvent, normalizeEvent, parseEventMetadata } from '../src/sources/events.js';
+
+
+// A trimmed urtube /u/<handle>/summary.json payload; unknown keys (hourly,
+// progressCoverage) must be tolerated and dropped.
+function urtubeSummary(range: '28d' | 'all') {
+  const lifetime = range === 'all';
+  return {
+    range,
+    generatedAt: '2026-09-03T00:00:00.000Z',
+    stats: {
+      watchEvents: lifetime ? 40652 : 403, uniqueVideos: 391, uniqueChannels: 275,
+      estimatedWatchSeconds: lifetime ? 17244996 : 172621, contentCoveredSeconds: 203075,
+      actualWatchedSeconds: null, metadataCoverage: 1, topicCoverage: 0.99, progressCoverage: 0.98,
+    },
+    daily: [{ day: '2026-08-06', watches: 6, estimatedWatchSeconds: 1140 }],
+    hourly: [{ hour: 0, watches: 1, estimatedWatchSeconds: 1 }],
+    topChannels: [{ channelId: 'UC1', name: 'Theo - t3.gg', thumbnailUrl: 'avatar.jpg', watches: 15, estimatedWatchSeconds: 18288 }],
+    topVideos: [{ videoId: 'A0x', title: 'Mirrored Top Video', url: 'https://www.youtube.com/watch?v=A0x', channelTitle: 'Channel', thumbnailUrl: 'thumb.jpg', durationSeconds: 5760, watches: 1, estimatedWatchSeconds: 5760 }],
+    topics: [{ slug: 'music-performance', name: 'Music Performance', watches: 79, estimatedWatchSeconds: 25200 }],
+    keywords: [{ term: 'music', videos: 87, score: 0.21 }],
+  };
+}
+
+test('urtube summary fixture mirrors 28-day aggregates and the lifetime daily series', () => {
+  const options = { baseUrl: 'https://urtube.test', handle: 'sky', ownerName: 'Sky' };
+  const snapshot = normalizeYoutube(urtubeSummary('28d'), urtubeSummary('all'), options);
+  assert.equal(snapshot.profile.url, 'https://urtube.test/sky');
+  assert.deepEqual(snapshot.stats, {
+    watchEvents: 403, uniqueVideos: 391, uniqueChannels: 275, estimatedHours: 48,
+    lifetimeWatches: 40652, lifetimeHours: 4790,
+  });
+  // Mirrored videos are aggregates without a watch time: summary-only, undated.
+  assert.deepEqual(snapshot.entries[0], {
+    sourceItemId: 'A0x', visibility: 'summary', source: 'youtube', kind: 'video', title: 'Mirrored Top Video',
+    image: 'thumb.jpg', status: 'watched', activityAt: '', rating: null,
+    extra: { channel: 'Channel', url: 'https://www.youtube.com/watch?v=A0x', plays: 1, playtime: '1.6h' },
+  });
+  assert.equal(snapshot.extra.recent.range, '28d');
+  assert.equal(snapshot.extra.lifetime.watchEvents, 40652);
+  assert.equal(snapshot.extra.topChannels[0].name, 'Theo - t3.gg');
+  assert.deepEqual(snapshot.extra.daily, [{ day: '2026-08-06', watches: 6, estimatedWatchSeconds: 1140 }]);
+  assert.equal('hourly' in snapshot.extra, false);
+  assert.equal('progressCoverage' in snapshot.extra.recent, false);
+  assert.throws(() => normalizeYoutube({ error: 'not found' }, urtubeSummary('all'), options));
+});
 
 test('Backloggd profile fixture normalizes a recent game', () => {
   const entries = parseBackloggdRecentFixture(`

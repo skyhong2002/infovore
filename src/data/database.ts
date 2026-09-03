@@ -173,6 +173,19 @@ function backloggdSessions(snapshot: SourceSnapshot<unknown>): BackloggdDailySes
 
 // Lifetime totals the delta-based time ledger can watch. Only sources whose
 // platform reports a cumulative time figure but no per-session durations.
+function youtubeDailySeries(snapshot: SourceSnapshot<unknown>): Array<{ day: string; seconds: number; watches: number }> {
+  const extra = snapshot.extra as { daily?: unknown } | null | undefined;
+  if (!Array.isArray(extra?.daily)) return [];
+  const series: Array<{ day: string; seconds: number; watches: number }> = [];
+  for (const row of extra.daily as Array<Record<string, unknown>>) {
+    const day = String(row?.day ?? '');
+    const seconds = Math.round(Number(row?.estimatedWatchSeconds));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(seconds) || seconds <= 0) continue;
+    series.push({ day, seconds, watches: Math.round(Number(row?.watches)) || 0 });
+  }
+  return series;
+}
+
 function ledgerLifetimeSeconds(snapshot: SourceSnapshot<unknown>): number | null {
   const stats = snapshot.stats ?? {};
   const value = snapshot.source === 'simkl'
@@ -1580,6 +1593,7 @@ export class Repository {
   // deploy day.
   recordTimeLedger(snapshot: SourceSnapshot<unknown>, now = new Date()): void {
     if (snapshot.source === 'backloggd') return this.recordBackloggdLedger(snapshot, now);
+    if (snapshot.source === 'youtube') return this.recordYoutubeLedger(snapshot, now);
     const total = ledgerLifetimeSeconds(snapshot);
     if (total === null) return;
     const nowIso = now.toISOString();
@@ -1686,6 +1700,31 @@ export class Repository {
   // Time recorded with each platform across rolling-24h, Taipei-calendar, and
   // all-time windows. YouTube and stats.fm are measured (per-event durations);
   // Simkl and Kitsu come from the estimated time ledger.
+  // urtube is the system of record for YouTube time and its summary carries
+  // the whole lifetime per-day series, so the mirror replaces the series
+  // instead of accruing deltas: an upstream revision (a re-imported archive,
+  // a corrected progress scan) shows up here unchanged.
+  private recordYoutubeLedger(snapshot: SourceSnapshot<unknown>, now = new Date()): void {
+    const daily = youtubeDailySeries(snapshot);
+    if (!daily.length) return;
+    const nowIso = now.toISOString();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare("DELETE FROM time_ledger WHERE source='youtube'").run();
+      const insert = this.db.prepare(`
+        INSERT INTO time_ledger(day, source, seconds, method, detail_json, updated_at)
+        VALUES (?, 'youtube', ?, 'estimated', ?, ?)
+      `);
+      for (const entry of daily) {
+        insert.run(entry.day, entry.seconds, JSON.stringify({ basis: 'urtube-daily', watches: entry.watches }), nowIso);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
   timeSpent(now = new Date()): TimeSpentSummary {
     const starts = taipeiWindowStarts(now);
     const cutoffs = {
@@ -1704,19 +1743,6 @@ export class Repository {
       year: Math.round(Number(row.year ?? 0)),
       allTime: Math.round(Number(row.all_time ?? 0)),
     });
-
-    const youtube = windowsFrom(this.db.prepare(`
-      ${YOUTUBE_ESTIMATED_EVENTS_CTE}
-      SELECT
-        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) last24h,
-        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) day,
-        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) week,
-        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) month,
-        COALESCE(SUM(CASE WHEN e.watched_at>=? THEN e.estimated_watch_seconds ELSE 0 END), 0) year,
-        COALESCE(SUM(e.estimated_watch_seconds), 0) all_time
-      FROM estimated_events e
-    `).get(cutoffs.last24h, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year) as Record<string, number>);
-    if (youtube.allTime > 0) sources.push({ source: 'youtube', method: 'measured', windows: youtube });
 
     // Bucket a (occurred_at, seconds) subquery into all six windows at once.
     const activityWindows = (innerSql: string, ...innerParams: string[]): TimeWindows =>
@@ -1790,11 +1816,13 @@ export class Repository {
       FROM time_ledger WHERE source=?
     `);
     // Backloggd's ledger rows are explicit per-day playtime logs; Simkl's and
-    // Kitsu's are lifetime-total deltas.
+    // Kitsu's are lifetime-total deltas; YouTube's are urtube's per-day
+    // estimates, mirrored as a whole series.
     const ledgerSources: Array<{ source: string; method: TimeMethod }> = [
       { source: 'simkl', method: 'estimated' },
       { source: 'kitsu', method: 'estimated' },
       { source: 'backloggd', method: 'measured' },
+      { source: 'youtube', method: 'estimated' },
     ];
     for (const { source, method } of ledgerSources) {
       const row = ledgerQuery.get(

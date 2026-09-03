@@ -3,7 +3,6 @@ import test from 'node:test';
 import { Repository } from '../src/data/database.js';
 import { taipeiDay, taipeiWindowStarts } from '../src/data/time.js';
 import type { SourceSnapshot } from '../src/data/types.js';
-import type { YoutubeParsedArchive } from '../src/youtube/types.js';
 
 // Sunday 18:00 Taipei. Calendar windows: day starts 2026-08-01T16:00Z,
 // week (Monday) 2026-07-26T16:00Z, month 2026-07-31T16:00Z, year 2025-12-31T16:00Z.
@@ -90,27 +89,27 @@ test('stats.fm calendar windows prefer fresh remote totals and ignore stale ones
   repository.close();
 });
 
-test('YouTube windows reuse the estimation engine and match the dashboard total', () => {
+test('YouTube time mirrors urtube\'s per-day series and replaces it on every sync', () => {
   const repository = new Repository(':memory:');
-  const watch = (eventId: string, videoId: string, watchedAt: string, actualWatchedSeconds: number) => ({
-    eventId, videoId, title: `Video ${videoId}`, url: `https://www.youtube.com/watch?v=${videoId}`,
-    channelId: null, channelTitle: null, channelUrl: null,
-    watchedAt, actualWatchedSeconds, activityType: 'video' as const,
+  const snapshot = (daily: Array<{ day: string; watches: number; estimatedWatchSeconds: number }>): SourceSnapshot<unknown> => ({
+    source: 'youtube', profile: { id: 'sky', name: 'Sky', avatar: '', url: '' },
+    stats: { watchEvents: daily.length }, entries: [], extra: { daily },
   });
-  const archive: YoutubeParsedArchive = {
-    archiveHash: 'time-spent-fixture',
-    source: 'takeout',
-    watches: [
-      watch('w1', 'VID00000001', '2026-08-02T08:00:00Z', 1200),
-      watch('w2', 'VID00000002', '2026-07-23T08:00:00Z', 900),
-    ],
-    searches: [],
-  };
-  repository.ingestYoutubeArchive(archive);
-  const youtube = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'youtube');
-  assert.equal(youtube?.method, 'measured');
-  assert.deepEqual(youtube?.windows, { last24h: 1200, day: 1200, week: 1200, month: 1200, year: 2100, allTime: 2100 });
-  assert.equal(repository.youtubeDashboard('all', NOW).stats.estimatedWatchSeconds, 2100);
+  const youtube = () => repository.timeSpent(NOW).sources.find((entry) => entry.source === 'youtube');
+  repository.recordTimeLedger(snapshot([
+    { day: '2026-08-02', watches: 3, estimatedWatchSeconds: 1200 },
+    { day: '2026-07-23', watches: 1, estimatedWatchSeconds: 900 },
+    { day: '2026-07-24', watches: 1, estimatedWatchSeconds: 0 },
+  ]), NOW);
+  assert.equal(youtube()?.method, 'estimated');
+  assert.deepEqual(youtube()?.windows, { last24h: 1200, day: 1200, week: 1200, month: 1200, year: 2100, allTime: 2100 });
+  // An upstream revision (a shorter estimate today, the July day gone) is
+  // mirrored rather than accrued on top of the old series.
+  repository.recordTimeLedger(snapshot([{ day: '2026-08-02', watches: 3, estimatedWatchSeconds: 600 }]), NOW);
+  assert.deepEqual(youtube()?.windows, { last24h: 600, day: 600, week: 600, month: 600, year: 600, allTime: 600 });
+  // An empty series (upstream outage, private dashboard) keeps the last good ledger.
+  repository.recordTimeLedger(snapshot([]), NOW);
+  assert.equal(youtube()?.windows.allTime, 600);
   repository.close();
 });
 

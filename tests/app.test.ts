@@ -4,12 +4,34 @@ import { strToU8, zipSync } from 'fflate';
 import { app, repository } from '../src/index.js';
 import { createIngestApp } from '../src/ingest.js';
 import { setCache } from '../src/data/cache.js';
+import { normalizeYoutube } from '../src/sources/youtube.js';
 import type { SourceSnapshot } from '../src/data/types.js';
 import { encryptPrivateValue } from '../src/youtube/crypto.js';
 import type { YoutubeParsedArchive } from '../src/youtube/types.js';
 
 const ingestApp = createIngestApp(repository);
 const YOUTUBE_SECRET = 'test-private-data-key-with-at-least-32-characters';
+
+// A trimmed urtube /u/<handle>/summary.json payload; unknown keys (hourly,
+// progressCoverage) must be tolerated and dropped.
+function urtubeSummary(range: '28d' | 'all') {
+  const lifetime = range === 'all';
+  return {
+    range,
+    generatedAt: '2026-09-03T00:00:00.000Z',
+    stats: {
+      watchEvents: lifetime ? 40652 : 403, uniqueVideos: 391, uniqueChannels: 275,
+      estimatedWatchSeconds: lifetime ? 17244996 : 172621, contentCoveredSeconds: 203075,
+      actualWatchedSeconds: null, metadataCoverage: 1, topicCoverage: 0.99, progressCoverage: 0.98,
+    },
+    daily: [{ day: '2026-08-06', watches: 6, estimatedWatchSeconds: 1140 }],
+    hourly: [{ hour: 0, watches: 1, estimatedWatchSeconds: 1 }],
+    topChannels: [{ channelId: 'UC1', name: 'Theo - t3.gg', thumbnailUrl: 'avatar.jpg', watches: 15, estimatedWatchSeconds: 18288 }],
+    topVideos: [{ videoId: 'A0x', title: 'Mirrored Top Video', url: 'https://www.youtube.com/watch?v=A0x', channelTitle: 'Channel', thumbnailUrl: 'thumb.jpg', durationSeconds: 5760, watches: 1, estimatedWatchSeconds: 5760 }],
+    topics: [{ slug: 'music-performance', name: 'Music Performance', watches: 79, estimatedWatchSeconds: 25200 }],
+    keywords: [{ term: 'music', videos: 87, score: 0.21 }],
+  };
+}
 
 test('event ingestion requires auth and never exposes private events', async () => {
   const unauthorized = await ingestApp.request('/api/ingest/events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
@@ -158,29 +180,26 @@ test('YouTube exposes projections while raw watch and search history stay privat
     assert.doesNotMatch(body, /never expose this search/);
   }
 
-  const summary = await (await app.request('/api/youtube/summary.json?range=all')).json() as Record<string, unknown>;
-  assert.equal('recent' in summary, false);
-  assert.doesNotMatch(JSON.stringify(summary), /Projected Recent Video|never expose this search/);
-
-  const recent = await (await app.request('/api/youtube/recent.json')).json() as {
-    data: Array<Record<string, unknown>>;
-  };
-  assert.equal(recent.data.length, 1);
-  assert.equal(recent.data[0].title, 'Projected Recent Video');
-  assert.equal('eventId' in recent.data[0], false);
-  assert.equal('rawTitle' in recent.data[0], false);
-  assert.equal('watchedAt' in recent.data[0], false);
-  assert.equal('actualWatchedSeconds' in recent.data[0], false);
-  assert.doesNotMatch(JSON.stringify(recent), /Private Community Post|never expose this search/);
+  // The public YouTube mirror is urtube's per-handle summary, never the local
+  // archive above.
+  const mirror = normalizeYoutube(urtubeSummary('28d'), urtubeSummary('all'), { baseUrl: 'https://urtube.test', handle: 'sky', ownerName: 'Sky' });
+  setCache('data:youtube', mirror);
+  const platformIndex = await (await app.request('/platforms')).text();
+  assert.match(platformIndex, /href="\/platforms\/youtube"/);
+  assert.match(platformIndex, /watch events 403/);
   const dashboardPage = await app.request('/platforms/youtube');
+  assert.equal(dashboardPage.status, 200);
   const dashboardHtml = await dashboardPage.text();
-  assert.match(dashboardHtml, /data-youtube-import-control hidden/);
-  assert.match(dashboardHtml, /Sync now/);
-  assert.match(dashboardHtml, /href="\?range=28d&sort=duration" aria-current="page"/);
-  assert.match(dashboardHtml, /data-chase-range/);
-  assert.match(dashboardHtml, /class="yt-keywords"/);
-  assert.match(dashboardHtml, /class="yt-video-media"/);
-  assert.doesNotMatch(dashboardHtml, /Unknown channel|never expose this search/);
+  assert.match(dashboardHtml, /href="https:\/\/urtube\.test\/sky"/);
+  assert.match(dashboardHtml, /Top channels · last 28 days/);
+  assert.match(dashboardHtml, /Theo - t3\.gg/);
+  assert.match(dashboardHtml, /Music Performance · 79/);
+  assert.match(dashboardHtml, /Mirrored Top Video/);
+  assert.match(dashboardHtml, /1 plays · 1\.6h/);
+  assert.doesNotMatch(dashboardHtml, /Projected Recent Video|Private Community Post|never expose this search/);
+  const mirrorJson = await (await app.request('/api/youtube.json')).text();
+  assert.match(mirrorJson, /"lifetimeWatches":40652/);
+  assert.doesNotMatch(mirrorJson, /Projected Recent Video|never expose this search/);
   const health = await app.request('/healthz');
   assert.equal(health.status, 200);
   assert.match(await health.text(), /"source":"youtube","fresh":true/);
@@ -352,8 +371,8 @@ test('YouTube progress import is private, authenticated, bounded, and aggregate-
   assert.equal(result.totalStored, 1);
 
   const publicBodies = [
-    await (await app.request('/api/youtube/summary.json?range=all')).text(),
-    await (await app.request('/api/youtube/recent.json')).text(),
+    await (await app.request('/api/youtube.json')).text(),
+    await (await app.request('/api/activities.json?source=youtube')).text(),
     await (await app.request('/feed.json')).text(),
     await (await app.request('/feed.xml')).text(),
   ].join('\n');
@@ -432,8 +451,8 @@ test('YouTube account history sync uses the capture token and stays idempotent a
   const status = await ingestApp.request('/api/ingest/youtube/history/status', { headers });
   assert.equal(status.status, 200);
   const publicBodies = [
-    await (await app.request('/api/youtube/summary.json?range=all')).text(),
-    await (await app.request('/api/youtube/recent.json')).text(),
+    await (await app.request('/api/youtube.json')).text(),
+    await (await app.request('/api/activities.json?source=youtube')).text(),
     await (await app.request('/feed.json')).text(),
     await (await app.request('/feed.xml')).text(),
   ].join('\n');
