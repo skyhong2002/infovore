@@ -187,10 +187,17 @@ test('YouTube exposes projections while raw watch and search history stay privat
   const platformIndex = await (await app.request('/platforms')).text();
   assert.match(platformIndex, /href="\/platforms\/youtube"/);
   assert.match(platformIndex, /watch events 403/);
+  assert.match(platformIndex, /Platform mirror · via urtube/);
+  assert.match(platformIndex, /src="\/logos\/urtube\.svg"/);
+  const logoResponse = await app.request('/logos/urtube.svg');
+  assert.equal(logoResponse.status, 200);
+  assert.equal(logoResponse.headers.get('content-type'), 'image/svg+xml');
+  assert.equal((await app.request('/logos/missing.svg')).status, 404);
   const dashboardPage = await app.request('/platforms/youtube');
   assert.equal(dashboardPage.status, 200);
   const dashboardHtml = await dashboardPage.text();
-  assert.match(dashboardHtml, /href="https:\/\/urtube\.test\/sky"/);
+  assert.match(dashboardHtml, /href="https:\/\/urtube\.test\/sky">Open on urtube/);
+  assert.match(dashboardHtml, /class="platform-avatar" src="\/logos\/urtube\.svg"/);
   assert.match(dashboardHtml, /Top channels · last 28 days/);
   assert.match(dashboardHtml, /Theo - t3\.gg/);
   assert.match(dashboardHtml, /Music Performance · 79/);

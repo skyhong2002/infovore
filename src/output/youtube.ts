@@ -1,6 +1,6 @@
 import type { SourceSnapshot } from '../data/types.js';
 import type { YoutubeExtra } from '../sources/youtube.js';
-import { h, renderCard, textFont, toDataUri, truncate } from './render.js';
+import { h, logo, renderCard, textFont, toDataUri, truncate } from './render.js';
 import { hours } from './pages.js';
 
 const C = {
@@ -29,8 +29,9 @@ function cardShell(title: string, subtitle: string, body: unknown[], height: num
     },
   },
   h('div', { style: { alignItems: 'center', display: 'flex', marginBottom: 18 } },
-    h('div', { style: { backgroundColor: C.red, borderRadius: 5, height: 24, marginRight: 9, width: 34 } }),
+    h('img', { src: logo('urtube'), height: 26, width: 26, style: { borderRadius: 6, marginRight: 9 } }),
     h('span', { style: { fontSize: 18, fontWeight: 700 } }, 'YouTube'),
+    h('span', { style: { color: C.dim, fontSize: 11, marginLeft: 8 } }, 'via urtube'),
     h('span', { style: { color: C.dim, fontSize: 11, marginLeft: 'auto' } }, 'last 28 days')),
   h('span', { style: { color: C.dim, fontSize: 11, marginBottom: 4, textTransform: 'uppercase' } }, title),
   h('span', { style: { color: C.text, fontSize: 22, fontWeight: 700, marginBottom: 16 } }, subtitle),

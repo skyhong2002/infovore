@@ -9,6 +9,10 @@ export interface PlatformDefinition {
   accent: string;
   url?: string;
   cards?: string[];
+  // Brand mark shown when the platform has no user avatar to mirror.
+  logo?: string;
+  // The service the data is mirrored through, when it is not the platform itself.
+  via?: { name: string; url: string };
 }
 
 export interface PlatformSummary {
@@ -154,8 +158,10 @@ export function platformIndexPage(ownerName: string, platforms: PlatformSummary[
     return `<a class="platform-tile" href="/platforms/${html(definition.source)}" style="--platform-accent:${html(definition.accent)}">
       <div class="platform-tile-top">${profile?.avatar
         ? `<img src="${html(profile.avatar)}" alt="" loading="lazy">`
-        : `<span class="platform-monogram">${html(definition.title.slice(0, 1))}</span>`}
-        <div><div class="platform-eyebrow">Platform mirror</div><h2>${html(definition.title)}</h2>
+        : definition.logo
+          ? `<img src="${html(definition.logo)}" alt="${html(definition.via?.name ?? definition.title)} logo" loading="lazy">`
+          : `<span class="platform-monogram">${html(definition.title.slice(0, 1))}</span>`}
+        <div><div class="platform-eyebrow">Platform mirror${definition.via ? ` · via ${html(definition.via.name)}` : ''}</div><h2>${html(definition.title)}</h2>
         <p>${html(profile?.name ?? 'Waiting for first sync')}</p></div></div>
       <p class="platform-description">${html(definition.description)}</p>
       <div class="platform-tile-stats"><strong>${number(entryCount)}</strong> synced entries${stats.length
@@ -210,10 +216,12 @@ export function platformPage(
     <section class="platform-hero" style="--platform-accent:${html(definition.accent)}">
       ${snapshot.profile.avatar
         ? `<img class="platform-avatar" src="${html(snapshot.profile.avatar)}" alt="" loading="eager">`
-        : `<span class="platform-avatar platform-monogram">${html(definition.title.slice(0, 1))}</span>`}
-      <div><div class="platform-eyebrow">infovore mirror · ${html(definition.title)}</div>
+        : definition.logo
+          ? `<img class="platform-avatar" src="${html(definition.logo)}" alt="${html(definition.via?.name ?? definition.title)} logo" loading="eager">`
+          : `<span class="platform-avatar platform-monogram">${html(definition.title.slice(0, 1))}</span>`}
+      <div><div class="platform-eyebrow">infovore mirror · ${html(definition.title)}${definition.via ? ` · via <a href="${html(definition.via.url)}">${html(definition.via.name)}</a>` : ''}</div>
       <h2>${html(snapshot.profile.name || ownerName)}</h2><p>${html(definition.description)}</p>
-      <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">View original ↗</a>` : ''}
+      <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">${definition.via ? `Open on ${html(definition.via.name)}` : 'View original'} ↗</a>` : ''}
       <a href="/api/activities.json?source=${html(definition.source)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : 'Stored manually'}</div>
     </section>${cards}${timeSpent ? timeSection(timeSpent) : ''}

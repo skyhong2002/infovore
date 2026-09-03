@@ -118,6 +118,21 @@ async function refreshAll(): Promise<void> {
 const app = new Hono();
 const ogImage = readFileSync(new URL('../assets/og.png', import.meta.url));
 
+// Platform brand marks shipped in-repo (assets/logos); the pattern keeps
+// requests to plain file names.
+app.get('/logos/:file{[a-z]+\\.(svg|png)}', (c) => {
+  const file = c.req.param('file');
+  let body: Buffer;
+  try {
+    body = readFileSync(new URL(`../assets/logos/${file}`, import.meta.url));
+  } catch {
+    return c.text('not found', 404);
+  }
+  c.header('Content-Type', file.endsWith('.svg') ? 'image/svg+xml' : 'image/png');
+  c.header('Cache-Control', 'public, max-age=604800');
+  return c.body(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer);
+});
+
 app.get('/og.png', (c) => {
   c.header('Content-Type', 'image/png');
   c.header('Cache-Control', 'public, max-age=604800');
@@ -133,7 +148,11 @@ const allSections: PlatformDefinition[] = [
   { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
   { source: 'simkl', title: 'Simkl', description: 'Movies, TV and anime collected into one watch history.', accent: '#7bb8ff', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
   { source: 'goodreads', title: 'Goodreads', description: 'Reading shelf, completed books, authors and ratings.', accent: '#d6b98c', url: `https://www.goodreads.com/user/show/${config.goodreads.userId}`, cards: ['goodreads'] },
-  { source: 'youtube', title: 'YouTube', description: 'Viewing volume, top channels, topics and most-watched videos, mirrored from urtube.', accent: '#ff453a', url: `${config.urtube.baseUrl}/${config.urtube.handle}`, cards: ['youtube', 'youtube-channels', 'youtube-topics'] },
+  {
+    source: 'youtube', title: 'YouTube', description: 'Viewing volume, top channels, topics and most-watched videos, mirrored from urtube.',
+    accent: '#ff453a', url: `${config.urtube.baseUrl}/${config.urtube.handle}`, cards: ['youtube', 'youtube-channels', 'youtube-topics'],
+    logo: '/logos/urtube.svg', via: { name: 'urtube', url: config.urtube.baseUrl },
+  },
 ];
 
 const sections = allSections.filter((s) => config.sourceEnabled(s.source));
