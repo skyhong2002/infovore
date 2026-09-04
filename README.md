@@ -80,7 +80,7 @@ Fourteen cards in total — combined and single-medium variants:
 `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
 `simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
-`youtube` / `youtube-channels` / `youtube-topics`.
+`youtube` / `youtube-channels` / `youtube-topics`, `health`.
 
 Each card is served as **svg** (vector), **png**, or **webp** — the previews
 above use webp (≈10× smaller than the SVG), so this page loads fast.
@@ -96,6 +96,7 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /status` — service status overview (JSON)
 - `GET /card/{name}.{svg,png,webp}` — a card; `?scale=1..3` for raster (default 2)
 - `GET /api/{source}.json` — a source's normalized `SourceSnapshot` (raw cached data)
+- `GET /api/health.json` — Health Connect's public-safe aggregate snapshot
 - `GET /api/activities.json?limit=100` — persisted, deduplicated public activity timeline
 - `GET /feed.json` / `GET /feed.xml` — JSON and RSS activity feeds
 - `GET /api/wrapped/{year}.json` — machine-readable annual recap
@@ -115,8 +116,12 @@ Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
 
 The [`android/`](android/) companion app provides automatic read-only sync from
 Android Health Connect, including data Garmin Connect writes there on Android
-14+. Health records remain in dedicated private SQLite tables and are never
-included in the public timeline, feeds, or MCP output. See
+14+. Raw records remain in dedicated private SQLite tables and are never
+included in the public timeline or feeds. `/platforms/health`,
+`/card/health.*`, the homepage, time statistics, and `/api/health.json` expose
+only daily aggregates, recent workout summaries, and latest measurements;
+the `get_health_summary` MCP tool exposes the same safe projection. Record/device
+identifiers, origins, notes, and raw heart-rate samples stay private. See
 [`android/README.md`](android/README.md) for setup, permissions, and build steps.
 
 ## Run it yourself (Docker)

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import * as z from 'zod/v4';
 import type { Repository } from './data/database.js';
+import { config } from './config.js';
 
 function result(value: unknown) {
   const structuredContent = Array.isArray(value)
@@ -52,6 +53,12 @@ export function createMcpServer(repository: Repository): McpServer {
     title: 'Annual summary', description: 'Summarize cross-media activity for one year.',
     inputSchema: { year: z.number().int().min(2000).max(2200) },
   }, async ({ year }) => result(repository.wrapped(year)));
+
+  server.registerTool('get_health_summary', {
+    title: 'Health summary',
+    description: 'Get public-safe Health Connect daily aggregates, recent workout summaries, and data coverage. Raw samples and device identifiers are excluded.',
+    inputSchema: {},
+  }, async () => result(repository.healthConnectSnapshot(config.ownerName)));
 
   return server;
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { SourceSnapshot } from '../data/types.js';
 
 export const healthDataTypes = [
   'exercise_session',
@@ -53,3 +54,30 @@ export interface HealthConnectStatus {
   lastDeviceId: string | null;
   recordsByType: Record<string, number>;
 }
+
+export interface HealthDailySummary {
+  day: string;
+  steps: number;
+  distanceMeters: number;
+  kilocalories: number;
+  exerciseSeconds: number;
+  sleepSeconds: number;
+  heartRateAverage: number | null;
+  heartRateMinimum: number | null;
+  heartRateMaximum: number | null;
+}
+
+export interface HealthLatestMeasurements {
+  weightKilograms: number | null;
+  weightAt: string | null;
+  bodyFatPercentage: number | null;
+  bodyFatAt: string | null;
+}
+
+export interface HealthConnectExtra {
+  daily: HealthDailySummary[];
+  latest: HealthLatestMeasurements;
+  coverage: Record<string, number>;
+}
+
+export type HealthConnectSnapshot = SourceSnapshot<HealthConnectExtra>;

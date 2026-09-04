@@ -1,5 +1,6 @@
 import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
+import type { HealthConnectExtra, HealthDailySummary } from '../health/types.js';
 import { html, shell, timeAmount } from './pages.js';
 
 export interface PlatformDefinition {
@@ -8,6 +9,7 @@ export interface PlatformDefinition {
   description: string;
   accent: string;
   url?: string;
+  jsonUrl?: string;
   cards?: string[];
   // Brand mark shown when the platform has no user avatar to mirror.
   logo?: string;
@@ -31,6 +33,7 @@ const kindLabels: Record<string, string> = {
   music: 'Recent tracks',
   video: 'Videos',
   event: 'Events',
+  fitness: 'Daily health and workouts',
 };
 
 // Machine-facing snapshot stats (raw units for the time ledger and
@@ -45,6 +48,7 @@ const timeNotes: Record<string, string> = {
   goodreads: 'Estimated from page counts at a ~30 pages/hour pace, attributed to the day each book was finished.',
   events: 'Estimated from each attended event’s scheduled start–end time, defaulting to 2 h when no end time was recorded.',
   youtube: 'Per-day estimates mirrored from urtube — extension-measured seconds where available, otherwise saved progress and video length; every sync replaces the whole daily series.',
+  health: 'Measured from Health Connect exercise-session start and end times. Raw biometric samples remain outside the public timeline and feeds.',
 };
 
 function timeSection(timeSpent: SourceTimeSpent): string {
@@ -90,6 +94,13 @@ function entryMeta(entry: MediaEntry): string {
   if (entry.extra.platform) details.push(String(entry.extra.platform));
   if (entry.extra.playtime) details.push(String(entry.extra.playtime));
   if (entry.extra.venue) details.push(String(entry.extra.venue));
+  if (entry.extra.steps) details.push(`${number(Number(entry.extra.steps))} steps`);
+  if (entry.extra.distanceKm) details.push(`${entry.extra.distanceKm} km`);
+  if (entry.extra.kilocalories) details.push(`${number(Number(entry.extra.kilocalories))} kcal`);
+  if (entry.extra.exerciseMinutes) details.push(`${entry.extra.exerciseMinutes} min active`);
+  if (entry.extra.durationMinutes) details.push(`${entry.extra.durationMinutes} min`);
+  if (entry.extra.sleepHours) details.push(`${entry.extra.sleepHours} h sleep`);
+  if (entry.extra.heartRateAverage) details.push(`${entry.extra.heartRateAverage} bpm avg`);
   if (entry.extra.year) details.push(String(entry.extra.year));
   if (entry.rating) details.push(`★ ${entry.rating.value}/${entry.rating.scale}`);
   if (entry.activityAt) details.push(date(entry.activityAt));
@@ -135,6 +146,40 @@ function topicChips(title: string, value: unknown): string {
     <div class="platform-tags">${items.map((item) => `<span>${html(item.name)} · ${html(item.watches)}</span>`).join('')}</div></section>`;
 }
 
+function healthDetails(extra: HealthConnectExtra): string {
+  const daily = Array.isArray(extra.daily) ? extra.daily.slice(0, 14) : [];
+  const latest = extra.latest ?? {};
+  const measurement = (name: string, value: string, at: string | null) =>
+    `<div class="platform-stat"><span>${html(name)}</span><strong>${html(value)}</strong>${at ? `<small>${html(date(at))}</small>` : ''}</div>`;
+  const measurements = [
+    latest.weightKilograms == null ? '' : measurement('latest weight', `${latest.weightKilograms} kg`, latest.weightAt),
+    latest.bodyFatPercentage == null ? '' : measurement('latest body fat', `${latest.bodyFatPercentage}%`, latest.bodyFatAt),
+  ].join('');
+  const maxSteps = Math.max(1, ...daily.map((day) => day.steps));
+  const dayRows = daily.map((day: HealthDailySummary) => {
+    const metrics = [
+      `${number(day.steps)} steps`,
+      day.distanceMeters ? `${(day.distanceMeters / 1000).toFixed(1)} km` : '',
+      day.kilocalories ? `${number(day.kilocalories)} kcal` : '',
+      day.exerciseSeconds ? `${Math.round(day.exerciseSeconds / 60)} min active` : '',
+      day.sleepSeconds ? `${(day.sleepSeconds / 3600).toFixed(1)} h sleep` : '',
+      day.heartRateAverage ? `${day.heartRateAverage} bpm (${day.heartRateMinimum}–${day.heartRateMaximum})` : '',
+    ].filter(Boolean).join(' · ');
+    return `<article class="health-day"><time datetime="${html(day.day)}">${html(date(day.day))}</time>
+      <div class="health-step-track"><span style="width:${Math.max(2, Math.round(day.steps / maxSteps * 100))}%"></span></div>
+      <strong>${number(day.steps)} steps</strong><p>${html(metrics || 'No summarized measurements')}</p></article>`;
+  }).join('');
+  const coverage = Object.entries(extra.coverage ?? {}).map(([type, count]) =>
+    `<span>${html(label(type))} · ${number(count)}</span>`
+  ).join('');
+  return `${measurements ? `<section><div class="platform-section-heading"><h2>Latest measurements</h2><span>most recent reading</span></div><div class="platform-stats">${measurements}</div></section>` : ''}
+    <section><div class="platform-section-heading"><h2>Last 30 days</h2><span>Taipei calendar days</span></div>
+    <div class="health-days">${dayRows || '<div class="empty">Daily summaries will appear as the initial import progresses.</div>'}</div></section>
+    <section><div class="platform-section-heading"><h2>Data coverage</h2><span>stored privately</span></div>
+    <div class="platform-tags">${coverage || '<span>Waiting for Health Connect data</span>'}</div>
+    <div class="platform-note">This page exposes daily aggregates and recent workout summaries only. Raw heart-rate samples, record identifiers, device identifiers, notes, and data-origin package names remain private.</div></section>`;
+}
+
 function platformNav(active?: string): string {
   const sources = [
     ['backloggd', 'Backloggd'],
@@ -143,6 +188,7 @@ function platformNav(active?: string): string {
     ['simkl', 'Simkl'],
     ['goodreads', 'Goodreads'],
     ['youtube', 'YouTube'],
+    ['health', 'Health'],
     ['events', 'Manual'],
   ];
   return `<nav class="platform-nav" aria-label="Platforms"><a href="/platforms"${active ? '' : ' aria-current="page"'}>All</a>${sources.map(([source, title]) =>
@@ -197,6 +243,7 @@ export function platformPage(
   }).join('');
   const extra = (snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {}) as Record<string, unknown>;
   const extras = [
+    definition.source === 'health' ? healthDetails(extra as unknown as HealthConnectExtra) : '',
     typeof extra.yearExtras === 'string' && extra.yearExtras
       ? `<div class="platform-note">${html(extra.yearExtras)}</div>`
       : '',
@@ -222,7 +269,7 @@ export function platformPage(
       <div><div class="platform-eyebrow">infovore mirror · ${html(definition.title)}${definition.via ? ` · via <a href="${html(definition.via.url)}">${html(definition.via.name)}</a>` : ''}</div>
       <h2>${html(snapshot.profile.name || ownerName)}</h2><p>${html(definition.description)}</p>
       <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">${definition.via ? `Open on ${html(definition.via.name)}` : 'View original'} ↗</a>` : ''}
-      <a href="/api/activities.json?source=${html(definition.source)}">JSON</a></div></div>
+      <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : 'Stored manually'}</div>
     </section>${cards}${timeSpent ? timeSection(timeSpent) : ''}
     <section><div class="platform-section-heading"><h2>Overview</h2><span>${snapshot.entries.length} synced entries</span></div>

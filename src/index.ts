@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
 import { Repository } from './data/database.js';
-import { selectHomepageActivities } from './data/activity.js';
+import { activityFromEntry, selectHomepageActivities } from './data/activity.js';
 import { nextIntervalAt } from './data/schedule.js';
 import type { SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
@@ -27,6 +27,7 @@ import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } fro
 import { buildSimklCard, buildSimklMoviesCard, buildSimklShowsCard } from './output/simkl.js';
 import { buildGoodreadsCard } from './output/goodreads.js';
 import { buildYoutubeChannelsCard, buildYoutubeOverviewCard, buildYoutubeTopicsCard } from './output/youtube.js';
+import { buildHealthCard } from './output/health.js';
 
 // Registration point: a new source module goes in `src/sources/`, returns a
 // `SourceSnapshot`, and gets one entry here. A new output module goes in
@@ -66,6 +67,7 @@ const cards: Record<string, CardDefinition> = {
   youtube: defineCard('youtube', buildYoutubeOverviewCard),
   'youtube-channels': defineCard('youtube', buildYoutubeChannelsCard),
   'youtube-topics': defineCard('youtube', buildYoutubeTopicsCard),
+  health: defineCard('health', buildHealthCard),
 };
 
 const repository = new Repository(config.databasePath);
@@ -87,6 +89,9 @@ async function renderCards(name: string, data: SourceSnapshot<unknown>): Promise
 for (const saved of repository.loadSnapshots()) {
   restoreCache(`data:${saved.snapshot.source}`, saved.snapshot, Date.parse(saved.fetchedAt), saved.error ?? undefined);
   await renderCards(saved.snapshot.source, saved.snapshot);
+}
+if (config.healthConnect.token) {
+  await renderCards('health', repository.healthConnectSnapshot(config.ownerName));
 }
 
 async function refreshSource(name: string, isRetry = false): Promise<void> {
@@ -113,6 +118,9 @@ const activeSources = Object.keys(fetchers).filter((n) => config.sourceEnabled(n
 
 async function refreshAll(): Promise<void> {
   await Promise.allSettled(activeSources.map((n) => refreshSource(n)));
+  if (config.healthConnect.token) {
+    await renderCards('health', repository.healthConnectSnapshot(config.ownerName));
+  }
 }
 
 const app = new Hono();
@@ -153,9 +161,15 @@ const allSections: PlatformDefinition[] = [
     accent: '#ff453a', url: `${config.urtube.baseUrl}/${config.urtube.handle}`, cards: ['youtube', 'youtube-channels', 'youtube-topics'],
     logo: '/logos/urtube.svg', via: { name: 'urtube', url: config.urtube.baseUrl },
   },
+  {
+    source: 'health', title: 'Health Connect', description: 'Daily movement, workouts, sleep, heart rate and body measurements from Android and Garmin.',
+    accent: '#4ade80', cards: ['health'], jsonUrl: '/api/health.json',
+  },
 ];
 
-const sections = allSections.filter((s) => config.sourceEnabled(s.source));
+const sections = allSections.filter((s) =>
+  config.sourceEnabled(s.source) && (s.source !== 'health' || Boolean(config.healthConnect.token))
+);
 const manualPlatform: PlatformDefinition = {
   source: 'events', title: 'Manual events', description: 'Concerts, performances and real-world activities recorded by hand.',
   accent: '#c39bff',
@@ -193,12 +207,20 @@ function lastUpdatedLabel(): string | null {
   const timestamps = activeSources
     .map((name) => getCache(`data:${name}`)?.fetchedAt)
     .filter((t): t is number => typeof t === 'number');
+  const healthSyncedAt = config.healthConnect.token ? repository.healthConnectStatus().lastSyncedAt : null;
+  if (healthSyncedAt) timestamps.push(Date.parse(healthSyncedAt));
   return timestamps.length ? formatGmt8(Math.max(...timestamps)) : null;
 }
 
 app.get('/', (c) => {
   const now = Date.now();
-  const all = repository.listActivities(500);
+  const healthSnapshot = config.healthConnect.token ? repository.healthConnectSnapshot(config.ownerName) : null;
+  const latestHealth = healthSnapshot?.entries.find((entry) => entry.status === 'daily');
+  const healthActivity = latestHealth
+    ? activityFromEntry({ ...latestHealth, visibility: 'public' })
+    : null;
+  const all = [...repository.listActivities(500), ...(healthActivity ? [healthActivity] : [])]
+    .sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
   const eligible = all
     .filter((activity) => {
       if (!activity.occurredAt || !['exact', 'day'].includes(activity.occurredAtPrecision)) return true;
@@ -253,6 +275,14 @@ function manualEventsSnapshot(): SourceSnapshot {
 
 app.get('/platforms', (c) => {
   const connected: PlatformSummary[] = sections.map((definition) => {
+    if (definition.source === 'health') {
+      const status = repository.healthConnectStatus();
+      return {
+        definition,
+        snapshot: repository.healthConnectSnapshot(config.ownerName),
+        fetchedAt: status.lastSyncedAt,
+      };
+    }
     const cached = getCache<SourceSnapshot<unknown>>(`data:${definition.source}`);
     return {
       definition,
@@ -273,6 +303,19 @@ app.get('/platforms/:source', (c) => {
     c.header('Cache-Control', 'no-cache');
     const eventsTime = repository.timeSpent().sources.find((entry) => entry.source === 'events') ?? null;
     return c.html(platformPage(config.ownerName, definition, manualEventsSnapshot(), null, {}, eventsTime));
+  }
+  if (source === 'health') {
+    c.header('Cache-Control', 'no-cache');
+    const status = repository.healthConnectStatus();
+    const timeSpent = repository.timeSpent().sources.find((entry) => entry.source === 'health') ?? null;
+    return c.html(platformPage(
+      config.ownerName,
+      definition,
+      repository.healthConnectSnapshot(config.ownerName),
+      status.lastSyncedAt,
+      { health: version('health') },
+      timeSpent,
+    ));
   }
   const cached = getCache<SourceSnapshot<unknown>>(`data:${source}`);
   if (!cached?.data) return c.text('Platform has not completed its first sync yet', 503);
@@ -297,7 +340,8 @@ app.get('/cards', (c) => {
         )
         .join('\n');
       const shortUrl = externalUrl.replace(/^https:\/\//, '').replace(/\/$/, '');
-      return `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/platforms/${html(s.source)}">${html(s.title)}</a></h2><a class="profile-link" href="${html(externalUrl)}">${html(shortUrl)} ↗</a></div><div class="card-gallery-row">${imgs}</div></section>`;
+      const profileLink = s.url ? `<a class="profile-link" href="${html(externalUrl)}">${html(shortUrl)} ↗</a>` : '';
+      return `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/platforms/${html(s.source)}">${html(s.title)}</a></h2>${profileLink}</div><div class="card-gallery-row">${imgs}</div></section>`;
     })
     .join('\n');
   const updated = lastUpdatedLabel();
@@ -319,6 +363,10 @@ app.get('/status', (c) => {
       json: `/api/${name}.json`,
     };
   });
+  if (config.healthConnect.token) {
+    const status = repository.healthConnectStatus();
+    sources.push({ source: 'health', lastFetched: status.lastSyncedAt, error: null, json: '/api/health.json' });
+  }
   return c.json({
     owner: config.ownerName,
     refresh: {
@@ -414,6 +462,13 @@ app.get('/stats', (c) => {
 
 app.get('/api/time-spent.json', (c) => c.json(repository.timeSpent()));
 
+app.get('/api/health.json', (c) => {
+  if (!config.healthConnect.token) return c.json({ error: 'Health Connect is not configured' }, 404);
+  const status = repository.healthConnectStatus();
+  c.header('Cache-Control', 'no-cache');
+  return c.json({ fetchedAt: status.lastSyncedAt, data: repository.healthConnectSnapshot(config.ownerName) });
+});
+
 app.get('/wrapped', (c) => c.redirect(`/wrapped/${new Date().getUTCFullYear()}`));
 app.get('/wrapped/:year', (c) => {
   try { return c.html(wrappedPage(config.ownerName, repository.wrapped(requestedYear(c.req.param('year'))))); }
@@ -504,6 +559,11 @@ app.get('/healthz', (c) => {
     const ageMs = entry ? now - entry.fetchedAt : null;
     return { source: name, fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: entry?.error ?? null };
   });
+  if (config.healthConnect.token && config.sourceEnabled('health')) {
+    const lastSyncedAt = repository.healthConnectStatus().lastSyncedAt;
+    const ageMs = lastSyncedAt ? now - Date.parse(lastSyncedAt) : null;
+    sources.push({ source: 'health', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+  }
   const freshCount = sources.filter((source) => source.fresh).length;
   const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';
   return c.json({ status, maxSourceAgeHours: config.maxSourceAgeHours, sources }, status === 'unhealthy' ? 503 : 200);

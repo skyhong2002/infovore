@@ -11,8 +11,9 @@ Google account credentials.
 The app requests read-only access to exercise sessions, steps, distance, total
 calories, heart rate, sleep, weight, and body fat. Exercise routes are not
 requested. The ingest token is encrypted with Android Keystore, Android backup
-is disabled, and the server stores Health Connect records outside the public
-activity, feed, and MCP projections.
+is disabled, and the server keeps raw Health Connect records outside the public
+activity, feed, and MCP projections. Infovore's Health platform page uses only
+safe aggregates and recent workout summaries.
 
 ## Setup
 

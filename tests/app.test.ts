@@ -17,15 +17,40 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
     syncId: 'app-health-sync-0001',
     deviceId: 'app-health-device-01',
     observedAt: '2026-09-05T01:00:00.000Z',
-    records: [{
-      id: 'app-health-record-1',
-      dataType: 'heart_rate',
-      dataOrigin: 'com.garmin.android.apps.connectmobile',
-      startTime: '2026-09-05T00:00:00.000Z',
-      endTime: '2026-09-05T00:05:00.000Z',
-      lastModifiedTime: '2026-09-05T00:06:00.000Z',
-      payload: { samples: [{ time: '2026-09-05T00:01:00.000Z', beatsPerMinute: 72 }] },
-    }],
+    records: [
+      {
+        id: 'app-health-record-1', dataType: 'heart_rate',
+        dataOrigin: 'com.garmin.android.apps.connectmobile',
+        startTime: '2026-09-05T00:00:00.000Z', endTime: '2026-09-05T00:05:00.000Z',
+        lastModifiedTime: '2026-09-05T00:06:00.000Z',
+        payload: { samples: [{ time: '2026-09-05T00:01:00.000Z', beatsPerMinute: 72 }] },
+      },
+      {
+        id: 'app-health-steps-1', dataType: 'steps',
+        dataOrigin: 'com.garmin.android.apps.connectmobile',
+        startTime: '2026-09-05T00:00:00.000Z', endTime: '2026-09-05T01:00:00.000Z',
+        lastModifiedTime: '2026-09-05T01:01:00.000Z', payload: { count: 4321 },
+      },
+      {
+        id: 'app-health-workout-1', dataType: 'exercise_session',
+        dataOrigin: 'com.garmin.android.apps.connectmobile',
+        startTime: '2026-09-05T00:10:00.000Z', endTime: '2026-09-05T00:40:00.000Z',
+        lastModifiedTime: '2026-09-05T00:41:00.000Z',
+        payload: { exerciseType: 79, title: null, notes: null, segments: [] },
+      },
+      {
+        id: 'app-health-sleep-1', dataType: 'sleep_session',
+        dataOrigin: 'com.garmin.android.apps.connectmobile',
+        startTime: '2026-09-04T16:00:00.000Z', endTime: '2026-09-05T00:00:00.000Z',
+        lastModifiedTime: '2026-09-05T00:01:00.000Z', payload: { title: null, notes: null, stages: [] },
+      },
+      {
+        id: 'app-health-weight-1', dataType: 'weight',
+        dataOrigin: 'com.garmin.android.apps.connectmobile',
+        startTime: '2026-09-05T00:00:00.000Z', endTime: '2026-09-05T00:00:00.000Z',
+        lastModifiedTime: '2026-09-05T00:01:00.000Z', payload: { kilograms: 70.2 },
+      },
+    ],
     deletedRecordIds: [],
   };
   const unauthorized = await ingestApp.request('/api/ingest/health-connect', {
@@ -40,7 +65,7 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
     method: 'POST', headers, body: JSON.stringify(payload),
   });
   assert.equal(accepted.status, 201);
-  assert.equal((await accepted.json() as { inserted: number }).inserted, 1);
+  assert.equal((await accepted.json() as { inserted: number }).inserted, 5);
   const repeated = await ingestApp.request('/api/ingest/health-connect', {
     method: 'POST', headers, body: JSON.stringify(payload),
   });
@@ -49,6 +74,36 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   const status = await ingestApp.request('/api/ingest/health-connect/status', { headers });
   assert.equal(status.status, 200);
   assert.equal((await status.json() as { recordsByType: Record<string, number> }).recordsByType.heart_rate, 1);
+
+  const platformIndex = await (await app.request('/platforms')).text();
+  assert.match(platformIndex, /href="\/platforms\/health"/);
+  assert.match(platformIndex, /Health Connect/);
+  const healthPage = await app.request('/platforms/health');
+  assert.equal(healthPage.status, 200);
+  const healthHtml = await healthPage.text();
+  assert.match(healthHtml, /4,321 steps/);
+  assert.match(healthHtml, /Walking/);
+  assert.match(healthHtml, /30 min/);
+  assert.match(healthHtml, /70\.2 kg/);
+  assert.match(healthHtml, /72 bpm \(72–72\)/);
+  assert.match(healthHtml, /Raw heart-rate samples/);
+  assert.doesNotMatch(healthHtml, /app-health-record-1|com\.garmin/);
+  const healthJson = await (await app.request('/api/health.json')).json() as {
+    data: { stats: { totalSteps: number }; extra: { daily: Array<{ heartRateAverage: number }> } };
+  };
+  assert.equal(healthJson.data.stats.totalSteps, 4321);
+  assert.equal(healthJson.data.extra.daily[0].heartRateAverage, 72);
+  assert.doesNotMatch(JSON.stringify(healthJson), /app-health-record-1|app-health-workout-1|com\.garmin|beatsPerMinute/);
+  const healthCard = await app.request('/card/health.svg');
+  assert.equal(healthCard.status, 200);
+  const healthCardWebp = await app.request('/card/health.webp?scale=1');
+  assert.equal(healthCardWebp.status, 200);
+  assert.equal(healthCardWebp.headers.get('content-type'), 'image/webp');
+  const homeHtml = await (await app.request('/')).text();
+  assert.match(homeHtml, /Health/);
+  assert.match(homeHtml, /4,321 steps/);
+  const publicStatus = await (await app.request('/status')).text();
+  assert.match(publicStatus, /"source":"health"/);
 
   const publicBodies = [
     await (await app.request('/api/activities.json')).text(),
@@ -120,7 +175,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(homeHtml, /Homepage Anime/);
   assert.match(homeHtml, /Kitsu/);
   assert.match(homeHtml, /href="\/platforms\/kitsu"/);
-  assert.match(homeHtml, /Personal media dashboard/);
+  assert.match(homeHtml, /Personal lifelog dashboard/);
   assert.match(homeHtml, /Latest from your platforms/);
   assert.match(homeHtml, /Time by platform/);
   assert.match(homeHtml, /Active days/);
@@ -577,10 +632,13 @@ test('MCP Streamable HTTP exposes the managed lifelog tools', async () => {
   assert.equal(initialized.result.serverInfo.name, 'infovore');
   const listed = await call({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   assert.deepEqual(listed.result.tools.map((tool: { name: string }) => tool.name), [
-    'get_recent_activities', 'search_lifelog', 'get_current_media', 'get_upcoming_events', 'get_annual_summary',
+    'get_recent_activities', 'search_lifelog', 'get_current_media', 'get_upcoming_events', 'get_annual_summary', 'get_health_summary',
   ]);
   const summary = await call({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_annual_summary', arguments: { year: 2099 } } });
   assert.equal(summary.result.structuredContent.totalActivities, 1);
+  const health = await call({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_health_summary', arguments: {} } });
+  assert.equal(health.result.structuredContent.source, 'health');
+  assert.doesNotMatch(JSON.stringify(health.result.structuredContent), /app-health-record-1|com\.garmin|beatsPerMinute/);
   const badHost = await app.request('http://evil.test/mcp', { method: 'POST', headers: { host: 'evil.test' } });
   assert.equal(badHost.status, 421);
 });

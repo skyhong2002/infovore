@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { activityFromEntry } from './activity.js';
 import { taipeiDay, taipeiWindowStarts } from './time.js';
@@ -25,8 +26,10 @@ import { extractYoutubeKeywords } from '../youtube/keywords.js';
 import { progressSeconds } from '../youtube/progress.js';
 import type {
   HealthConnectBatchInput,
+  HealthConnectSnapshot,
   HealthConnectIngestResult,
   HealthConnectStatus,
+  HealthDailySummary,
 } from '../health/types.js';
 
 export interface SyncRun {
@@ -146,6 +149,25 @@ const YOUTUBE_ESTIMATED_EVENTS_CTE = `
 // measured durations.
 const EVENT_DEFAULT_SECONDS = 2 * 3600; // attended event with no scheduled end time
 const SECONDS_PER_PAGE = 120;           // ~30 pages/hour reading pace
+
+const EXERCISE_NAMES: Record<number, string> = {
+  0: 'Workout', 2: 'Badminton', 4: 'Baseball', 5: 'Basketball', 8: 'Cycling',
+  9: 'Stationary cycling', 10: 'Boot camp', 11: 'Boxing', 13: 'Calisthenics',
+  14: 'Cricket', 16: 'Dancing', 25: 'Elliptical', 26: 'Exercise class',
+  27: 'Fencing', 28: 'American football', 29: 'Australian football',
+  31: 'Disc sports', 32: 'Golf', 33: 'Guided breathing', 34: 'Gymnastics',
+  35: 'Handball', 36: 'HIIT', 37: 'Hiking', 38: 'Ice hockey',
+  39: 'Ice skating', 44: 'Martial arts', 46: 'Paddling', 47: 'Paragliding',
+  48: 'Pilates', 50: 'Racquetball', 51: 'Rock climbing', 52: 'Roller hockey',
+  53: 'Rowing', 54: 'Rowing machine', 55: 'Rugby', 56: 'Running',
+  57: 'Treadmill running', 58: 'Sailing', 59: 'Scuba diving', 60: 'Skating',
+  61: 'Skiing', 62: 'Snowboarding', 63: 'Snowshoeing', 64: 'Soccer',
+  65: 'Softball', 66: 'Squash', 68: 'Stair climbing', 69: 'Stair machine',
+  70: 'Strength training', 71: 'Stretching', 72: 'Surfing',
+  73: 'Open-water swimming', 74: 'Pool swimming', 75: 'Table tennis',
+  76: 'Tennis', 78: 'Volleyball', 79: 'Walking', 80: 'Water polo',
+  81: 'Weightlifting', 82: 'Wheelchair exercise', 83: 'Yoga',
+};
 
 // Per-day Backloggd playtime logs carried in the snapshot's extra. Kept
 // structural (not imported from sources/) so the data layer stays below the
@@ -1838,6 +1860,16 @@ export class Repository {
     `, now.toISOString());
     if (events.allTime > 0) sources.push({ source: 'events', method: 'estimated', windows: events });
 
+    // Health Connect exercise sessions have exact start/end instants, so the
+    // duration is measured directly while raw health records stay private.
+    const health = activityWindows(`
+      SELECT start_at occurred_at,
+        MAX(0, (julianday(end_at)-julianday(start_at)) * 86400.0) seconds
+      FROM health_connect_records
+      WHERE data_type='exercise_session' AND end_at>=start_at
+    `);
+    if (health.allTime > 0) sources.push({ source: 'health', method: 'measured', windows: health });
+
     // Books: pages × reading pace, attributed to the day the book was
     // finished. Books without a page count in the shelf RSS are skipped.
     const goodreads = activityWindows(`
@@ -1986,6 +2018,130 @@ export class Repository {
       lastSyncedAt: latest?.received_at ?? null,
       lastDeviceId: latest?.device_id ?? null,
       recordsByType: Object.fromEntries(typeRows.map((row) => [row.data_type, Number(row.count)])),
+    };
+  }
+
+  healthConnectSnapshot(ownerName: string, now = new Date()): HealthConnectSnapshot {
+    const status = this.healthConnectStatus();
+    const cutoff = new Date(taipeiWindowStarts(now).day.getTime() - 29 * 86_400_000).toISOString();
+    const totals = this.db.prepare(`
+      SELECT
+        COUNT(DISTINCT date(start_at, '+8 hours')) tracked_days,
+        COUNT(DISTINCT CASE WHEN data_type='steps' THEN date(start_at, '+8 hours') END) step_days,
+        COUNT(CASE WHEN data_type='exercise_session' THEN 1 END) workouts,
+        COALESCE(SUM(CASE WHEN data_type='steps' THEN json_extract(payload_json, '$.count') ELSE 0 END), 0) steps,
+        COALESCE(SUM(CASE WHEN data_type='distance' THEN json_extract(payload_json, '$.meters') ELSE 0 END), 0) meters
+      FROM health_connect_records
+    `).get() as Record<string, number>;
+    const dailyRows = this.db.prepare(`
+      SELECT date(start_at, '+8 hours') day,
+        COALESCE(SUM(CASE WHEN data_type='steps' THEN json_extract(payload_json, '$.count') ELSE 0 END), 0) steps,
+        COALESCE(SUM(CASE WHEN data_type='distance' THEN json_extract(payload_json, '$.meters') ELSE 0 END), 0) meters,
+        COALESCE(SUM(CASE WHEN data_type='total_calories_burned' THEN json_extract(payload_json, '$.kilocalories') ELSE 0 END), 0) kilocalories,
+        COALESCE(SUM(CASE WHEN data_type='exercise_session' THEN MAX(0, (julianday(end_at)-julianday(start_at))*86400.0) ELSE 0 END), 0) exercise_seconds,
+        COALESCE(SUM(CASE WHEN data_type='sleep_session' THEN MAX(0, (julianday(end_at)-julianday(start_at))*86400.0) ELSE 0 END), 0) sleep_seconds
+      FROM health_connect_records
+      WHERE start_at>=?
+      GROUP BY day ORDER BY day DESC LIMIT 30
+    `).all(cutoff) as Array<Record<string, string | number>>;
+    const heartRows = this.db.prepare(`
+      SELECT date(COALESCE(json_extract(sample.value, '$.time'), records.start_at), '+8 hours') day,
+        ROUND(AVG(json_extract(sample.value, '$.beatsPerMinute'))) average_bpm,
+        MIN(json_extract(sample.value, '$.beatsPerMinute')) minimum_bpm,
+        MAX(json_extract(sample.value, '$.beatsPerMinute')) maximum_bpm
+      FROM health_connect_records records, json_each(records.payload_json, '$.samples') sample
+      WHERE records.data_type='heart_rate' AND records.start_at>=?
+      GROUP BY day
+    `).all(cutoff) as Array<Record<string, string | number>>;
+    const heartByDay = new Map(heartRows.map((row) => [String(row.day), row]));
+    const daily: HealthDailySummary[] = dailyRows.map((row) => {
+      const heart = heartByDay.get(String(row.day));
+      return {
+        day: String(row.day),
+        steps: Math.round(Number(row.steps)),
+        distanceMeters: Math.round(Number(row.meters)),
+        kilocalories: Math.round(Number(row.kilocalories)),
+        exerciseSeconds: Math.round(Number(row.exercise_seconds)),
+        sleepSeconds: Math.round(Number(row.sleep_seconds)),
+        heartRateAverage: heart ? Math.round(Number(heart.average_bpm)) : null,
+        heartRateMinimum: heart ? Math.round(Number(heart.minimum_bpm)) : null,
+        heartRateMaximum: heart ? Math.round(Number(heart.maximum_bpm)) : null,
+      };
+    });
+    const latestMeasurement = (dataType: 'weight' | 'body_fat', path: string) => this.db.prepare(`
+      SELECT start_at, json_extract(payload_json, ?) value
+      FROM health_connect_records WHERE data_type=?
+      ORDER BY start_at DESC LIMIT 1
+    `).get(path, dataType) as { start_at: string; value: number } | undefined;
+    const weight = latestMeasurement('weight', '$.kilograms');
+    const bodyFat = latestMeasurement('body_fat', '$.percentage');
+    const exerciseRows = this.db.prepare(`
+      SELECT record_id, start_at, end_at, payload_json
+      FROM health_connect_records WHERE data_type='exercise_session'
+      ORDER BY start_at DESC LIMIT 20
+    `).all() as Array<{ record_id: string; start_at: string; end_at: string; payload_json: string }>;
+    const exerciseEntries = exerciseRows.map((row) => {
+      const payload = JSON.parse(row.payload_json) as { exerciseType?: number; title?: string | null };
+      const exerciseType = Number(payload.exerciseType ?? 0);
+      const durationMinutes = Math.max(0, Math.round((Date.parse(row.end_at) - Date.parse(row.start_at)) / 60_000));
+      return {
+        sourceItemId: createHash('sha256').update(`health-exercise\u001f${row.record_id}`).digest('hex').slice(0, 24),
+        visibility: 'summary' as const,
+        source: 'health',
+        kind: 'fitness' as const,
+        title: payload.title || EXERCISE_NAMES[exerciseType] || `Exercise type ${exerciseType}`,
+        image: '',
+        status: 'workout',
+        activityAt: row.start_at,
+        rating: null,
+        extra: { durationMinutes, exerciseType },
+      };
+    });
+    const dailyEntries = daily.map((day) => ({
+      sourceItemId: `day:${day.day}`,
+      visibility: 'summary' as const,
+      source: 'health',
+      kind: 'fitness' as const,
+      title: day.steps ? `${day.steps.toLocaleString('en')} steps` : 'Daily health summary',
+      image: '',
+      status: 'daily',
+      activityAt: `${day.day}T00:00:00+08:00`,
+      rating: null,
+      extra: {
+        steps: day.steps,
+        distanceKm: Math.round(day.distanceMeters / 100) / 10,
+        kilocalories: day.kilocalories,
+        exerciseMinutes: Math.round(day.exerciseSeconds / 60),
+        sleepHours: Math.round(day.sleepSeconds / 360) / 10,
+        ...(day.heartRateAverage === null ? {} : { heartRateAverage: day.heartRateAverage }),
+      },
+    }));
+    const entries = [...dailyEntries, ...exerciseEntries]
+      .sort((a, b) => b.activityAt.localeCompare(a.activityAt));
+    const totalSteps = Math.round(Number(totals.steps));
+    const stepDays = Number(totals.step_days);
+    return {
+      source: 'health',
+      profile: { id: 'health-connect', name: ownerName, avatar: '', url: '' },
+      stats: {
+        records: status.totalStored,
+        trackedDays: Number(totals.tracked_days),
+        workouts: Number(totals.workouts),
+        totalSteps,
+        averageDailySteps: stepDays ? Math.round(totalSteps / stepDays) : 0,
+        totalDistanceKm: Math.round(Number(totals.meters) / 100) / 10,
+      },
+      entries,
+      extra: {
+        daily,
+        latest: {
+          weightKilograms: weight ? Math.round(Number(weight.value) * 10) / 10 : null,
+          weightAt: weight?.start_at ?? null,
+          bodyFatPercentage: bodyFat ? Math.round(Number(bodyFat.value) * 10) / 10 : null,
+          bodyFatAt: bodyFat?.start_at ?? null,
+        },
+        coverage: status.recordsByType,
+      },
     };
   }
 

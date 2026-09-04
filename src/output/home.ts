@@ -115,6 +115,11 @@ function activityMeta(activity: Activity): string {
   if (activity.extra.platform) add(activity.extra.platform);
   if (activity.extra.playtime) add(activity.extra.playtime);
   if (activity.extra.venue) add(activity.extra.venue);
+  if (activity.extra.distanceKm) add(`${activity.extra.distanceKm} km`);
+  if (activity.extra.kilocalories) add(`${activity.extra.kilocalories} kcal`);
+  if (activity.extra.exerciseMinutes) add(`${activity.extra.exerciseMinutes} min active`);
+  if (activity.extra.sleepHours) add(`${activity.extra.sleepHours} h sleep`);
+  if (activity.extra.heartRateAverage) add(`${activity.extra.heartRateAverage} bpm avg`);
   if (activity.extra.year) add(activity.extra.year);
   if (activity.rating) details.push(`★ ${html(activity.rating.value)}/${html(activity.rating.scale)}`);
   return details.join(' · ');
@@ -238,7 +243,7 @@ export function homePage(data: HomepageData): string {
   const updated = data.lastUpdated ? `Updated ${data.lastUpdated}` : 'Waiting for the first sync';
   const body = `<div class="home-page">
     <section class="home-profile" aria-labelledby="home-title">
-      <div class="home-profile-main">${profileAvatar(data)}<div><span class="home-kicker">Personal media dashboard</span><h1 id="home-title">${html(data.ownerName)}</h1><p class="home-handle">Watched, read, played, heard, attended</p><div class="home-profile-links"><a href="/platforms">Connected platforms</a><a href="/feed.xml">RSS feed</a><a href="/api/activities.json">JSON API</a></div></div></div>
+      <div class="home-profile-main">${profileAvatar(data)}<div><span class="home-kicker">Personal lifelog dashboard</span><h1 id="home-title">${html(data.ownerName)}</h1><p class="home-handle">Watched, read, played, heard, attended, moved</p><div class="home-profile-links"><a href="/platforms">Connected platforms</a><a href="/feed.xml">RSS feed</a><a href="/api/activities.json">JSON API</a></div></div></div>
       <div class="home-profile-status"><span class="home-status-line"><span class="home-status-dot" aria-hidden="true"></span>Live profile</span><strong>${html(updated)}</strong><span>${html(data.connectedSources)} connected sources</span></div>
     </section>
     <nav class="home-view-nav" aria-label="Dashboard views"><a href="/" aria-current="page">Overview</a><a href="/stats">Time</a><a href="/now">Now</a><a href="/profile">Archive</a><a href="/platforms">Platforms</a></nav>

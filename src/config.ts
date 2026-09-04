@@ -4,7 +4,7 @@ const sources = (process.env.SOURCES ?? '')
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
-const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'goodreads', 'youtube'] as const;
+const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'goodreads', 'youtube', 'health'] as const;
 const port = Number(process.env.PORT ?? 3000);
 const maxSourceAgeHours = Number(process.env.MAX_SOURCE_AGE_HOURS ?? 36);
 const refreshIntervalMinutes = Number(process.env.REFRESH_INTERVAL_MINUTES ?? 60);
