@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Repository } from '../src/data/database.js';
 import type { HealthConnectBatchInput } from '../src/health/types.js';
+import { buildHealthCard } from '../src/output/health.js';
 
 const NOW = new Date('2026-09-05T10:00:00.000Z');
 
@@ -23,7 +24,7 @@ function record(
   };
 }
 
-test('Health Connect builds a safe, complete platform projection and measured exercise time', () => {
+test('Health Connect builds a safe, complete platform projection and measured exercise time', async () => {
   const repository = new Repository(':memory:');
   const batch: HealthConnectBatchInput = {
     syncId: 'health-projection-sync-0001',
@@ -68,6 +69,9 @@ test('Health Connect builds a safe, complete platform projection and measured ex
   assert.equal(workout?.title, 'Walking');
   assert.equal(workout?.extra.durationMinutes, 30);
   assert.doesNotMatch(JSON.stringify(snapshot), /raw-workout|com\.garmin|beatsPerMinute/);
+  const card = await buildHealthCard(snapshot);
+  assert.match(card, /^<svg width="520"/);
+  assert.match(card, /#4ade80/);
 
   const healthTime = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'health');
   assert.equal(healthTime?.method, 'measured');

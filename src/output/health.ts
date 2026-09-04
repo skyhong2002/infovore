@@ -30,7 +30,7 @@ export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>):
     'div',
     { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', width: 54, height: 112 } },
     h('span', { style: { color: C.text, fontSize: 9, marginBottom: 4 } }, amount(day.steps)),
-    h('div', { style: { backgroundColor: C.accent, borderRadius: 4, width: 28, height: Math.max(4, Math.round(day.steps / maxSteps * 70)) } }),
+    h('div', { style: { backgroundColor: C.accent, borderRadius: 4, display: 'flex', width: 28, height: Math.max(4, Math.round(day.steps / maxSteps * 70)) } }),
     h('span', { style: { color: C.dim, fontSize: 9, marginTop: 5 } }, day.day.slice(5)),
   ));
   const node = h(
