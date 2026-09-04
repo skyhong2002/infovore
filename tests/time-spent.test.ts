@@ -35,7 +35,7 @@ test('Taipei calendar helpers anchor windows to UTC+8', () => {
 test('migration creates the time ledger tables', () => {
   const repository = new Repository(':memory:');
   const raw = (repository as any).db;
-  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 8);
+  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 9);
   const tables = raw.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('time_ledger', 'time_ledger_state')"
   ).all() as Array<{ name: string }>;

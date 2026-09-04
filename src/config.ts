@@ -9,6 +9,7 @@ const port = Number(process.env.PORT ?? 3000);
 const maxSourceAgeHours = Number(process.env.MAX_SOURCE_AGE_HOURS ?? 36);
 const refreshIntervalMinutes = Number(process.env.REFRESH_INTERVAL_MINUTES ?? 60);
 const ingestToken = process.env.INGEST_TOKEN ?? '';
+const healthConnectToken = process.env.HEALTH_CONNECT_TOKEN ?? ingestToken;
 const publicBaseUrl = (process.env.PUBLIC_BASE_URL ?? (process.env.DOMAIN ? `https://${process.env.DOMAIN}` : 'http://localhost:3000')).replace(/\/$/, '');
 const youtubePrivateDataKey = process.env.YOUTUBE_PRIVATE_DATA_KEY ?? '';
 const youtubeCaptureToken = process.env.YOUTUBE_CAPTURE_TOKEN ?? '';
@@ -25,6 +26,9 @@ if (!Number.isInteger(refreshIntervalMinutes) || refreshIntervalMinutes < 5 || r
   throw new Error('REFRESH_INTERVAL_MINUTES must be an integer between 5 and 1440');
 }
 if (ingestToken && ingestToken.length < 32) throw new Error('INGEST_TOKEN must contain at least 32 characters');
+if (healthConnectToken && healthConnectToken.length < 32) {
+  throw new Error('HEALTH_CONNECT_TOKEN must contain at least 32 characters');
+}
 if (youtubePrivateDataKey && youtubePrivateDataKey.length < 32) {
   throw new Error('YOUTUBE_PRIVATE_DATA_KEY must contain at least 32 characters');
 }
@@ -40,6 +44,7 @@ export const config = {
   databasePath: process.env.DATABASE_PATH ?? './data/infovore.sqlite',
   publicBaseUrl,
   ingestToken,
+  healthConnect: { token: healthConnectToken },
   maxSourceAgeHours,
   refreshIntervalMinutes,
   ownerName: process.env.OWNER_NAME ?? 'Sky Hong',

@@ -41,7 +41,7 @@ test('snapshots and activities survive reopen and duplicate syncs upsert', () =>
   }
 });
 
-test('version 1 databases migrate through schema version 8 without data loss', () => {
+test('version 1 databases migrate through schema version 9 without data loss', () => {
   const dir = mkdtempSync(join(tmpdir(), 'infovore-v1-'));
   const path = join(dir, 'data.sqlite');
   try {
@@ -116,7 +116,7 @@ test('version 1 databases migrate through schema version 8 without data loss', (
     const activitiesSql = migrated.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
     ).get() as { sql: string };
-    assert.equal(version.user_version, 8);
+    assert.equal(version.user_version, 9);
     assert.ok(watchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(searchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(channelColumns.some((column) => column.name === 'thumbnail_url'));
@@ -131,10 +131,62 @@ test('version 1 databases migrate through schema version 8 without data loss', (
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='time_ledger'"
     ).get() as { sql: string } | undefined;
     assert.ok(ledgerSql, 'time_ledger table exists after migration');
+    const healthSql = migrated.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='health_connect_records'"
+    ).get() as { sql: string } | undefined;
+    assert.ok(healthSql, 'health_connect_records table exists after migration');
     migrated.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('Health Connect batches upsert records, apply deletions, and are idempotent', () => {
+  const repository = new Repository(':memory:');
+  const record = {
+    id: 'health-record-1',
+    dataType: 'steps' as const,
+    dataOrigin: 'com.garmin.android.apps.connectmobile',
+    startTime: '2026-09-04T00:00:00.000Z',
+    endTime: '2026-09-04T01:00:00.000Z',
+    lastModifiedTime: '2026-09-04T01:01:00.000Z',
+    payload: { count: 1234 },
+  };
+  const first = {
+    syncId: 'health-sync-0001',
+    deviceId: 'health-device-01',
+    observedAt: '2026-09-04T02:00:00.000Z',
+    records: [record],
+    deletedRecordIds: [],
+  };
+  assert.deepEqual(repository.ingestHealthConnect(first, '2026-09-04T02:00:01.000Z'), {
+    inserted: 1, updated: 0, deleted: 0, totalStored: 1,
+  });
+  assert.deepEqual(repository.ingestHealthConnect(first, '2026-09-04T02:00:02.000Z'), {
+    inserted: 0, updated: 0, deleted: 0, totalStored: 1,
+  });
+  assert.deepEqual(repository.ingestHealthConnect({
+    ...first,
+    syncId: 'health-sync-0002',
+    records: [{ ...record, payload: { count: 1500 } }],
+  }, '2026-09-04T03:00:00.000Z'), {
+    inserted: 0, updated: 1, deleted: 0, totalStored: 1,
+  });
+  assert.deepEqual(repository.healthConnectStatus(), {
+    totalStored: 1,
+    lastSyncedAt: '2026-09-04T03:00:00.000Z',
+    lastDeviceId: 'health-device-01',
+    recordsByType: { steps: 1 },
+  });
+  assert.deepEqual(repository.ingestHealthConnect({
+    ...first,
+    syncId: 'health-sync-0003',
+    records: [],
+    deletedRecordIds: [record.id],
+  }, '2026-09-04T04:00:00.000Z'), {
+    inserted: 0, updated: 0, deleted: 1, totalStored: 0,
+  });
+  repository.close();
 });
 
 test('failed sync records error while retaining last-good snapshot', () => {

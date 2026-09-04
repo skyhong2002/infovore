@@ -9,6 +9,7 @@ import { parseYoutubeArchive } from './youtube/takeout.js';
 import { normalizeYoutubeCapture } from './youtube/capture.js';
 import { normalizeYoutubeHistoryBatch } from './youtube/history-sync.js';
 import { normalizeYoutubeProgressBatch } from './youtube/progress.js';
+import { healthConnectBatchSchema } from './health/types.js';
 
 function authorized(auth: string | undefined, expectedToken = config.ingestToken): boolean {
   if (!expectedToken || !auth?.startsWith('Bearer ')) return false;
@@ -44,6 +45,26 @@ export function createIngestApp(repository: Repository): Hono {
       }
       const result = repository.ingestEntries(entries);
       return c.json({ ok: true, ...result, events: entries.map(({ sourceItemId, title, activityAt, status, visibility }) => ({ id: sourceItemId, title, startAt: activityAt, status, visibility })) }, 201);
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  });
+  app.get('/api/ingest/health-connect/status', (c) => {
+    if (!config.healthConnect.token) return c.json({ error: 'Health Connect ingestion is not configured' }, 503);
+    if (!authorized(c.req.header('authorization'), config.healthConnect.token)) return c.json({ error: 'Unauthorized' }, 401);
+    return c.json({ status: 'ready', ...repository.healthConnectStatus() });
+  });
+  app.post('/api/ingest/health-connect', async (c) => {
+    if (!config.healthConnect.token) return c.json({ error: 'Health Connect ingestion is not configured' }, 503);
+    if (!authorized(c.req.header('authorization'), config.healthConnect.token)) return c.json({ error: 'Unauthorized' }, 401);
+    try {
+      const body = await c.req.text();
+      if (Buffer.byteLength(body) > 1024 * 1024) {
+        return c.json({ error: 'Health Connect payload exceeds 1 MiB' }, 413);
+      }
+      const batch = healthConnectBatchSchema.parse(JSON.parse(body));
+      const result = repository.ingestHealthConnect(batch);
+      return c.json({ ok: true, ...result }, result.inserted > 0 ? 201 : 200);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }

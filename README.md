@@ -100,6 +100,8 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /feed.json` / `GET /feed.xml` — JSON and RSS activity feeds
 - `GET /api/wrapped/{year}.json` — machine-readable annual recap
 - `POST /api/ingest/events` — authenticated private-ingest service (JSON)
+- `GET /api/ingest/health-connect/status` — authenticated Android sync status
+- `POST /api/ingest/health-connect` — authenticated private Health Connect batches
 - `POST /api/ingest/youtube/capture` — dedicated-token Chrome viewing capture
 - `GET /api/ingest/youtube/history/status` — private cross-device sync checkpoint
 - `POST /api/ingest/youtube/history` — private Google My Activity event batches
@@ -108,6 +110,14 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
 
 Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
+
+## Android Health Connect sync
+
+The [`android/`](android/) companion app provides automatic read-only sync from
+Android Health Connect, including data Garmin Connect writes there on Android
+14+. Health records remain in dedicated private SQLite tables and are never
+included in the public timeline, feeds, or MCP output. See
+[`android/README.md`](android/README.md) for setup, permissions, and build steps.
 
 ## Run it yourself (Docker)
 

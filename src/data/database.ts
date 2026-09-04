@@ -23,6 +23,11 @@ import type {
 } from '../youtube/types.js';
 import { extractYoutubeKeywords } from '../youtube/keywords.js';
 import { progressSeconds } from '../youtube/progress.js';
+import type {
+  HealthConnectBatchInput,
+  HealthConnectIngestResult,
+  HealthConnectStatus,
+} from '../health/types.js';
 
 export interface SyncRun {
   id: number;
@@ -271,6 +276,8 @@ export class Repository {
     if (afterExtensionImports.user_version < 7) this.migrateTimeLedger();
     const afterTimeLedger = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterTimeLedger.user_version < 8) this.migrateBackloggdDailyLedger();
+    const afterBackloggdDailyLedger = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterBackloggdDailyLedger.user_version < 9) this.migrateHealthConnect();
   }
 
   private migrateYoutube(): void {
@@ -511,6 +518,41 @@ export class Repository {
       DELETE FROM time_ledger WHERE source = 'backloggd';
       DELETE FROM time_ledger_state WHERE source = 'backloggd';
       PRAGMA user_version = 8;
+      COMMIT;
+    `);
+  }
+
+  private migrateHealthConnect(): void {
+    this.db.exec(`
+      BEGIN;
+      CREATE TABLE health_connect_records (
+        record_id TEXT PRIMARY KEY,
+        data_type TEXT NOT NULL,
+        data_origin TEXT NOT NULL,
+        start_at TEXT NOT NULL,
+        end_at TEXT NOT NULL,
+        last_modified_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+      CREATE INDEX health_connect_records_time_idx
+        ON health_connect_records(start_at DESC);
+      CREATE INDEX health_connect_records_type_time_idx
+        ON health_connect_records(data_type, start_at DESC);
+      CREATE TABLE health_connect_syncs (
+        sync_id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        received_at TEXT NOT NULL,
+        records_seen INTEGER NOT NULL,
+        inserted_count INTEGER NOT NULL,
+        updated_count INTEGER NOT NULL,
+        deleted_count INTEGER NOT NULL
+      );
+      CREATE INDEX health_connect_syncs_received_idx
+        ON health_connect_syncs(received_at DESC);
+      PRAGMA user_version = 9;
       COMMIT;
     `);
   }
@@ -1847,6 +1889,103 @@ export class Repository {
       sources,
       total: sum(sources),
       measuredTotal: sum(sources.filter((entry) => entry.method === 'measured')),
+    };
+  }
+
+  ingestHealthConnect(
+    batch: HealthConnectBatchInput,
+    receivedAt = new Date().toISOString(),
+  ): HealthConnectIngestResult {
+    const alreadyProcessed = this.db.prepare(
+      'SELECT 1 FROM health_connect_syncs WHERE sync_id=?'
+    ).get(batch.syncId);
+    if (alreadyProcessed) {
+      return { inserted: 0, updated: 0, deleted: 0, totalStored: this.healthConnectCount() };
+    }
+
+    let inserted = 0;
+    let updated = 0;
+    let deleted = 0;
+    const exists = this.db.prepare('SELECT 1 FROM health_connect_records WHERE record_id=?');
+    const upsert = this.db.prepare(`
+      INSERT INTO health_connect_records (
+        record_id, data_type, data_origin, start_at, end_at, last_modified_at,
+        payload_json, first_seen_at, last_seen_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(record_id) DO UPDATE SET
+        data_type=excluded.data_type,
+        data_origin=excluded.data_origin,
+        start_at=excluded.start_at,
+        end_at=excluded.end_at,
+        last_modified_at=excluded.last_modified_at,
+        payload_json=excluded.payload_json,
+        last_seen_at=excluded.last_seen_at
+    `);
+    const remove = this.db.prepare('DELETE FROM health_connect_records WHERE record_id=?');
+
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const record of batch.records) {
+        const present = Boolean(exists.get(record.id));
+        upsert.run(
+          record.id,
+          record.dataType,
+          record.dataOrigin,
+          record.startTime,
+          record.endTime,
+          record.lastModifiedTime,
+          JSON.stringify(record.payload),
+          receivedAt,
+          receivedAt,
+        );
+        if (present) updated++;
+        else inserted++;
+      }
+      for (const id of new Set(batch.deletedRecordIds)) {
+        if (Number(remove.run(id).changes) > 0) deleted++;
+      }
+      this.db.prepare(`
+        INSERT INTO health_connect_syncs (
+          sync_id, device_id, observed_at, received_at, records_seen,
+          inserted_count, updated_count, deleted_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        batch.syncId,
+        batch.deviceId,
+        batch.observedAt,
+        receivedAt,
+        batch.records.length,
+        inserted,
+        updated,
+        deleted,
+      );
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+    return { inserted, updated, deleted, totalStored: this.healthConnectCount() };
+  }
+
+  private healthConnectCount(): number {
+    const row = this.db.prepare('SELECT COUNT(*) count FROM health_connect_records').get() as { count: number };
+    return Number(row.count);
+  }
+
+  healthConnectStatus(): HealthConnectStatus {
+    const latest = this.db.prepare(`
+      SELECT device_id, received_at FROM health_connect_syncs
+      ORDER BY received_at DESC LIMIT 1
+    `).get() as { device_id: string; received_at: string } | undefined;
+    const typeRows = this.db.prepare(`
+      SELECT data_type, COUNT(*) count FROM health_connect_records
+      GROUP BY data_type ORDER BY data_type
+    `).all() as Array<{ data_type: string; count: number }>;
+    return {
+      totalStored: this.healthConnectCount(),
+      lastSyncedAt: latest?.received_at ?? null,
+      lastDeviceId: latest?.device_id ?? null,
+      recordsByType: Object.fromEntries(typeRows.map((row) => [row.data_type, Number(row.count)])),
     };
   }
 

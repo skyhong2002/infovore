@@ -12,6 +12,52 @@ import type { YoutubeParsedArchive } from '../src/youtube/types.js';
 const ingestApp = createIngestApp(repository);
 const YOUTUBE_SECRET = 'test-private-data-key-with-at-least-32-characters';
 
+test('Health Connect ingestion is authenticated, bounded, private, and idempotent', async () => {
+  const payload = {
+    syncId: 'app-health-sync-0001',
+    deviceId: 'app-health-device-01',
+    observedAt: '2026-09-05T01:00:00.000Z',
+    records: [{
+      id: 'app-health-record-1',
+      dataType: 'heart_rate',
+      dataOrigin: 'com.garmin.android.apps.connectmobile',
+      startTime: '2026-09-05T00:00:00.000Z',
+      endTime: '2026-09-05T00:05:00.000Z',
+      lastModifiedTime: '2026-09-05T00:06:00.000Z',
+      payload: { samples: [{ time: '2026-09-05T00:01:00.000Z', beatsPerMinute: 72 }] },
+    }],
+    deletedRecordIds: [],
+  };
+  const unauthorized = await ingestApp.request('/api/ingest/health-connect', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  assert.equal(unauthorized.status, 401);
+  const headers = {
+    'content-type': 'application/json',
+    authorization: 'Bearer test-token-with-at-least-32-characters',
+  };
+  const accepted = await ingestApp.request('/api/ingest/health-connect', {
+    method: 'POST', headers, body: JSON.stringify(payload),
+  });
+  assert.equal(accepted.status, 201);
+  assert.equal((await accepted.json() as { inserted: number }).inserted, 1);
+  const repeated = await ingestApp.request('/api/ingest/health-connect', {
+    method: 'POST', headers, body: JSON.stringify(payload),
+  });
+  assert.equal(repeated.status, 200);
+  assert.equal((await repeated.json() as { inserted: number }).inserted, 0);
+  const status = await ingestApp.request('/api/ingest/health-connect/status', { headers });
+  assert.equal(status.status, 200);
+  assert.equal((await status.json() as { recordsByType: Record<string, number> }).recordsByType.heart_rate, 1);
+
+  const publicBodies = [
+    await (await app.request('/api/activities.json')).text(),
+    await (await app.request('/feed.json')).text(),
+    await (await app.request('/feed.xml')).text(),
+  ].join('\n');
+  assert.doesNotMatch(publicBodies, /app-health-record-1|beatsPerMinute/);
+});
+
 // A trimmed urtube /u/<handle>/summary.json payload; unknown keys (hourly,
 // progressCoverage) must be tolerated and dropped.
 function urtubeSummary(range: '28d' | 'all') {
