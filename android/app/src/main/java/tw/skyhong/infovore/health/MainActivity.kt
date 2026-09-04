@@ -5,6 +5,7 @@ package tw.skyhong.infovore.health
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -124,22 +125,27 @@ class MainActivity : AppCompatActivity() {
         settings.token = tokenInput.text.toString()
         syncButton.isEnabled = false
         syncStatus.text = "同步中…第一次同步可能需要幾分鐘。"
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         lifecycleScope.launch {
-            val outcome = runCatching {
-                withContext(Dispatchers.IO) {
-                    HealthConnectSync(this@MainActivity).run { progress ->
-                        settings.lastStatus = progress
-                        runOnUiThread { syncStatus.text = progress }
+            try {
+                val outcome = runCatching {
+                    withContext(Dispatchers.IO) {
+                        HealthConnectSync(this@MainActivity).run { progress ->
+                            settings.lastStatus = progress
+                            runOnUiThread { syncStatus.text = progress }
+                        }
                     }
                 }
+                outcome.onSuccess {
+                    settings.lastStatus = "${Instant.now()}：新增 ${it.inserted}、更新 ${it.updated}、刪除 ${it.deleted}"
+                }.onFailure {
+                    settings.lastStatus = "${Instant.now()}：${it.message ?: it.javaClass.simpleName}"
+                }
+                syncStatus.text = settings.lastStatus
+            } finally {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                syncButton.isEnabled = true
             }
-            outcome.onSuccess {
-                settings.lastStatus = "${Instant.now()}：新增 ${it.inserted}、更新 ${it.updated}、刪除 ${it.deleted}"
-            }.onFailure {
-                settings.lastStatus = "${Instant.now()}：${it.message ?: it.javaClass.simpleName}"
-            }
-            syncStatus.text = settings.lastStatus
-            syncButton.isEnabled = true
         }
     }
 

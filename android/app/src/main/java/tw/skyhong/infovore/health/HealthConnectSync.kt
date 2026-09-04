@@ -71,13 +71,13 @@ class HealthConnectSync(private val context: Context) {
                 .filter { it.metadata.dataOrigin.packageName != context.packageName }
             val deletedIds = response.changes.filterIsInstance<DeletionChange>().map { it.recordId }
             for (chunk in records.chunked(50)) {
-                api.upload(chunk, emptyList()).also {
+                upload(chunk, emptyList(), onProgress).also {
                     summary += SyncSummary(inserted = it.inserted, updated = it.updated)
                 }
                 onProgress("上傳增量資料：${records.size} 筆；刪除 ${deletedIds.size} 筆…")
             }
             for (chunk in deletedIds.chunked(250)) {
-                api.upload(emptyList(), chunk).also { summary += SyncSummary(deleted = it.deleted) }
+                upload(emptyList(), chunk, onProgress).also { summary += SyncSummary(deleted = it.deleted) }
             }
             currentToken = response.nextChangesToken
             settings.changesToken = currentToken
@@ -91,7 +91,7 @@ class HealthConnectSync(private val context: Context) {
         label: String,
         start: Instant,
         end: Instant,
-        onProgress: (String) -> Unit,
+        noinline onProgress: (String) -> Unit,
     ): SyncSummary {
         var summary = SyncSummary()
         var processed = 0
@@ -107,7 +107,7 @@ class HealthConnectSync(private val context: Context) {
                 )
             )
             for (chunk in response.records.chunked(50)) {
-                api.upload(chunk, emptyList()).also {
+                upload(chunk, emptyList(), onProgress).also {
                     summary += SyncSummary(inserted = it.inserted, updated = it.updated)
                 }
             }
@@ -116,6 +116,14 @@ class HealthConnectSync(private val context: Context) {
             pageToken = response.pageToken?.takeIf(String::isNotEmpty)
         } while (pageToken != null)
         return summary
+    }
+
+    private fun upload(
+        records: List<Record>,
+        deletedRecordIds: List<String>,
+        onProgress: (String) -> Unit,
+    ) = api.upload(records, deletedRecordIds) { attempt, message ->
+        onProgress("連線中斷，正在進行第 $attempt 次上傳：$message")
     }
 
     data class SyncSummary(
