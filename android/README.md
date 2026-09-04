@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion reads selected records from Android Health Connect and
+This private companion (current version 0.1.1) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -26,7 +26,8 @@ activity, feed, and MCP projections.
 3. In Garmin Connect, enable writing data to Health Connect.
 4. Install the APK, enter the endpoint and token, save, and grant Health Connect
    permissions.
-5. Tap **立即同步** for the first import. WorkManager checks for changes every
+5. Tap **立即同步** for the first import. The app displays progress and uploads
+   each Health Connect page as it is read. WorkManager checks for changes every
    six hours while a network is available.
 
 The initial import reads 30 days unless the optional Health Connect history

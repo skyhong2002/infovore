@@ -126,7 +126,12 @@ class MainActivity : AppCompatActivity() {
         syncStatus.text = "同步中…第一次同步可能需要幾分鐘。"
         lifecycleScope.launch {
             val outcome = runCatching {
-                withContext(Dispatchers.IO) { HealthConnectSync(this@MainActivity).run() }
+                withContext(Dispatchers.IO) {
+                    HealthConnectSync(this@MainActivity).run { progress ->
+                        settings.lastStatus = progress
+                        runOnUiThread { syncStatus.text = progress }
+                    }
+                }
             }
             outcome.onSuccess {
                 settings.lastStatus = "${Instant.now()}：新增 ${it.inserted}、更新 ${it.updated}、刪除 ${it.deleted}"

@@ -10,7 +10,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
         val settings = SecureSettings(applicationContext)
         if (settings.token.length < 32) return Result.success()
         return try {
-            val result = HealthConnectSync(applicationContext).run()
+            val result = HealthConnectSync(applicationContext).run { settings.lastStatus = it }
             settings.lastStatus = "${Instant.now()}：新增 ${result.inserted}、更新 ${result.updated}、刪除 ${result.deleted}"
             Result.success()
         } catch (error: Exception) {
