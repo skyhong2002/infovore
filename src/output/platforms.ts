@@ -283,5 +283,5 @@ export function platformPage(
     </section>${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${cards}${timeSpent ? timeSection(timeSpent) : ''}
     <section><div class="platform-section-heading"><h2>Overview</h2><span>${snapshot.entries.length} synced entries</span></div>
     <div class="platform-stats">${stats}</div></section>${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}`;
-  return shell(`${definition.title} · ${snapshot.profile.name}`, body, 'platforms');
+  return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms');
 }

@@ -100,6 +100,12 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   assert.equal(healthCard.status, 200);
   assert.notEqual(await healthCard.text(), beforeSleepCard, 'card refreshes after ingestion without waiting for the hourly job');
   assert.match(healthHtml, /id="sleep"/);
+  assert.match(healthHtml, /class="health-platform"/);
+  assert.match(healthHtml, /src="\/logos\/healthconnect\.png" alt="Health Connect logo"/);
+  const healthLogo = await app.request('/logos/healthconnect.png');
+  assert.equal(healthLogo.status, 200);
+  assert.equal(healthLogo.headers.get('content-type'), 'image/png');
+  assert.deepEqual([...new Uint8Array(await healthLogo.arrayBuffer()).slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   assert.ok(healthHtml.indexOf('id="sleep"') < healthHtml.indexOf('<h2>Exercise time</h2>'));
   const healthCardWebp = await app.request('/card/health.webp?scale=1');
   assert.equal(healthCardWebp.status, 200);

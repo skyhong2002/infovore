@@ -1,15 +1,15 @@
 import type { HealthConnectExtra } from '../health/types.js';
 import type { SourceSnapshot } from '../data/types.js';
-import { h, renderCard } from './render.js';
+import { h, logo, renderCard } from './render.js';
 
 const C = {
-  bg: '#071611',
-  panel: '#10251d',
-  text: '#f0fff8',
-  dim: '#92ad9f',
-  accent: '#4ade80',
-  blue: '#60a5fa',
-  border: '#214336',
+  bg: '#111418',
+  panel: '#1e232b',
+  text: '#e2e5eb',
+  dim: '#b5becb',
+  accent: '#a8c7fa',
+  blue: '#67d5c3',
+  border: '#343b46',
 };
 
 function amount(value: number): string {
@@ -75,7 +75,7 @@ export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>):
     )
     : h(
       'div',
-      { style: { backgroundColor: '#0b1d16', border: `1px solid ${C.border}`, borderRadius: 10, display: 'flex', flexDirection: 'column', marginTop: 18, padding: '12px 14px' } },
+      { style: { backgroundColor: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, display: 'flex', flexDirection: 'column', marginTop: 18, padding: '12px 14px' } },
       h('div', { style: { alignItems: 'center', display: 'flex' } },
         h('span', { style: { color: C.dim, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' } }, 'Sync coverage'),
         h('span', { style: { color: C.dim, fontSize: 10, marginLeft: 'auto' } }, waiting ? `${waiting} data types not available yet` : 'All data types available'),
@@ -84,11 +84,13 @@ export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>):
     );
   const node = h(
     'div',
-    { style: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '22px 24px', fontFamily: 'Inter' } },
+    { style: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: C.bg, border: `1px solid ${C.border}`, borderRadius: 18, padding: '22px 24px', fontFamily: 'Roboto' } },
     h(
       'div',
       { style: { display: 'flex', alignItems: 'center' } },
-      h('div', { style: { alignItems: 'center', backgroundColor: C.accent, borderRadius: 10, color: C.bg, display: 'flex', fontSize: 22, fontWeight: 700, height: 38, justifyContent: 'center', marginRight: 10, width: 38 } }, '♥'),
+      h('div', { style: { alignItems: 'center', backgroundColor: '#ffffff', borderRadius: 10, display: 'flex', height: 38, justifyContent: 'center', marginRight: 10, width: 38 } },
+        h('img', { src: logo('healthconnect'), alt: 'Health Connect logo', width: 30, height: 30 }),
+      ),
       h('div', { style: { display: 'flex', flexDirection: 'column' } },
         h('span', { style: { color: C.text, fontSize: 19, fontWeight: 700 } }, 'Health Connect'),
         h('span', { style: { color: C.dim, fontSize: 10, marginTop: 2 } }, `${amount(data.stats.records ?? 0)} records · ${amount(data.stats.trackedDays ?? 0)} tracked days`),
@@ -96,12 +98,12 @@ export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>):
       h('span', { style: { color: C.text, fontSize: 13, fontWeight: 700, marginLeft: 'auto' } }, data.profile.name),
     ),
     h('div', { style: { display: 'flex', flexDirection: 'column', marginTop: 18 } },
-      h('span', { style: { color: '#c084fc', fontSize: 12, fontWeight: 700, marginBottom: 8 } }, 'Sleep · session duration'),
+      h('span', { style: { color: C.accent, fontSize: 12, fontWeight: 700, marginBottom: 8 } }, 'Sleep · session duration'),
       latestSleep ? h('div', { style: { display: 'flex', gap: 10 } },
-        metric('Latest sleep', duration(latestSleep.sessionSeconds), '#c084fc'),
-        metric('Wake-up day', latestSleep.day.slice(5), '#c084fc'),
-        metric('Avg / day', duration(averageSleep), '#c084fc'),
-        metric('Sleep records', amount(data.extra.sleep?.totalSessions ?? 0), '#c084fc'),
+        metric('Latest sleep', duration(latestSleep.sessionSeconds)),
+        metric('Wake-up day', latestSleep.day.slice(5)),
+        metric('Avg / day', duration(averageSleep)),
+        metric('Sleep records', amount(data.extra.sleep?.totalSessions ?? 0)),
       ) : h('span', { style: { color: C.dim, fontSize: 12 } }, 'No sleep records received. Use the sleep-only sync in the app.'),
       latestSleep ? h('span', { style: { color: C.dim, fontSize: 10, marginTop: 6 } }, `${latestSleep.day} · average over ${sleepDays.length} recorded days · includes awake time`) : null,
     ),
@@ -109,7 +111,7 @@ export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>):
       metric('Total steps', compact(data.stats.totalSteps ?? 0)),
       metric('Daily average', compact(data.stats.averageDailySteps ?? 0)),
       metric('Workouts', amount(data.stats.workouts ?? 0), C.blue),
-      metric('Active time', duration(data.stats.totalExerciseSeconds ?? 0), '#c084fc'),
+      metric('Active time', duration(data.stats.totalExerciseSeconds ?? 0), C.blue),
     ),
     lower,
   );

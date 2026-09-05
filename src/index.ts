@@ -186,7 +186,7 @@ const allSections: PlatformDefinition[] = [
   },
   {
     source: 'health', title: 'Health Connect', description: 'Daily movement, workouts, sleep, heart rate and body measurements from Android and Garmin.',
-    accent: '#4ade80', cards: ['health'], jsonUrl: '/api/health.json',
+    accent: '#a8c7fa', cards: ['health'], jsonUrl: '/api/health.json', logo: '/logos/healthconnect.png',
   },
 ];
 

@@ -74,7 +74,10 @@ test('repository publishes only selected sleep fields and renders stage detail w
     }
     assert.match(page, /sleep-segment deep/);
     assert.match(page, /sleep-segment rem/);
-    assert.match(page, /<details>/);
+    assert.match(page, /<details class="sleep-row">/);
+    assert.match(page, /<summary class="sleep-row-summary"/);
+    assert.doesNotMatch(page, /<details[^>]*\sopen[\s>]/);
+    assert.doesNotMatch(page, /class="sleep-range"/);
     assert.match(page, /非睡眠評分/);
     assert.match(page, /left:25%;width:25%/); // Midnight–4am on a 20:00–12:00 axis.
   } finally { repository.close(); }

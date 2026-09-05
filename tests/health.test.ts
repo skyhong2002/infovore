@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Repository } from '../src/data/database.js';
 import type { HealthConnectBatchInput } from '../src/health/types.js';
 import { buildHealthCard } from '../src/output/health.js';
+import { logo } from '../src/output/render.js';
 import { platformPage } from '../src/output/platforms.js';
 
 const NOW = new Date('2026-09-05T10:00:00.000Z');
@@ -73,7 +74,8 @@ test('Health Connect builds a safe, complete platform projection and measured ex
   assert.doesNotMatch(JSON.stringify(snapshot), /raw-workout|com\.garmin|beatsPerMinute/);
   const card = await buildHealthCard(snapshot);
   assert.match(card, /^<svg width="520"/);
-  assert.match(card, /#4ade80/);
+  assert.match(card, /#a8c7fa/);
+  assert.ok(card.includes(logo('healthconnect')), 'card embeds the official logo offline');
 
   const healthTime = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'health');
   assert.equal(healthTime?.method, 'measured');
