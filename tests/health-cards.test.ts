@@ -37,10 +37,9 @@ test('sleep cards preserve Taipei overnight timing, naps, actual stages and miss
     const nap = sleepSession('2026-07-02T05:00:00Z', '2026-07-02T06:00:00Z', []);
     data.extra.sleep = { totalSessions: 2, days: [{ day: '2026-07-02', sessionSeconds: 32400, sessions: 2, intervals: [main, nap] }] };
     const latest = description(await buildHealthCard(data));
-    assert.match(latest, /Sleep onset · 00:00 · Final wake · 07:00 · Time asleep · 7h 0m/);
-    assert.match(latest, /Record 23:00/);
-    assert.match(latest, /88%/);
-    assert.match(latest, /Longest of 2 sessions/);
+    assert.match(latest, /23:00–07:00 · 7h 0m/);
+    assert.match(latest, /13:00–14:00 · —/);
+    assert.doesNotMatch(latest, /Efficiency|88%|100%|ALL RECEIVED RECORDS/);
     const rhythm = description(await buildHealthSleepCard(data));
     for (const label of ['8pm', '12am', '4am', '8am', '12pm', '4pm', '23:00–07:00', '13:00–14:00', '07-02']) assert.ok(rhythm.includes(label), label);
     const stages = description(await buildHealthSleepStagesCard(data));
@@ -49,7 +48,7 @@ test('sleep cards preserve Taipei overnight timing, naps, actual stages and miss
     data.extra.sleep.days[0]!.intervals = [nap];
     data.extra.sleep.days[0]!.sessionSeconds = 3600;
     const missing = description(await buildHealthCard(data));
-    assert.match(missing, /Sleep onset · — · Final wake · — · Time asleep · —/);
+    assert.match(missing, /13:00–14:00 · —/);
     assert.doesNotMatch(missing, /100%/);
   } finally { db.close(); }
 });
@@ -70,22 +69,46 @@ test('steps card draws historical recorded days outside the recent window withou
   } finally { db.close(); }
 });
 
-test('overview retains movement totals even without sleep and labels historical averages separately', async () => {
+test('overview shows three recorded days per category, with no efficiency or lifetime totals', async () => {
   const db = new Repository(':memory:');
   try {
     const data = db.healthConnectSnapshot('Sky', now);
-    data.stats = { workouts: 12, totalExerciseSeconds: 7200, totalSteps: 54321 };
-    data.extra.steps = { days: [{ day: '2026-01-02', steps: 1234 }] };
-    const emptySleep = description(await buildHealthCard(data));
-    assert.match(emptySleep, /HEALTH OVERVIEW/);
-    assert.match(emptySleep, /No sleep records/);
-    assert.match(emptySleep, /Workouts · 12 · Total steps · 54.3K/);
-    assert.match(emptySleep, /Total exercise 2h 0m · Total steps 54,321/);
-    assert.match(emptySleep, /Latest steps 1,234 · 2026-01-02/);
-    data.extra.sleep = { totalSessions: 50, days: [{ day: '2026-01-02', sessionSeconds: 28800, sessions: 1, intervals: [sleepSession('2026-01-01T16:00:00Z', '2026-01-02T00:00:00Z', [])] }] };
+    data.stats = { workouts: 98765, totalSteps: 987654321 };
+    data.extra.steps = { days: [5, 4, 3, 2].map((day) => ({ day: `2026-01-0${day}`, steps: day * 1000 })) };
+    data.extra.exercise = { days: [5, 4, 3, 2].map((day) => ({ day: `2026-02-0${day}`, seconds: day * 60, sessions: 2 })) };
+    data.extra.sleep = { totalSessions: 87654, days: [5, 4, 3, 2].map((day) => ({
+      day: `2026-03-0${day}`, sessionSeconds: 28800, sessions: 1,
+      intervals: [sleepSession(`2026-03-0${day - 1}T16:00:00Z`, `2026-03-0${day}T00:00:00Z`, [])],
+    })) };
     const overview = description(await buildHealthCard(data));
-    assert.match(overview, /Sleep sessions · 50/);
-    assert.match(overview, /Avg sleep record 8h 0m \/ day · 1 recorded days, includes awake time/);
+    assert.match(overview, /Latest 3 recorded days per category/);
+    for (const label of ['SLEEP', 'WORKOUT', 'STEPS', '03-05', '03-04', '03-03', '2026-02-05', '2026-02-04', '2026-02-03', '2026-01-05', '2026-01-04', '2026-01-03', '2 workouts']) assert.ok(overview.includes(label), label);
+    assert.doesNotMatch(overview, /03-02|2026-02-02|2026-01-02|Efficiency|100%|ALL RECEIVED|98765|87654/);
+    data.extra.sleep.days = [];
+    const missing = description(await buildHealthCard(data));
+    assert.match(missing, /No sleep records/);
+    assert.match(missing, /2026-02-05/);
+    assert.match(missing, /2026-01-05/);
+  } finally { db.close(); }
+});
+
+test('overview workout days include all sessions, independently of the 20-entry feed cap', () => {
+  const db = new Repository(':memory:');
+  try {
+    const records = Array.from({ length: 23 }, (_, i) => {
+      const day = i < 21 ? 5 : i === 21 ? 4 : 3;
+      return { id: `private-workout-${i}`, dataType: 'exercise_session' as const, dataOrigin: 'private-origin',
+        startTime: `2026-01-0${day}T00:00:00Z`, endTime: `2026-01-0${day}T00:10:00Z`,
+        lastModifiedTime: `2026-01-0${day}T00:10:00Z`, payload: { exerciseType: 79 } };
+    });
+    db.ingestHealthConnect({ syncId: 'overview-workouts-test', deviceId: 'private-device', observedAt: now.toISOString(), deletedRecordIds: [], records });
+    const data = db.healthConnectSnapshot('Sky', now);
+    assert.deepEqual(data.extra.exercise?.days, [
+      { day: '2026-01-05', seconds: 12600, sessions: 21 },
+      { day: '2026-01-04', seconds: 600, sessions: 1 },
+      { day: '2026-01-03', seconds: 600, sessions: 1 },
+    ]);
+    assert.doesNotMatch(JSON.stringify(data.extra.exercise), /private-/);
   } finally { db.close(); }
 });
 

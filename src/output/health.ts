@@ -1,4 +1,4 @@
-import type { HealthConnectSnapshot, SleepSession, SleepStage } from '../health/types.js';
+import type { HealthConnectSnapshot, SleepDay, SleepSession, SleepStage } from '../health/types.js';
 import { sleepAxis, sleepHour } from '../health/sleep.js';
 import { h, logo, renderCard, truncate } from './render.js';
 
@@ -21,8 +21,6 @@ const clock = (timestamp: string) => new Intl.DateTimeFormat('en-GB', {
 }).format(new Date(timestamp));
 const asleep = (s: SleepSession) => s.stageSeconds.unknown >= s.sessionSeconds ? '—'
   : `${s.stageSeconds.unknown > 0 ? '≥ ' : ''}${duration(s.asleepSeconds)}`;
-const stageDuration = (s: SleepSession, key: 'deep' | 'rem') => s.stageSeconds.unknown + s.stageSeconds.asleep >= s.sessionSeconds ? '—'
-  : `${s.stageSeconds.unknown + s.stageSeconds.asleep > 0 ? '≥ ' : ''}${duration(s.stageSeconds[key])}`;
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'block', color: C.text, fontSize: 11, ...style } }, value);
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 // Reserve an actual gutter; text alignment alone can leave glyphs touching the chart.
@@ -65,38 +63,40 @@ async function shell(data: HealthConnectSnapshot, title: string, subtitle: strin
 }
 
 export async function buildHealthCard(data: HealthConnectSnapshot): Promise<string> {
-  const day = data.extra.sleep?.days[0];
-  const main = day?.intervals.reduce<SleepSession | undefined>((longest, s) => !longest || s.sessionSeconds > longest.sessionSeconds ? s : longest, undefined);
-  const sleeping = main?.segments.filter((s) => !['unknown', 'awake'].includes(s.stage)) ?? [];
-  const days = data.extra.sleep?.days ?? [];
-  const latestSteps = (data.extra.steps?.days ?? data.extra.daily).find((day) => day.steps > 0);
-  const body = main && day ? [
-    text(`LATEST SLEEP · ${day.day} · wake-up date`, { fontSize: 10, color: C.dim, marginBottom: 10 }),
-    row([metric('Sleep onset', sleeping[0] ? clock(sleeping[0].startTime) : '—'), metric('Final wake', sleeping.at(-1) ? clock(sleeping.at(-1)!.endTime) : '—'), metric('Time asleep', asleep(main))]),
-    row(main.segments.map((s) => h('div', { style: { display: 'flex', width: `${(Date.parse(s.endTime) - Date.parse(s.startTime)) / 1000 / main.sessionSeconds * 100}%`, height: 18, backgroundColor: STAGES.find((stage) => stage.key === s.stage)!.color } })), { marginTop: 20, overflow: 'hidden', borderRadius: 4 }),
-    row([text(`Record ${clock(main.startTime)}`, { color: C.dim, fontSize: 10 }), text(clock(main.endTime), { color: C.dim, fontSize: 10, marginLeft: 'auto' })], { marginTop: 5 }),
-    legend(),
-    row([metric('Efficiency · not a score', main.efficiency === null ? '—' : `${main.efficiency}%`), metric('Deep sleep', stageDuration(main, 'deep')), metric('REM', stageDuration(main, 'rem'))], { marginTop: 18 }),
-    note(`${duration(main.sessionSeconds)} recorded, including awake time. ${day.sessions > 1 ? `Longest of ${day.sessions} sessions.` : 'Latest main session.'}`),
-    note('Missing stages stay unknown; efficiency is not a Garmin sleep score.'),
-  ] : [empty('No sleep records received yet.')];
-  body.push(
-    row([text('ALL RECEIVED RECORDS', { fontSize: 10, color: C.accent, fontWeight: 700, letterSpacing: 1 })], { borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: 14, marginBottom: 10 }),
-    row([
-      metric('Sleep sessions', amount(data.extra.sleep?.totalSessions ?? 0)),
-      metric('Workouts', amount(data.stats.workouts ?? 0)),
-      metric('Total steps', new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(data.stats.totalSteps ?? 0)),
-    ]),
-    note(`Total exercise ${duration(data.stats.totalExerciseSeconds ?? 0)} · Total steps ${amount(data.stats.totalSteps ?? 0)}`),
-    note(days.length ? `Avg sleep record ${duration(days.reduce((sum, day) => sum + day.sessionSeconds, 0) / days.length)} / day · ${days.length} recorded days, includes awake time.` : 'Sleep average unavailable until sleep records arrive.'),
-    note(latestSteps ? `Latest steps ${amount(latestSteps.steps)} · ${latestSteps.day} (not necessarily today).` : 'No positive step totals received yet.'),
-  );
-  return shell(data, 'HEALTH OVERVIEW', 'Sleep, exercise and steps · Asia/Taipei', body, 550);
+  const days = (data.extra.sleep?.days ?? []).slice(0, 3);
+  const workouts = (data.extra.exercise?.days ?? []).slice(0, 3);
+  const steps = (data.extra.steps?.days ?? data.extra.daily).filter((day) => day.steps > 0).slice(0, 3);
+  const heading = (label: string, latest?: string, first = false) => row([
+    text(label, { color: C.accent, fontSize: 11, fontWeight: 700, letterSpacing: 1 }),
+    text(latest ? `latest ${latest}` : 'no records', { marginLeft: 'auto', color: C.dim, fontSize: 9 }),
+  ], { marginTop: first ? 0 : 16, marginBottom: 10, paddingTop: first ? 0 : 12, ...(first ? {} : { borderTop: `1px solid ${C.border}` }) });
+  const dailyBar = (day: string, value: number, max: number, label: string, detail?: string) => row([
+    row([text(day, { fontSize: 9 }), ...(detail ? [text(detail, { fontSize: 8, color: C.dim, marginTop: 2 })] : [])], { width: 94, flexDirection: 'column' }),
+    row([h('div', { style: { display: 'flex', width: `${value / max * 100}%`, height: 8, backgroundColor: C.teal, borderRadius: 3 } })], { width: 302, borderRadius: 3, backgroundColor: C.panel }),
+    chartValueCell(label, 74, 10),
+  ], { height: 28, alignItems: 'center', flexShrink: 0 });
+  return shell(data, 'HEALTH OVERVIEW', 'Latest 3 recorded days per category · Asia/Taipei', [
+    heading('SLEEP', days[0]?.day, true),
+    ...(days.length ? sleepTimeline(days) : [empty('No sleep records received yet.')]),
+    heading('WORKOUT', workouts[0]?.day),
+    ...(workouts.length ? workouts.map((day) => dailyBar(day.day, day.seconds, Math.max(1, ...workouts.map((d) => d.seconds)), duration(day.seconds), `${day.sessions} workout${day.sessions === 1 ? '' : 's'}`)) : [empty('No workouts received yet.')]),
+    heading('STEPS', steps[0]?.day),
+    ...(steps.length ? steps.map((day) => dailyBar(day.day, day.steps, Math.max(1, ...steps.map((d) => d.steps)), amount(day.steps))) : [empty('No positive step totals received yet.')]),
+    note('Recorded dates may differ across categories; missing days are not zero.'),
+    note('Sleep colors are synced stages, not a quality score. Unknown time stays unknown.'),
+  ], 420 + days.reduce((sum, day) => sum + day.intervals.length * 28, 0));
 }
 
 export async function buildHealthSleepCard(data: HealthConnectSnapshot): Promise<string> {
   const days = (data.extra.sleep?.days ?? []).slice(0, 14);
   if (!days.length) return shell(data, 'SLEEP RHYTHM', 'Asia/Taipei · recorded wake-up days', [empty('No sleep records received yet.')]);
+  return shell(data, 'SLEEP RHYTHM', `${days.length} recorded wake-up days · Asia/Taipei · ${days[0]!.day}`, [
+    ...sleepTimeline(days), note('8pm is the previous evening; axis extends for naps / late wakes.'),
+    note('One compact row per session. Unknown stages are not counted as sleep.'),
+  ], 210 + days.reduce((sum, day) => sum + day.intervals.length * 28, 0));
+}
+
+function sleepTimeline(days: SleepDay[]): unknown[] {
   const axis = sleepAxis(days);
   const width = 302;
   const x = (hour: number) => (hour - axis.start) / (axis.end - axis.start) * width;
@@ -113,11 +113,10 @@ export async function buildHealthSleepCard(data: HealthConnectSnapshot): Promise
     ], { position: 'relative', width, height: 28 }),
     chartValueCell(asleep(s), 74, 9),
   ], { alignItems: 'center', height: 28, flexShrink: 0 })));
-  return shell(data, 'SLEEP RHYTHM', `${days.length} recorded wake-up days · Asia/Taipei · ${days[0]!.day}`, [
+  return [
     row([text('Date / record', { width: 94, fontSize: 9, color: C.dim }), row(labels, { width, position: 'relative', height: 18 }), chartValueCell('Asleep', 74, 9, C.dim)]),
-    ...rows, legend(), note('8pm is the previous evening; axis extends for naps / late wakes.'),
-    note('One compact row per session. Unknown stages are not counted as sleep.'),
-  ], 210 + rows.length * 28);
+    ...rows, legend(),
+  ];
 }
 
 export async function buildHealthSleepStagesCard(data: HealthConnectSnapshot): Promise<string> {

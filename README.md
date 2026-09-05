@@ -81,7 +81,7 @@ Nineteen cards in total — combined and single-medium variants:
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
 `simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
 `youtube` / `youtube-channels` / `youtube-topics`,
-`health` (sleep-first overview and received totals), `health-sleep` (14 recorded wake-up days),
+`health` (latest 3 recorded days each of sleep, workouts and steps; no efficiency score or lifetime totals), `health-sleep` (14 recorded wake-up days),
 `health-sleep-stages` (stage proportions and efficiency), `health-exercise`, `health-steps`.
 
 Health cards use Taipei time and the official Health Connect logo. Missing

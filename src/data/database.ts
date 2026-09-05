@@ -2141,6 +2141,12 @@ export class Repository {
       FROM health_connect_records WHERE data_type='steps'
       GROUP BY day HAVING steps > 0 ORDER BY day DESC LIMIT 14
     `).all() as Array<{ day: string; steps: number }>;
+    const recentExerciseDays = this.db.prepare(`
+      SELECT date(start_at, '+8 hours') day, COUNT(*) sessions,
+        ROUND(SUM(MAX(0, (julianday(end_at)-julianday(start_at))*86400.0))) seconds
+      FROM health_connect_records WHERE data_type='exercise_session'
+      GROUP BY day ORDER BY day DESC LIMIT 3
+    `).all() as Array<{ day: string; seconds: number; sessions: number }>;
     return {
       source: 'health',
       profile: { id: 'health-connect', name: ownerName, avatar: '', url: '' },
@@ -2157,6 +2163,7 @@ export class Repository {
       extra: {
         daily,
         steps: { days: recentStepDays.map((day) => ({ day: day.day, steps: Number(day.steps) })) },
+        exercise: { days: recentExerciseDays.map((day) => ({ day: day.day, seconds: Number(day.seconds), sessions: Number(day.sessions) })) },
         sleep: {
           days: sleepDays(sleepRows),
           totalSessions: status.recordsByType.sleep_session ?? 0,
