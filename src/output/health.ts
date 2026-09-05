@@ -26,9 +26,9 @@ const stageDuration = (s: SleepSession, key: 'deep' | 'rem') => s.stageSeconds.u
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'block', color: C.text, fontSize: 11, ...style } }, value);
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 // Reserve an actual gutter; text alignment alone can leave glyphs touching the chart.
-const asleepCell = (value: string, width: number, fontSize: number, color = C.text) => row([
+const chartValueCell = (value: string, width: number, fontSize: number, color = C.text) => row([
   text(value, { fontSize, color, whiteSpace: 'nowrap' }),
-], { width, flexShrink: 0, paddingLeft: 12, justifyContent: 'flex-end', alignItems: 'center' });
+], { width, flexShrink: 0, paddingLeft: 16, justifyContent: 'flex-end', alignItems: 'center' });
 const note = (value: string) => text(value, { color: C.dim, fontSize: 9, marginTop: 12, lineHeight: 1.5 });
 const empty = (value: string) => row([text(value, { color: C.dim, fontSize: 12 })], { padding: '20px 0' });
 const metric = (label: string, value: string) => row([
@@ -67,9 +67,11 @@ async function shell(data: HealthConnectSnapshot, title: string, subtitle: strin
 export async function buildHealthCard(data: HealthConnectSnapshot): Promise<string> {
   const day = data.extra.sleep?.days[0];
   const main = day?.intervals.reduce<SleepSession | undefined>((longest, s) => !longest || s.sessionSeconds > longest.sessionSeconds ? s : longest, undefined);
-  if (!main || !day) return shell(data, 'LATEST SLEEP', 'Asia/Taipei · latest recorded wake-up day', [empty('No sleep records received yet.')]);
-  const sleeping = main.segments.filter((s) => !['unknown', 'awake'].includes(s.stage));
-  const body = [
+  const sleeping = main?.segments.filter((s) => !['unknown', 'awake'].includes(s.stage)) ?? [];
+  const days = data.extra.sleep?.days ?? [];
+  const latestSteps = (data.extra.steps?.days ?? data.extra.daily).find((day) => day.steps > 0);
+  const body = main && day ? [
+    text(`LATEST SLEEP · ${day.day} · wake-up date`, { fontSize: 10, color: C.dim, marginBottom: 10 }),
     row([metric('Sleep onset', sleeping[0] ? clock(sleeping[0].startTime) : '—'), metric('Final wake', sleeping.at(-1) ? clock(sleeping.at(-1)!.endTime) : '—'), metric('Time asleep', asleep(main))]),
     row(main.segments.map((s) => h('div', { style: { display: 'flex', width: `${(Date.parse(s.endTime) - Date.parse(s.startTime)) / 1000 / main.sessionSeconds * 100}%`, height: 18, backgroundColor: STAGES.find((stage) => stage.key === s.stage)!.color } })), { marginTop: 20, overflow: 'hidden', borderRadius: 4 }),
     row([text(`Record ${clock(main.startTime)}`, { color: C.dim, fontSize: 10 }), text(clock(main.endTime), { color: C.dim, fontSize: 10, marginLeft: 'auto' })], { marginTop: 5 }),
@@ -77,8 +79,19 @@ export async function buildHealthCard(data: HealthConnectSnapshot): Promise<stri
     row([metric('Efficiency · not a score', main.efficiency === null ? '—' : `${main.efficiency}%`), metric('Deep sleep', stageDuration(main, 'deep')), metric('REM', stageDuration(main, 'rem'))], { marginTop: 18 }),
     note(`${duration(main.sessionSeconds)} recorded, including awake time. ${day.sessions > 1 ? `Longest of ${day.sessions} sessions.` : 'Latest main session.'}`),
     note('Missing stages stay unknown; efficiency is not a Garmin sleep score.'),
-  ];
-  return shell(data, 'LATEST SLEEP', `${day.day} · wake-up date · Asia/Taipei`, body);
+  ] : [empty('No sleep records received yet.')];
+  body.push(
+    row([text('ALL RECEIVED RECORDS', { fontSize: 10, color: C.accent, fontWeight: 700, letterSpacing: 1 })], { borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: 14, marginBottom: 10 }),
+    row([
+      metric('Sleep sessions', amount(data.extra.sleep?.totalSessions ?? 0)),
+      metric('Workouts', amount(data.stats.workouts ?? 0)),
+      metric('Total steps', new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(data.stats.totalSteps ?? 0)),
+    ]),
+    note(`Total exercise ${duration(data.stats.totalExerciseSeconds ?? 0)} · Total steps ${amount(data.stats.totalSteps ?? 0)}`),
+    note(days.length ? `Avg sleep record ${duration(days.reduce((sum, day) => sum + day.sessionSeconds, 0) / days.length)} / day · ${days.length} recorded days, includes awake time.` : 'Sleep average unavailable until sleep records arrive.'),
+    note(latestSteps ? `Latest steps ${amount(latestSteps.steps)} · ${latestSteps.day} (not necessarily today).` : 'No positive step totals received yet.'),
+  );
+  return shell(data, 'HEALTH OVERVIEW', 'Sleep, exercise and steps · Asia/Taipei', body, 550);
 }
 
 export async function buildHealthSleepCard(data: HealthConnectSnapshot): Promise<string> {
@@ -98,10 +111,10 @@ export async function buildHealthSleepCard(data: HealthConnectSnapshot): Promise
       ...axis.ticks.map((hour) => h('div', { style: { display: 'flex', position: 'absolute', left: x(hour), top: 0, height: 28, width: 1, backgroundColor: hour % 4 === 0 ? '#455263' : '#262e39' } })),
       ...s.segments.map((segment) => h('div', { style: { display: 'flex', position: 'absolute', top: 9, left: x(sleepHour(day.day, segment.startTime)), width: x(sleepHour(day.day, segment.endTime)) - x(sleepHour(day.day, segment.startTime)), height: 10, backgroundColor: STAGES.find((stage) => stage.key === segment.stage)!.color } })),
     ], { position: 'relative', width, height: 28 }),
-    asleepCell(asleep(s), 74, 9),
+    chartValueCell(asleep(s), 74, 9),
   ], { alignItems: 'center', height: 28, flexShrink: 0 })));
   return shell(data, 'SLEEP RHYTHM', `${days.length} recorded wake-up days · Asia/Taipei · ${days[0]!.day}`, [
-    row([text('Date / record', { width: 94, fontSize: 9, color: C.dim }), row(labels, { width, position: 'relative', height: 18 }), asleepCell('Asleep', 74, 9, C.dim)]),
+    row([text('Date / record', { width: 94, fontSize: 9, color: C.dim }), row(labels, { width, position: 'relative', height: 18 }), chartValueCell('Asleep', 74, 9, C.dim)]),
     ...rows, legend(), note('8pm is the previous evening; axis extends for naps / late wakes.'),
     note('One compact row per session. Unknown stages are not counted as sleep.'),
   ], 210 + rows.length * 28);
@@ -117,12 +130,12 @@ export async function buildHealthSleepStagesCard(data: HealthConnectSnapshot): P
     return row([
       text(day.day.slice(5), { width: 50, fontSize: 10 }),
       row(STAGES.map(({ key, color }) => h('div', { style: { display: 'flex', height: 12, width: `${total > 0 ? totals[key] / total * 100 : 0}%`, backgroundColor: color } })), { width: 294, borderRadius: 3, overflow: 'hidden' }),
-      asleepCell(totals.unknown >= total ? '—' : `${totals.unknown ? '≥ ' : ''}${duration(knownAsleep)}`, 76, 10),
-      asleepCell(efficiency, 50, 10, C.accent),
+      chartValueCell(totals.unknown >= total ? '—' : `${totals.unknown ? '≥ ' : ''}${duration(knownAsleep)}`, 76, 10),
+      chartValueCell(efficiency, 50, 10, C.accent),
     ], { alignItems: 'center', height: 26, flexShrink: 0 });
   });
   return shell(data, 'SLEEP STAGES', `${days.length} recorded days${days[0] ? ` · latest ${days[0].day}` : ''} · stage proportions`, [
-    ...(days.length ? [row([text('Date', { width: 50, color: C.dim, fontSize: 9 }), text('Share of recorded time', { width: 294, color: C.dim, fontSize: 9 }), asleepCell('Asleep', 76, 9, C.dim), asleepCell('Eff.', 50, 9, C.dim)], { marginBottom: 5 }), ...rows, legend()] : [empty('No sleep records received yet.')]),
+    ...(days.length ? [row([text('Date', { width: 50, color: C.dim, fontSize: 9 }), text('Share of recorded time', { width: 294, color: C.dim, fontSize: 9 }), chartValueCell('Asleep', 76, 9, C.dim), chartValueCell('Eff.', 50, 9, C.dim)], { marginBottom: 5 }), ...rows, legend()] : [empty('No sleep records received yet.')]),
     note('Efficiency = asleep / recorded time, not a sleep score. Gaps stay unknown.'),
     note('Bars show proportions, not duration. Multiple sessions are summed per day.'),
   ], 210 + rows.length * 26);
@@ -153,7 +166,7 @@ export async function buildHealthStepsCard(data: HealthConnectSnapshot): Promise
     ...(days.length ? days.map((day) => row([
       text(day.day.slice(5), { width: 50, color: C.dim, fontSize: 10 }),
       row([h('div', { style: { display: 'flex', height: 9, width: `${day.steps / max * 100}%`, backgroundColor: C.teal, borderRadius: 3 } })], { width: 340, backgroundColor: C.panel, borderRadius: 3 }),
-      text(amount(day.steps), { width: 80, fontSize: 10, textAlign: 'right' }),
+      chartValueCell(amount(day.steps), 80, 10),
     ], { height: 25, alignItems: 'center', flexShrink: 0 })) : [empty('No positive step totals in the recent data window.')]),
     note('Recorded daily totals, not a continuous streak. Missing days are not zero.'),
   ], 250 + days.length * 25);

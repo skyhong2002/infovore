@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { load } from 'cheerio';
+import { Resvg } from '@resvg/resvg-js';
 import { Repository } from '../src/data/database.js';
 import { sleepSession } from '../src/health/sleep.js';
 import { buildHealthCard, buildHealthSleepCard, buildHealthSleepStagesCard, buildHealthExerciseCard, buildHealthStepsCard } from '../src/output/health.js';
@@ -66,5 +67,52 @@ test('steps card draws historical recorded days outside the recent window withou
     assert.match(description(svg), /2026-01-02/);
     assert.match(description(svg), /4,321/);
     assert.doesNotMatch(svg, /private-step|private-device|private-origin|No positive/);
+  } finally { db.close(); }
+});
+
+test('overview retains movement totals even without sleep and labels historical averages separately', async () => {
+  const db = new Repository(':memory:');
+  try {
+    const data = db.healthConnectSnapshot('Sky', now);
+    data.stats = { workouts: 12, totalExerciseSeconds: 7200, totalSteps: 54321 };
+    data.extra.steps = { days: [{ day: '2026-01-02', steps: 1234 }] };
+    const emptySleep = description(await buildHealthCard(data));
+    assert.match(emptySleep, /HEALTH OVERVIEW/);
+    assert.match(emptySleep, /No sleep records/);
+    assert.match(emptySleep, /Workouts · 12 · Total steps · 54.3K/);
+    assert.match(emptySleep, /Total exercise 2h 0m · Total steps 54,321/);
+    assert.match(emptySleep, /Latest steps 1,234 · 2026-01-02/);
+    data.extra.sleep = { totalSessions: 50, days: [{ day: '2026-01-02', sessionSeconds: 28800, sessions: 1, intervals: [sleepSession('2026-01-01T16:00:00Z', '2026-01-02T00:00:00Z', [])] }] };
+    const overview = description(await buildHealthCard(data));
+    assert.match(overview, /Sleep sessions · 50/);
+    assert.match(overview, /Avg sleep record 8h 0m \/ day · 1 recorded days, includes awake time/);
+  } finally { db.close(); }
+});
+
+test('sleep and steps raster output preserves blank space between longest bar and values', async () => {
+  const db = new Repository(':memory:');
+  try {
+    const data = db.healthConnectSnapshot('Sky', now);
+    data.extra.steps = { days: [{ day: '2026-09-05', steps: 123456 }] };
+    const session = sleepSession('2026-09-04T12:00:00Z', '2026-09-05T04:00:00Z', [
+      { startTime: '2026-09-04T12:00:00Z', endTime: '2026-09-05T04:00:00Z', stage: 6 },
+    ]);
+    data.extra.sleep = { totalSessions: 1, days: [{ day: '2026-09-05', sessionSeconds: 57600, sessions: 1, intervals: [session] }] };
+    for (const build of [buildHealthStepsCard, buildHealthSleepCard, buildHealthSleepStagesCard]) {
+      const image = new Resvg(await build(data)).render();
+      const pixels = image.pixels;
+      const rgb = (x: number, y: number) => [...pixels.slice((y * image.width + x) * 4, (y * image.width + x) * 4 + 3)].join(',');
+      let longest = { length: 0, end: 0, y: 0 };
+      for (let y = 0; y < image.height; y++) {
+        let length = 0;
+        for (let x = 0; x < image.width; x++) {
+          length = rgb(x, y) === '103,213,195' ? length + 1 : 0;
+          if (length > longest.length) longest = { length, end: x, y };
+        }
+      }
+      assert.ok(longest.length > 250, `${build.name}: full-width fixture bar found`);
+      // Skip the anti-aliased bar edge / final gridline, then inspect the gutter.
+      for (let dx = 3; dx <= 15; dx++) assert.equal(rgb(longest.end + dx, longest.y), '17,20,24', `${build.name}: blank gutter at +${dx}px`);
+    }
   } finally { db.close(); }
 });
