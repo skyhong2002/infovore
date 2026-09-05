@@ -182,14 +182,16 @@ function contentBottom(pixels: Buffer, width: number, height: number): number {
 export async function renderCard(
   node: Record<string, unknown>,
   width: number,
-  height: number
+  height: number,
+  extraFonts: typeof fonts = [],
 ): Promise<string> {
   const draftHeight = height + 240; // headroom so nothing is clipped pre-trim (wrapped titles can add several lines)
-  const draft = await satori(node as never, { width, height: draftHeight, fonts });
+  const cardFonts = extraFonts.length ? [...fonts, ...extraFonts] : fonts;
+  const draft = await satori(node as never, { width, height: draftHeight, fonts: cardFonts });
   const img = new Resvg(draft).render();
   const bottom = contentBottom(Buffer.from(img.pixels), img.width, img.height);
   const trimmed = Math.min(draftHeight, bottom + BOTTOM_PAD);
-  return satori(node as never, { width, height: trimmed, fonts });
+  return satori(node as never, { width, height: trimmed, fonts: cardFonts });
 }
 
 // Lazily compile the WebP encoder's wasm once (its default fetch()-based
