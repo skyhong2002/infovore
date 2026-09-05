@@ -51,13 +51,15 @@ screenshots and recordings are not imported. Public output contains category
 names, colors and durations plus daily summaries on Home and Now. The platform,
 card, JSON and MCP also publish recognized keywords from titles and abbreviated
 summaries: tools, projects and topics matched by the local bilingual vocabulary
-in `src/dayflow/keywords.ts`. Unknown words, full sentences, URLs, email addresses,
-paths and raw app lists are not published. No external AI service is called.
+in `src/dayflow/keywords.ts`. The legacy weekly/daily lists only use the vocabulary. The recent pools also
+discover repeated narrative terms (see below). Full sentences, URLs, email
+addresses, paths and raw app lists are not published. No external AI service is called.
 
 Each keyword counts at most once per device/record, ignoring idle, error,
 zero-duration and future records. Weekly keywords follow the same Monday 4am
-Taipei boundary as category totals. The page shows the top 36 weekly keywords
-and up to 10 per recorded day; the keywords card shows the top 24 weekly keywords. Counts
+Taipei boundary as category totals. The legacy JSON list retains up to 36 weekly
+keywords; recorded-day rows show up to 10 each. The page and keywords card use
+the two rolling recent pools described below. Counts
 are activity mentions, not time spent. Existing history is re-derived immediately;
 no new import is required. New vocabulary can be added without changing storage.
 
@@ -76,3 +78,36 @@ the card are for the current Dayflow week; bars show seven most recent recorded
 days. Dayflow has three separate cards: `dayflow` for time, `dayflow-keywords` for
 narrative keywords, and `dayflow-categories` for category time and shares.
 The platform shows 30 recorded days and JSON retains the full daily series.
+
+## Recent keyword pools
+
+`extra.keywordPools` exposes two independent rankings, separate from the legacy
+current-week `extra.keywords` and daily keyword lists:
+
+- `all`: up to 48 recent terms ordered by activity mentions, with no historical
+  suppression. Habitual tools such as Discord and YouTube remain eligible.
+- `distinctive`: up to 24 terms that are unusual compared with the previous
+  90 calendar days. The keyword card shows 12 distinctive and 24 general terms.
+
+Recent means the current Dayflow day plus the previous six (04:00 Taipei
+boundaries). The comparison period excludes those seven days. Coverage dates,
+recorded days and activity counts accompany both pools. Empty/missing days do
+not inflate coverage; idle, error, future and zero-duration records are ignored.
+Overlapping day imports deduplicate by device/record before splitting periods.
+
+Candidates combine the bilingual tool aliases with dynamic word segmentation
+and adjacent title phrases. Common narration, URLs, email addresses, paths,
+code blocks and token-like identifiers are removed. A discovered term needs
+at least two recent activities and a title occurrence. Full prose and raw app
+lists remain private; repeated narrative terms themselves are public. Extraction
+is statistical and may still produce imperfect phrases; it uses no external AI.
+
+Distinctiveness requires at least 14 recorded historical days and 50 historical
+activities. Otherwise status is `insufficient_history`, the distinctive pool is
+empty, and the general pool still works. Eligible distinctive terms occur in
+at least two recent activities, appear on fewer than 35% of historical days,
+and have at least twice their historical activity mention rate. The historical
+rate is smoothed as `(mentions + 0.5) / (activities + 1)`. Ranking uses
+`log(1 + recent mentions) * log2(1 + rate lift) * (1 - historical day share)`.
+This is relative to the observed baseline, not a claim of first-ever occurrence.
+Both rankings are calculated before their independent display limits.

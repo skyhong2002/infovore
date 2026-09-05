@@ -7,10 +7,15 @@ const duration = (minutes: number) => timeAmount(Math.round(minutes * 60));
 export function dayflowDetails(extra: DayflowExtra): string {
   const daily = extra.daily.filter((d) => d.trackedMinutes + d.errorMinutes > 0).slice(0, 30);
   const max = Math.max(1, ...daily.map((d) => d.trackedMinutes));
-  const keywords = extra.keywords ?? [];
-  return `<section><div class="platform-section-heading"><h2>Keywords this week</h2><span>From activity titles and summaries</span></div>
-    <div class="platform-tags">${keywords.map((k) => `<span>${html(k.name)} · ${k.mentions} activities</span>`).join('') || '<span>No recognized keywords this week</span>'}</div>
-    <div class="platform-note">Tools, projects and topics recognized in activity descriptions. Each activity counts once per keyword; counts are mentions, not time spent.</div></section><section><div class="platform-section-heading"><h2>Categories this week</h2><span>Monday–Sunday · 4am boundary</span></div>
+  const pools = extra.keywordPools;
+  const keywords = pools?.all ?? extra.keywords ?? [];
+  const special = pools?.distinctive ?? [];
+  return `<section><div class="platform-section-heading"><h2>Distinctive lately</h2><span>Recent 7 days vs preceding 90 days</span></div>
+    <div class="platform-tags">${special.map((k) => `<span title="${k.historicalMentions} activities in the comparison period; ${k.lift}× the previous mention rate">${html(k.name)} · ${k.mentions} activities</span>`).join('') || `<span>${pools?.status === 'insufficient_history' ? 'More historical activity is needed for comparison' : 'No distinctly rising keywords in this period'}</span>`}</div>
+    <div class="platform-note">Less habitual topics whose activity mention rate has risen. ${pools ? `Recent: ${pools.recentFrom}–${pools.recentTo} (${pools.recentDays} recorded days). Comparison: ${pools.baselineFrom}–${pools.baselineTo} (${pools.baselineDays} recorded days).` : ''}</div></section>
+    <section><div class="platform-section-heading"><h2>All recent keywords</h2><span>Last 7 Dayflow days · recurring words included</span></div>
+    <div class="platform-tags">${keywords.map((k) => `<span>${html(k.name)} · ${k.mentions} activities</span>`).join('') || '<span>No keywords in this period</span>'}</div>
+    <div class="platform-note">Tools, projects and topics found in activity descriptions. Repeated new words can appear alongside recognized tool names. Each activity counts once per keyword; counts are mentions, not time spent.</div></section><section><div class="platform-section-heading"><h2>Categories this week</h2><span>Monday–Sunday · 4am boundary</span></div>
     <div class="platform-tags">${extra.categories.map((c) => `<span><i style="display:inline-block;width:8px;height:8px;background:${html(c.color)};margin-right:6px"></i>${html(c.name)} · ${html(duration(c.minutes))}</span>`).join('') || '<span>No activity this week</span>'}</div></section>
     <section><div class="platform-section-heading"><h2>Recent recorded days</h2><span>Asia/Taipei · 4am–4am</span></div>
     <div class="health-days">${daily.map((d) => `<article class="health-day"><time datetime="${d.day}">${d.day}</time><div class="health-step-track" style="display:flex;height:10px">${d.categories.map((c) => `<span title="${html(c.name)}: ${html(duration(c.minutes))}" style="width:${c.minutes / max * 100}%;background:${html(c.color)};border-radius:0"></span>`).join('')}</div><strong>${html(duration(d.trackedMinutes))}</strong><p>${html(duration(d.activeMinutes))} active · ${html(duration(d.idleMinutes))} idle${d.errorMinutes ? ` · ${html(duration(d.errorMinutes))} analysis unavailable` : ''}${d.keywords?.length ? `<br>${d.keywords.map((k) => html(k.name)).join(' · ')}` : ''}</p></article>`).join('') || '<div class="empty">Waiting for the first Dayflow sync.</div>'}</div>
@@ -79,18 +84,27 @@ export function buildDayflowCard(data: DayflowSnapshot): Promise<string> {
 }
 
 export function buildDayflowKeywordsCard(data: DayflowSnapshot): Promise<string> {
-  const keywords = (data.extra.keywords ?? []).slice(0, 24);
+  const pools = data.extra.keywordPools;
+  const keywords = (pools?.all ?? data.extra.keywords ?? []).slice(0, 24);
+  const special = (pools?.distinctive ?? []).slice(0, 12);
+  const chips = (items: Array<{ name: string; mentions: number }>, accent: boolean) => row(items.map((k) => row([
+    text(k.name, { fontSize: 12, color: accent ? '#A44C25' : C.text }),
+    text(String(k.mentions), { fontSize: 11, color: C.muted }),
+  ], { gap: 7, alignItems: 'center', backgroundColor: accent ? '#FFF0E6' : '#FFFCF9', border: `1px solid ${accent ? '#F2D2BD' : C.border}`, borderRadius: 7, padding: '7px 9px' })), { gap: 8, flexWrap: 'wrap' });
   return dayflowShell(data, [
     row([
-      text('Keywords this week', { ...serif, fontSize: 34, lineHeight: 1.1 }),
-      text(`${keywords.length} tools, projects & topics`, { color: C.muted, fontSize: 12, marginTop: 8 }),
+      text('Recent keywords', { ...serif, fontSize: 34, lineHeight: 1.1 }),
+      text(pools ? `${pools.recentFrom} – ${pools.recentTo} · Last 7 days` : 'Last 7 Dayflow days', { color: C.muted, fontSize: 12, marginTop: 8 }),
     ], { flexDirection: 'column' }),
-    row(keywords.length ? keywords.map((k) => row([
-      text(k.name, { fontSize: 13, color: '#A44C25' }),
-      text(String(k.mentions), { fontSize: 12, color: C.muted }),
-    ], { gap: 8, alignItems: 'center', backgroundColor: '#FFF0E6', border: '1px solid #F2D2BD', borderRadius: 7, padding: '9px 11px' }))
-      : [text('No recognized keywords this week.', { color: C.muted, fontSize: 13 })], { gap: 9, flexWrap: 'wrap' }),
-  ], 'Counts are activity mentions, not time spent.');
+    row([
+      text('Distinctive lately', { ...serif, fontSize: 24, marginBottom: 10 }),
+      special.length ? chips(special, true) : text(pools?.status === 'insufficient_history' ? 'Building historical context…' : 'No distinctly rising topics yet.', { fontSize: 12, color: C.muted }),
+    ], { flexDirection: 'column' }),
+    row([
+      text('All recent keywords', { ...serif, fontSize: 24, marginBottom: 10 }),
+      keywords.length ? chips(keywords, false) : text('No keywords in this period.', { fontSize: 12, color: C.muted }),
+    ], { flexDirection: 'column' }),
+  ], 'Activity mentions · Distinctive topics compare with the preceding 90 days.');
 }
 
 export function buildDayflowCategoriesCard(data: DayflowSnapshot): Promise<string> {

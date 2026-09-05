@@ -45,11 +45,11 @@ test('snapshot, page and card expose current-week keywords and recompute after r
     assert.equal(snapshot.extra.keywords?.some((k) => k.name === 'Spotify'), false);
     assert.equal(snapshot.extra.daily[1].keywords?.[0].name, 'Spotify');
     const page = dayflowDetails(snapshot.extra);
-    assert.match(page, /Keywords this week/);
+    assert.match(page, /All recent keywords/);
     assert.match(page, /infovore · 2 activities/);
     assert.doesNotMatch(page, /Reviewed a|UnlistedProjectX|record_id/);
     const svg = await buildDayflowKeywordsCard(snapshot);
-    assert.match(svg, /#FFF0E6/);
+    assert.match(svg, /#FFFCF9/);
     repo.dayflow.ingest({ ...batch, observedAt: '2026-09-05T16:01:00Z', cards: [] });
     assert.deepEqual(repo.dayflow.snapshot('Sky', now).extra.keywords, []);
   } finally { repo.close(); }

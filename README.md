@@ -128,7 +128,8 @@ Dayflow on macOS is an additional push source, using its bundled MCP helper.
 The companion refreshes recent days every 15 minutes and reconciles older dates
 in the background. `/platforms/dayflow`, `/card/dayflow.*`, Home, Now, and
 `/api/dayflow.json` show daily/category aggregates and keywords recognized in activity descriptions.
-Full activity text and raw app lists stay private. Computer time is separate from media totals to avoid overlap.
+The keyword card separates general recent terms from topics that stand out
+against the preceding 90 days. Full activity text and raw app lists stay private. Computer time is separate from media totals to avoid overlap.
 Set a dedicated `DAYFLOW_TOKEN`; see [setup and sync semantics](scripts/DAYFLOW.md).
 
 ## Android Health Connect sync

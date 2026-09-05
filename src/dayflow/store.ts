@@ -1,3 +1,4 @@
+import { keywordPools } from './pools.js';
 import { dayflowKeywords } from './keywords.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { dayflowBatchSchema, dayflowDay, type DayflowBatch, type DayflowCategory, type DayflowDay, type DayflowSnapshot } from './types.js';
@@ -63,6 +64,7 @@ export class DayflowStore {
         extra: { durationMinutes: d.trackedMinutes, activeMinutes: d.activeMinutes, idleMinutes: d.idleMinutes },
       })),
       extra: { timeZone: 'Asia/Taipei', dayBoundaryHour: 4, daily,
+        keywordPools: keywordPools([...byDay.values()].flat(), now),
         keywords: dayflowKeywords([...byDay].filter(([day]) => day >= weekStart.toISOString().slice(0, 10)).flatMap(([, batches]) => batches), now),
         categories: [...categories.values()].sort((a, b) => b.minutes - a.minutes),
         lastSyncedAt: status.lastSyncedAt, firstDay: status.firstDay, lastDay: status.lastDay },

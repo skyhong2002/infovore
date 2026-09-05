@@ -23,6 +23,8 @@ const vocabulary: Array<[string, string[]]> = [
   ['API', ['api', 'apis']], ['SQL', ['sql']], ['CSS', ['css']], ['HTML', ['html']],
   ['Figma', ['figma']], ['Canva', ['canva']], ['Photoshop', ['photoshop']],
   ['Blender', ['blender']], ['Obsidian', ['obsidian']], ['Notion', ['notion']],
+  ['Google', ['google']], ['Gmail', ['gmail']], ['Facebook', ['facebook']],
+  ['Instagram', ['instagram', 'ig']], ['AI', ['ai', '人工智慧', '人工智能']],
   ['Discord', ['discord']], ['Slack', ['slack']], ['Telegram', ['telegram']],
   ['YouTube', ['youtube']], ['Spotify', ['spotify']], ['Steam', ['steam']],
   ['Garmin', ['garmin']], ['Health Connect', ['health connect']],
@@ -72,3 +74,6 @@ export function dayflowKeywords(batches: DayflowBatch[], now: Date, limit = 36):
   return [...counts].map(([name, mentions]) => ({ name, mentions }))
     .sort((a, b) => b.mentions - a.mentions || a.name.localeCompare(b.name, 'en')).slice(0, limit);
 }
+
+const canonicalAliases = new Map(vocabulary.flatMap(([name, values]) => [name, ...values].map((alias) => [alias.toLowerCase(), name] as const)));
+export function canonicalKeyword(value: string): string | undefined { return canonicalAliases.get(value.toLowerCase()); }

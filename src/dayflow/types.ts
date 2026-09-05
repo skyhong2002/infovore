@@ -29,6 +29,15 @@ export const dayflowBatchSchema = z.object({
 export type DayflowBatch = z.infer<typeof dayflowBatchSchema>;
 export interface DayflowCategory { name: string; color: string; minutes: number; idle: boolean }
 export interface DayflowKeyword { name: string; mentions: number }
+export interface DayflowDistinctiveKeyword extends DayflowKeyword {
+  historicalMentions: number; recentDays: number; historicalDays: number; lift: number; score: number;
+}
+export interface DayflowKeywordPools {
+  all: DayflowKeyword[]; distinctive: DayflowDistinctiveKeyword[];
+  recentFrom: string; recentTo: string; baselineFrom: string; baselineTo: string;
+  recentDays: number; baselineDays: number; recentActivities: number; baselineActivities: number;
+  status: 'ready' | 'insufficient_history';
+}
 export interface DayflowDay {
   day: string; trackedMinutes: number; activeMinutes: number; idleMinutes: number; errorMinutes: number;
   categories: DayflowCategory[];
@@ -38,6 +47,7 @@ export interface DayflowExtra {
   timeZone: 'Asia/Taipei'; dayBoundaryHour: 4; daily: DayflowDay[];
   categories: DayflowCategory[]; lastSyncedAt: string | null;
   keywords?: DayflowKeyword[];
+  keywordPools?: DayflowKeywordPools;
   firstDay: string | null; lastDay: string | null;
 }
 export type DayflowSnapshot = SourceSnapshot<DayflowExtra>;
