@@ -89,16 +89,17 @@ test('overview retains movement totals even without sleep and labels historical 
   } finally { db.close(); }
 });
 
-test('sleep and steps raster output preserves blank space between longest bar and values', async () => {
+test('sleep, steps and exercise raster output preserves blank space between longest bar and values', async () => {
   const db = new Repository(':memory:');
   try {
     const data = db.healthConnectSnapshot('Sky', now);
     data.extra.steps = { days: [{ day: '2026-09-05', steps: 123456 }] };
+    data.entries = [{ source: 'health', kind: 'fitness', title: 'Walking', status: 'workout', activityAt: '2026-09-05T00:00:00Z', image: '', rating: null, extra: { durationMinutes: 1234 } }];
     const session = sleepSession('2026-09-04T12:00:00Z', '2026-09-05T04:00:00Z', [
       { startTime: '2026-09-04T12:00:00Z', endTime: '2026-09-05T04:00:00Z', stage: 6 },
     ]);
     data.extra.sleep = { totalSessions: 1, days: [{ day: '2026-09-05', sessionSeconds: 57600, sessions: 1, intervals: [session] }] };
-    for (const build of [buildHealthStepsCard, buildHealthSleepCard, buildHealthSleepStagesCard]) {
+    for (const build of [buildHealthStepsCard, buildHealthSleepCard, buildHealthSleepStagesCard, buildHealthExerciseCard]) {
       const image = new Resvg(await build(data)).render();
       const pixels = image.pixels;
       const rgb = (x: number, y: number) => [...pixels.slice((y * image.width + x) * 4, (y * image.width + x) * 4 + 3)].join(',');
@@ -112,7 +113,10 @@ test('sleep and steps raster output preserves blank space between longest bar an
       }
       assert.ok(longest.length > 250, `${build.name}: full-width fixture bar found`);
       // Skip the anti-aliased bar edge / final gridline, then inspect the gutter.
-      for (let dx = 3; dx <= 15; dx++) assert.equal(rgb(longest.end + dx, longest.y), '17,20,24', `${build.name}: blank gutter at +${dx}px`);
+      // Exercise labels sit above the thin bar's center; check that text band too.
+      for (let dy = build === buildHealthExerciseCard ? -12 : 0; dy <= 0; dy++) {
+        for (let dx = 3; dx <= 15; dx++) assert.equal(rgb(longest.end + dx, longest.y + dy), '17,20,24', `${build.name}: blank gutter at +${dx}px, ${dy}px`);
+      }
     }
   } finally { db.close(); }
 });

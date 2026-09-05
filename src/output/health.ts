@@ -26,8 +26,8 @@ const stageDuration = (s: SleepSession, key: 'deep' | 'rem') => s.stageSeconds.u
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'block', color: C.text, fontSize: 11, ...style } }, value);
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 // Reserve an actual gutter; text alignment alone can leave glyphs touching the chart.
-const chartValueCell = (value: string, width: number, fontSize: number, color = C.text) => row([
-  text(value, { fontSize, color, whiteSpace: 'nowrap' }),
+const chartValueCell = (value: string, width: number, fontSize: number, color = C.text, fontWeight = 400) => row([
+  text(value, { fontSize, color, fontWeight, whiteSpace: 'nowrap' }),
 ], { width, flexShrink: 0, paddingLeft: 16, justifyContent: 'flex-end', alignItems: 'center' });
 const note = (value: string) => text(value, { color: C.dim, fontSize: 9, marginTop: 12, lineHeight: 1.5 });
 const empty = (value: string) => row([text(value, { color: C.dim, fontSize: 12 })], { padding: '20px 0' });
@@ -152,7 +152,7 @@ export async function buildHealthExerciseCard(data: HealthConnectSnapshot): Prom
         text(truncate(entry.title, 33), { fontSize: 11 }),
         row([h('div', { style: { display: 'flex', height: 3, width: `${(Number(entry.extra.durationMinutes) || 0) / maxMinutes * 100}%`, backgroundColor: C.teal, borderRadius: 2 } })], { width: 318, marginTop: 4, backgroundColor: C.panel }),
       ], { flexDirection: 'column', width: 318 }),
-      text(`${entry.extra.durationMinutes ?? 0}m`, { width: 70, textAlign: 'right', color: C.teal, fontWeight: 700, fontSize: 11 }),
+      chartValueCell(`${entry.extra.durationMinutes ?? 0}m`, 70, 11, C.teal, 700),
     ], { alignItems: 'center', height: 34, borderBottom: `1px solid ${C.border}`, flexShrink: 0 })) : [empty('No workouts received yet.')]),
     note('Workout duration only. Sleep is shown separately, not counted as exercise.'),
   ], 260 + entries.length * 34);
