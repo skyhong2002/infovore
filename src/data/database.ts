@@ -675,6 +675,24 @@ export class Repository {
     return this.queryActivities({ limit }).data;
   }
 
+  latestPublicActivitiesBySource(now = new Date()): Activity[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM (
+        SELECT *, ROW_NUMBER() OVER (
+          PARTITION BY source
+          ORDER BY CASE WHEN occurred_precision IN ('exact', 'day') THEN 0 ELSE 1 END,
+                   occurred_at DESC, first_seen_at DESC, id DESC
+        ) AS source_rank
+        FROM activities
+        WHERE visibility = 'public'
+          AND (occurred_at IS NULL OR occurred_precision NOT IN ('exact', 'day')
+            OR (occurred_precision = 'exact' AND occurred_at <= ?)
+            OR (occurred_precision = 'day' AND substr(occurred_at, 1, 10) <= ?))
+      ) WHERE source_rank = 1
+    `).all(now.toISOString(), taipeiDay(now)) as Record<string, unknown>[];
+    return rows.map(row => this.rowToActivity(row));
+  }
+
   queryActivities(query: ActivityQuery = {}): ActivityPage {
     const limit = Math.max(1, Math.min(500, Math.floor(query.limit ?? 100)));
     const offset = Math.max(0, Math.floor(query.offset ?? 0));

@@ -298,7 +298,7 @@ function dashboardView(now: Date) {
     ? repository.healthConnectSnapshot(config.ownerName, now) : null;
   const dayflow = dayflowEnabled ? getCache<DayflowSnapshot>('data:dayflow')?.data : null;
   const daily = dayflow?.entries.map((entry) => activityFromEntry(entry, `${entry.activityAt}T04:00:00+08:00`)) ?? [];
-  return { healthSnapshot, activities: dashboardActivities([...repository.listActivities(500), ...daily], healthSnapshot, now) };
+  return { healthSnapshot, activities: dashboardActivities([...repository.listActivities(500), ...repository.latestPublicActivitiesBySource(now), ...daily], healthSnapshot, now) };
 }
 
 app.get('/', (c) => {
@@ -516,7 +516,7 @@ function latestSourceActivities(items: ReturnType<Repository['listActivities']>)
     if (seen.has(item.source)) return false;
     seen.add(item.source);
     return true;
-  }).slice(0, sections.length + 1);
+  });
 }
 
 app.get('/now', (c) => {

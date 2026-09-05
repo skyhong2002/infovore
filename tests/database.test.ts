@@ -236,3 +236,21 @@ test('manual event edits update status and occurrence instead of duplicating', (
   assert.equal(stored[0].occurredAt, '2026-07-29T11:00:00.000Z');
   repository.close();
 });
+
+test('latest source activities reach beyond the global page and exclude private and future records', () => {
+  const repository = new Repository(':memory:');
+  try {
+    const entries = Array.from({ length: 510 }, (_, i) => ({ ...snapshot.entries[0],
+      source: 'statsfm', sourceItemId: String(i), activityAt: '2026-08-01T12:00:00Z' }));
+    repository.finishSync(repository.startSync('statsfm'), { ...snapshot, source: 'statsfm', entries });
+    repository.finishSync(repository.startSync('kitsu'), { ...snapshot, entries: [snapshot.entries[0],
+      { ...snapshot.entries[0], sourceItemId: 'future', activityAt: '2027-01-01T00:00:00Z' },
+      { ...snapshot.entries[0], sourceItemId: 'private', visibility: 'private', activityAt: '2026-08-02T00:00:00Z' },
+    ] });
+    assert.equal(repository.listActivities(500).some(a => a.sourceItemId === '1' && a.source === 'kitsu'), false);
+    const latest = repository.latestPublicActivitiesBySource(new Date('2026-09-06T00:00:00Z'));
+    assert.equal(latest.length, 2);
+    assert.equal(latest.find(a => a.source === 'kitsu')?.sourceItemId, '1');
+    assert.equal(new Set(latest.map(a => a.source)).size, latest.length);
+  } finally { repository.close(); }
+});
