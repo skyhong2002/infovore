@@ -48,7 +48,18 @@ Raw titles, abbreviated MCP summaries, app names and record/device identifiers
 remain in the dedicated `dayflow_days` SQLite table. They never enter generic
 activities, feeds, search, public snapshots or cards. Detail write-ups,
 screenshots and recordings are not imported. Public output contains category
-names, colors and durations plus daily summaries on Home and Now.
+names, colors and durations plus daily summaries on Home and Now. The platform,
+card, JSON and MCP also publish recognized keywords from titles and abbreviated
+summaries: tools, projects and topics matched by the local bilingual vocabulary
+in `src/dayflow/keywords.ts`. Unknown words, full sentences, URLs, email addresses,
+paths and raw app lists are not published. No external AI service is called.
+
+Each keyword counts at most once per device/record, ignoring idle, error,
+zero-duration and future records. Weekly keywords follow the same Monday 4am
+Taipei boundary as category totals. The page shows the top 12 weekly keywords
+and up to 6 per recorded day; the card shows the top 8 weekly keywords. Counts
+are activity mentions, not time spent. Existing history is re-derived immediately;
+no new import is required. New vocabulary can be added without changing storage.
 
 Days start at **04:00 Asia/Taipei**, including weekly Monday boundaries.
 Durations use clipped start/end intervals, merge overlapping records/devices,

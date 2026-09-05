@@ -28,13 +28,16 @@ export const dayflowBatchSchema = z.object({
 });
 export type DayflowBatch = z.infer<typeof dayflowBatchSchema>;
 export interface DayflowCategory { name: string; color: string; minutes: number; idle: boolean }
+export interface DayflowKeyword { name: string; mentions: number }
 export interface DayflowDay {
   day: string; trackedMinutes: number; activeMinutes: number; idleMinutes: number; errorMinutes: number;
   categories: DayflowCategory[];
+  keywords?: DayflowKeyword[];
 }
 export interface DayflowExtra {
   timeZone: 'Asia/Taipei'; dayBoundaryHour: 4; daily: DayflowDay[];
   categories: DayflowCategory[]; lastSyncedAt: string | null;
+  keywords?: DayflowKeyword[];
   firstDay: string | null; lastDay: string | null;
 }
 export type DayflowSnapshot = SourceSnapshot<DayflowExtra>;

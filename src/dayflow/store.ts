@@ -1,3 +1,4 @@
+import { dayflowKeywords } from './keywords.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { dayflowBatchSchema, dayflowDay, type DayflowBatch, type DayflowCategory, type DayflowDay, type DayflowSnapshot } from './types.js';
 
@@ -62,6 +63,7 @@ export class DayflowStore {
         extra: { durationMinutes: d.trackedMinutes, activeMinutes: d.activeMinutes, idleMinutes: d.idleMinutes },
       })),
       extra: { timeZone: 'Asia/Taipei', dayBoundaryHour: 4, daily,
+        keywords: dayflowKeywords([...byDay].filter(([day]) => day >= weekStart.toISOString().slice(0, 10)).flatMap(([, batches]) => batches), now),
         categories: [...categories.values()].sort((a, b) => b.minutes - a.minutes),
         lastSyncedAt: status.lastSyncedAt, firstDay: status.firstDay, lastDay: status.lastDay },
     };
@@ -93,5 +95,5 @@ export function summarizeDay(day: string, batches: DayflowBatch[], now = new Dat
   const values = [...categories.values()].sort((a, b) => b.minutes - a.minutes);
   const trackedMinutes = values.reduce((sum, c) => sum + c.minutes, 0);
   const idleMinutes = values.filter((c) => c.idle).reduce((sum, c) => sum + c.minutes, 0);
-  return { day, trackedMinutes, activeMinutes: trackedMinutes - idleMinutes, idleMinutes, errorMinutes, categories: values };
+  return { day, trackedMinutes, activeMinutes: trackedMinutes - idleMinutes, idleMinutes, errorMinutes, categories: values, keywords: dayflowKeywords(batches, now, 6) };
 }

@@ -7,11 +7,14 @@ const duration = (minutes: number) => timeAmount(Math.round(minutes * 60));
 export function dayflowDetails(extra: DayflowExtra): string {
   const daily = extra.daily.filter((d) => d.trackedMinutes + d.errorMinutes > 0).slice(0, 30);
   const max = Math.max(1, ...daily.map((d) => d.trackedMinutes));
-  return `<section><div class="platform-section-heading"><h2>Categories this week</h2><span>Monday–Sunday · 4am boundary</span></div>
+  const keywords = extra.keywords ?? [];
+  return `<section><div class="platform-section-heading"><h2>Keywords this week</h2><span>From activity titles and summaries</span></div>
+    <div class="platform-tags">${keywords.map((k) => `<span>${html(k.name)} · ${k.mentions} activities</span>`).join('') || '<span>No recognized keywords this week</span>'}</div>
+    <div class="platform-note">Tools, projects and topics recognized in activity descriptions. Each activity counts once per keyword; counts are mentions, not time spent.</div></section><section><div class="platform-section-heading"><h2>Categories this week</h2><span>Monday–Sunday · 4am boundary</span></div>
     <div class="platform-tags">${extra.categories.map((c) => `<span><i style="display:inline-block;width:8px;height:8px;background:${html(c.color)};margin-right:6px"></i>${html(c.name)} · ${html(duration(c.minutes))}</span>`).join('') || '<span>No activity this week</span>'}</div></section>
     <section><div class="platform-section-heading"><h2>Recent recorded days</h2><span>Asia/Taipei · 4am–4am</span></div>
-    <div class="health-days">${daily.map((d) => `<article class="health-day"><time datetime="${d.day}">${d.day}</time><div class="health-step-track" style="display:flex;height:10px">${d.categories.map((c) => `<span title="${html(c.name)}: ${html(duration(c.minutes))}" style="width:${c.minutes / max * 100}%;background:${html(c.color)};border-radius:0"></span>`).join('')}</div><strong>${html(duration(d.trackedMinutes))}</strong><p>${html(duration(d.activeMinutes))} active · ${html(duration(d.idleMinutes))} idle${d.errorMinutes ? ` · ${html(duration(d.errorMinutes))} analysis unavailable` : ''}</p></article>`).join('') || '<div class="empty">Waiting for the first Dayflow sync.</div>'}</div>
-    <div class="platform-note">Computer time includes idle time and excludes analysis errors. Active means non-idle, not a focus score. It may overlap music and video time, so it is shown separately from cross-platform totals. Activity titles, summaries and app names remain private. Missing days are not treated as zero.</div></section>`;
+    <div class="health-days">${daily.map((d) => `<article class="health-day"><time datetime="${d.day}">${d.day}</time><div class="health-step-track" style="display:flex;height:10px">${d.categories.map((c) => `<span title="${html(c.name)}: ${html(duration(c.minutes))}" style="width:${c.minutes / max * 100}%;background:${html(c.color)};border-radius:0"></span>`).join('')}</div><strong>${html(duration(d.trackedMinutes))}</strong><p>${html(duration(d.activeMinutes))} active · ${html(duration(d.idleMinutes))} idle${d.errorMinutes ? ` · ${html(duration(d.errorMinutes))} analysis unavailable` : ''}${d.keywords?.length ? `<br>${d.keywords.map((k) => html(k.name)).join(' · ')}` : ''}</p></article>`).join('') || '<div class="empty">Waiting for the first Dayflow sync.</div>'}</div>
+    <div class="platform-note">Computer time includes idle time and excludes analysis errors. Active means non-idle, not a focus score. It may overlap music and video time, so it is shown separately from cross-platform totals. Full activity titles, summaries and app lists remain private; recognized keyword labels are public. Missing days are not treated as zero.</div></section>`;
 }
 
 // Dayflow's native typography and warm surface palette. Extra fonts are scoped
@@ -61,6 +64,13 @@ export async function buildDayflowCard(data: DayflowSnapshot): Promise<string> {
       ], { alignItems: 'center', gap: 10, marginBottom: 12 })),
       ...(!days.length ? [text('Your days will appear here after the first sync.', { color: C.muted, fontSize: 13, paddingTop: 8, paddingBottom: 16 })] : []),
     ], { flexDirection: 'column', backgroundColor: '#FFFCF9', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 20px 6px', boxShadow: '0 2px 5px #EDE2D8' }),
+    ...((data.extra.keywords ?? []).length ? [row([
+      row([text('Keywords this week', { ...serif, fontSize: 23 }), text('Activity mentions', { fontSize: 10, color: C.muted })], { justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }),
+      row((data.extra.keywords ?? []).slice(0, 8).map((k) => row([
+        text(k.name, { fontSize: 12, color: '#A44C25' }),
+        text(String(k.mentions), { fontSize: 11, color: C.muted }),
+      ], { gap: 7, alignItems: 'center', backgroundColor: '#FFF0E6', border: '1px solid #F2D2BD', borderRadius: 6, padding: '6px 9px' })), { gap: 7, flexWrap: 'wrap' }),
+    ], { flexDirection: 'column' })] : []),
     ...(data.extra.categories.length ? [row([
       text('Categories this week', { ...serif, fontSize: 23, marginBottom: 10 }),
       row(data.extra.categories.slice(0, 6).map((c) => row([
@@ -73,5 +83,5 @@ export async function buildDayflowCard(data: DayflowSnapshot): Promise<string> {
       text('Asia/Taipei · Days begin at 4am', { color: C.muted, fontSize: 10 }),
       text('Computer time may overlap other platforms.', { color: C.muted, fontSize: 10, marginTop: 4 }),
     ], { flexDirection: 'column', borderTop: `1px solid ${C.border}`, paddingTop: 12 }),
-  ), 520, 620, dayflowFonts);
+  ), 520, 840, dayflowFonts);
 }

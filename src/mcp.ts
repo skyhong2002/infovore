@@ -61,7 +61,7 @@ export function createMcpServer(repository: Repository): McpServer {
   }, async () => result(repository.healthConnectSnapshot(config.ownerName)));
 
   server.registerTool('get_dayflow_summary', {
-    title: 'Dayflow summary', description: 'Public daily computer-time aggregates and category totals. Dayflow days start at 4am Taipei time; activity text and app names are excluded.',
+    title: 'Dayflow summary', description: 'Public daily computer-time aggregates, category totals and recognized narrative keywords. Dayflow days start at 4am Taipei time; full activity text and raw app lists are excluded.',
     inputSchema: { days: z.number().int().min(1).max(366).default(30) },
   }, async ({ days }) => {
     if (!config.dayflow.token || !config.sourceEnabled('dayflow')) return result({ error: 'Dayflow is not configured' });

@@ -127,8 +127,8 @@ Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
 Dayflow on macOS is an additional push source, using its bundled MCP helper.
 The companion refreshes recent days every 15 minutes and reconciles older dates
 in the background. `/platforms/dayflow`, `/card/dayflow.*`, Home, Now, and
-`/api/dayflow.json` show daily/category aggregates. Activity text and app names
-stay private. Computer time is separate from media totals to avoid overlap.
+`/api/dayflow.json` show daily/category aggregates and keywords recognized in activity descriptions.
+Full activity text and raw app lists stay private. Computer time is separate from media totals to avoid overlap.
 Set a dedicated `DAYFLOW_TOKEN`; see [setup and sync semantics](scripts/DAYFLOW.md).
 
 ## Android Health Connect sync
