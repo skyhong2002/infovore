@@ -62,10 +62,11 @@ function timeSection(timeSpent: SourceTimeSpent): string {
   const windows = timeSpent.windows;
   if (!windows.allTime) return '';
   const approx = timeSpent.method === 'estimated' ? '~' : '';
+  const heading = timeSpent.source === 'health' ? 'Exercise time' : 'Time spent';
   const tile = (name: string, seconds: number) =>
     `<div class="platform-stat"><span>${name}</span><strong>${seconds ? approx + timeAmount(seconds) : '—'}</strong></div>`;
   const note = timeNotes[timeSpent.source];
-  return `<section><div class="platform-section-heading"><h2>Time spent</h2><span>${html(timeSpent.method)}</span></div>
+  return `<section><div class="platform-section-heading"><h2>${heading}</h2><span>${html(timeSpent.method)}</span></div>
     <div class="platform-stats">${tile('today', windows.day)}${tile('this week', windows.week)}${tile('this month', windows.month)}${tile('this year', windows.year)}${tile('all time', windows.allTime)}</div>
     ${note ? `<div class="platform-note">${html(note)}</div>` : ''}</section>`;
 }

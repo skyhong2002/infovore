@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.1.2) reads selected records from Android Health Connect and
+This private companion (current version 0.1.3) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -34,6 +34,9 @@ safe aggregates and recent workout summaries.
 
 The initial import reads 30 days unless the optional Health Connect history
 permission is available and granted, in which case it reads up to ten years.
+Historical data is uploaded in sleep, exercise, and steps order before the
+remaining record types, so sleep summaries become available without waiting
+for the much larger granular step history.
 Subsequent imports use Health Connect change tokens and apply both upserts and
 deletions. Change tokens expire after 30 days, so an expired token safely falls
 back to another historical scan.

@@ -46,12 +46,14 @@ class HealthConnectSync(private val context: Context) {
             val historyDays = if (HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted) 3650L else 30L
             val start = Instant.now().minus(historyDays, ChronoUnit.DAYS)
             val end = Instant.now()
+            // Sleep is the highest-value wellness signal for this companion,
+            // so publish it before the much larger granular step history.
+            summary += uploadHistoryType<SleepSessionRecord>("睡眠", start, end, onProgress)
             summary += uploadHistoryType<ExerciseSessionRecord>("運動", start, end, onProgress)
             summary += uploadHistoryType<StepsRecord>("步數", start, end, onProgress)
             summary += uploadHistoryType<DistanceRecord>("距離", start, end, onProgress)
             summary += uploadHistoryType<TotalCaloriesBurnedRecord>("卡路里", start, end, onProgress)
             summary += uploadHistoryType<HeartRateRecord>("心率", start, end, onProgress)
-            summary += uploadHistoryType<SleepSessionRecord>("睡眠", start, end, onProgress)
             summary += uploadHistoryType<WeightRecord>("體重", start, end, onProgress)
             summary += uploadHistoryType<BodyFatRecord>("體脂", start, end, onProgress)
             settings.changesToken = token

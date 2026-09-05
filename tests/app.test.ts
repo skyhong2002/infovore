@@ -86,6 +86,7 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   assert.match(healthHtml, /30 min/);
   assert.match(healthHtml, /70\.2 kg/);
   assert.match(healthHtml, /72 bpm \(72–72\)/);
+  assert.match(healthHtml, /<h2>Exercise time<\/h2>/);
   assert.match(healthHtml, /Raw heart-rate samples/);
   assert.doesNotMatch(healthHtml, /app-health-record-1|com\.garmin/);
   const healthJson = await (await app.request('/api/health.json')).json() as {
