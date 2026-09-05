@@ -36,16 +36,11 @@ header {
 }
 
 .mark {
-  align-items: center;
-  background: #a9b0ff;
+  background: #fff;
   border-radius: 7px;
-  color: #101218;
-  display: flex;
-  font-size: 22px;
-  font-weight: 800;
   height: 42px;
-  justify-content: center;
   width: 42px;
+  object-fit: contain;
 }
 
 h1 {
@@ -85,8 +80,8 @@ input[type="password"] {
 }
 
 input:focus {
-  border-color: #a9b0ff;
-  outline: 2px solid rgba(169, 176, 255, 0.2);
+  border-color: #fefe7e;
+  outline: 2px solid rgba(254, 254, 126, 0.2);
 }
 
 .toggle {

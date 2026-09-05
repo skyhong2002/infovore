@@ -6,6 +6,7 @@ node_modules/
 *.sqlite-shm
 *.sqlite-wal
 android/.gradle/
+android/.kotlin/
 android/**/build/
 android/local.properties
 android/*.jks

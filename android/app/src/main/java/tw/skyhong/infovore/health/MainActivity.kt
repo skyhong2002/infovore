@@ -8,6 +8,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -53,8 +54,12 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(32), dp(24), dp(32))
         }
+        root.addView(ImageView(this).apply {
+            setImageResource(R.drawable.infovore_logo)
+            contentDescription = "infovore"
+        }, LinearLayout.LayoutParams(dp(64), dp(64)))
         root.addView(TextView(this).apply {
-            text = "Infovore Health 0.1.4"
+            text = "Infovore Health 0.1.5"
             textSize = 28f
         })
         root.addView(TextView(this).apply {

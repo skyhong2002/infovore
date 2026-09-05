@@ -248,7 +248,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.doesNotMatch(homeHtml, /Personal infoboard/);
   assert.doesNotMatch(homeHtml, /One timeline for everything worth remembering/);
   assert.match(homeHtml, /href="\/" aria-current="page">Home/);
-  assert.match(homeHtml, /property="og:image" content="http:\/\/localhost:3000\/og\.png"/);
+  assert.match(homeHtml, /property="og:image" content="http:\/\/localhost:3000\/og\.png\?v=life-rings"/);
   assert.doesNotMatch(homeHtml, /src="\/card\//);
   assert.match(homeHtml, /img\[data-adaptive-media\]\{aspect-ratio:var\(--media-ratio,.75\)/);
   assert.match(homeHtml, /Math\.min\(2, Math\.max\(0\.5, naturalRatio\)\)/);
@@ -256,6 +256,15 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   const og = await app.request('/og.png');
   assert.equal(og.status, 200);
   assert.equal(og.headers.get('content-type'), 'image/png');
+  for (const [url, size] of [['/favicon.png', 32], ['/apple-touch-icon.png', 180], ['/logos/infovore.png', 512]] as const) {
+    assert.ok(homeHtml.includes(url), `homepage references ${url}`);
+    const response = await app.request(url);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    const png = Buffer.from(await response.arrayBuffer());
+    assert.equal(png.readUInt32BE(16), size);
+    assert.equal(png.readUInt32BE(20), size);
+  }
   const cards = await app.request('/cards');
   assert.equal(cards.status, 200);
   const cardsHtml = await cards.text();

@@ -157,7 +157,19 @@ app.use('*', async (c, next) => {
 });
 const ogImage = readFileSync(new URL('../assets/og.png', import.meta.url));
 
-// Platform brand marks shipped in-repo (assets/logos); the pattern keeps
+for (const [route, file] of [
+  ['/favicon.png', 'favicon.png'],
+  ['/apple-touch-icon.png', 'apple-touch-icon.png'],
+] as const) {
+  const image = readFileSync(new URL(`../assets/brand/${file}`, import.meta.url));
+  app.get(route, (c) => {
+    c.header('Content-Type', 'image/png');
+    c.header('Cache-Control', 'public, max-age=604800');
+    return c.body(image.buffer.slice(image.byteOffset, image.byteOffset + image.byteLength) as ArrayBuffer);
+  });
+}
+
+// Site and platform brand marks shipped in-repo (assets/logos); the pattern keeps
 // requests to plain file names.
 app.get('/logos/:file{[a-z]+\\.(svg|png)}', (c) => {
   const file = c.req.param('file');

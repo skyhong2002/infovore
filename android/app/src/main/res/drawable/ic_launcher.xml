@@ -1,11 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="48dp"
-    android:height="48dp"
-    android:viewportWidth="48"
-    android:viewportHeight="48">
-    <path android:fillColor="#20342A" android:pathData="M0,0h48v48h-48z" />
-    <path
-        android:fillColor="#8DD3A8"
-        android:pathData="M24,7C14.6,7 7,14.6 7,24s7.6,17 17,17 17,-7.6 17,-17S33.4,7 24,7zM21,34h-5V19h5v15zM21,16h-5v-4h5v4zM33,34h-8V12h5v17h3v5z" />
-</vector>
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/infovore_logo"
+    android:gravity="fill"
+    android:filter="true" />

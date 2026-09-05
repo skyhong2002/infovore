@@ -1,5 +1,7 @@
 # infovore
 
+<img src="assets/brand/life-rings-lockup.png" alt="infovore — 生活年輪" width="240">
+
 A durable personal lifelog — aggregating what I play, watch, read, listen to,
 and attend, with a public timeline, feeds, status cards, yearly Wrapped, and
 an MCP endpoint for AI tools.
