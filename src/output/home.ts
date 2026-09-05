@@ -1,8 +1,6 @@
-import type { TimeSpentSummary } from '../data/database.js';
+import type { TimeSpentSummary, TimeWindows } from '../data/database.js';
 import type { Activity } from '../data/types.js';
-import type { HealthConnectSnapshot } from '../health/types.js';
 import { html, shell, sourceLabel, timeAmount } from './pages.js';
-import { sleepSection } from './sleep.js';
 
 export interface HomepageData {
   ownerName: string;
@@ -14,11 +12,11 @@ export interface HomepageData {
   timeSpent: TimeSpentSummary | null;
   publicActivityCount: number;
   connectedSources: number;
-  health?: HealthConnectSnapshot | null;
+  healthSleepTime?: TimeWindows | null;
 }
 
 const homeStyles = `
-  .home-health{margin-top:24px;border:1px solid #344255;border-radius:16px;padding:14px;background:#15191f;min-width:0}.home-health-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.home-health-head img{background:#fff;border-radius:10px;padding:5px;width:36px;height:36px}.home-health-head h2{font-size:18px;margin:0;color:#dce7f9}.home-health-head>a{margin-left:auto;color:#a8c7fa;font-size:12px;white-space:nowrap;text-decoration:none}.home-health .sleep-stats .platform-stat{padding:8px 10px;border-radius:10px}.home-health .sleep-stats .platform-stat strong{font-size:22px;line-height:1.15}.home-health .sleep-latest-label{font-size:11px;margin-bottom:8px}.home-health .sleep-chart-heading{margin-top:12px}.home-health .sleep-chart-heading p,.home-health .sleep-chart-heading>span{font-size:11px}.home-health-notes{margin-top:8px;font-size:11px;color:#98a9bf}.home-health-notes summary{cursor:pointer}.home-health-notes .platform-note{margin-top:8px;font-size:12px}.home-health-movement{display:flex;flex-wrap:wrap;gap:6px 20px;border-top:1px solid #2b333e;padding-top:10px;margin-top:10px;font-size:12px;color:#b7c5d9}.home-health-movement strong{color:#dce7f9;font-weight:600}.home-health-movement small{font-size:10px;color:#98a9bf}.home-health-empty{font-size:12px;color:#98a9bf;margin:8px 0}.home-platform-tile img[src="/logos/healthconnect.png"]{background:#fff;object-fit:contain;padding:8px}
+  .home-platform-tile img[src="/logos/healthconnect.png"],.home-recent-art[src="/logos/healthconnect.png"]{background:#fff;object-fit:contain;padding:8px}.home-platform-tile[href="/platforms/health"] .home-platform-meta{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.home-recent-title{text-decoration:none}.home-rhythm-bar{display:flex;flex-direction:column;overflow:hidden}.home-rhythm-other{background:var(--blue)}.home-rhythm-sleep{background:#a8c7fa}.home-rhythm-exercise{background:#67d5c3}.home-rhythm-legend{display:flex;flex-wrap:wrap;gap:10px;font-size:10px;color:var(--muted);margin-top:10px}.home-rhythm-legend i{display:inline-block;width:8px;height:8px;margin-right:4px}.home-time-list .home-time-row{grid-template-columns:110px minmax(0,1fr) 58px}
   .home-page{max-width:1120px;margin:0 auto}
   .home-profile{align-items:center;border-bottom:1px solid var(--line);display:flex;gap:26px;justify-content:space-between;padding:8px 0 30px}
   .home-profile-main{align-items:center;display:flex;gap:20px;min-width:0}
@@ -105,6 +103,7 @@ function formatDate(activity: Activity): { date: string; time: string; datetime:
 }
 
 function activityMeta(activity: Activity): string {
+  if (activity.source === 'health') return html(healthMeta(activity));
   const details: string[] = [];
   const add = (value: unknown) => details.push(html(value));
   if (activity.status) add(activity.status.replaceAll('_', ' '));
@@ -127,6 +126,25 @@ function activityMeta(activity: Activity): string {
   if (activity.extra.year) add(activity.extra.year);
   if (activity.rating) details.push(`★ ${html(activity.rating.value)}/${html(activity.rating.scale)}`);
   return details.join(' · ');
+}
+
+function healthMeta(activity: Activity): string {
+  const clock = (value: unknown) => typeof value === 'string' ? new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(new Date(value)) : '';
+  const span = (seconds: unknown) => {
+    const minutes = Math.round(Number(seconds ?? 0) / 60);
+    return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
+  };
+  if (activity.status === 'sleep') return [
+    `${clock(activity.extra.startTime)}–${clock(activity.extra.endTime)}`,
+    activity.extra.asleepSeconds == null ? `紀錄 ${span(activity.extra.sessionSeconds)} · 實睡未提供`
+      : `${activity.extra.partialStages ? '≥ ' : ''}${span(activity.extra.asleepSeconds)} 實睡`,
+    activity.extra.efficiency == null ? '效率未提供' : `效率 ${activity.extra.efficiency}%（非評分）`,
+    ...(activity.extra.asleepSeconds == null ? [] : [`深睡 ${span(activity.extra.deepSeconds)} · REM ${span(activity.extra.remSeconds)}`]),
+  ].join(' · ');
+  if (activity.status === 'workout') return `${activity.extra.durationMinutes ?? 0} min exercise`;
+  return 'Daily step total · Taipei';
 }
 
 function imageOrPlaceholder(image: string, className: string, label: string): string {
@@ -162,8 +180,8 @@ function activeDays(activities: Activity[]): number {
   return days.size;
 }
 
-function exactHours(activities: Activity[]): number[] {
-  const counts = Array.from({ length: 24 }, () => 0);
+function exactHours(activities: Activity[]): Array<{ other: number; sleep: number; exercise: number }> {
+  const counts = Array.from({ length: 24 }, () => ({ other: 0, sleep: 0, exercise: 0 }));
   for (const activity of activities) {
     if (activity.occurredAtPrecision !== 'exact') continue;
     const parsed = new Date(activity.occurredAt ?? '');
@@ -171,7 +189,10 @@ function exactHours(activities: Activity[]): number[] {
     const hour = Number(new Intl.DateTimeFormat('en', {
       timeZone: 'Asia/Taipei', hour: '2-digit', hourCycle: 'h23',
     }).format(parsed));
-    if (Number.isInteger(hour) && hour >= 0 && hour < 24) counts[hour]++;
+    if (Number.isInteger(hour) && hour >= 0 && hour < 24) {
+      const kind = activity.source === 'health' ? activity.status === 'sleep' ? 'sleep' : 'exercise' : 'other';
+      counts[hour]![kind]++;
+    }
   }
   return counts;
 }
@@ -188,12 +209,13 @@ function sourceHighlight(activity: Activity, timeSpent: TimeSpentSummary | null)
   const time = sourceTime && sourceTime.windows[window.key]
     ? `${sourceTime.method === 'estimated' ? '~' : ''}${timeAmount(sourceTime.windows[window.key])} ${window.label}`
     : '';
-  const meta = [time, activity.status?.replaceAll('_', ' '), activity.extra.artist ?? activity.extra.author ?? activity.extra.channel, when.date]
+  const meta = (activity.source === 'health' ? [healthMeta(activity), when.date]
+    : [time, activity.status?.replaceAll('_', ' '), activity.extra.artist ?? activity.extra.author ?? activity.extra.channel, when.date])
     .filter(Boolean)
     .join(' · ');
   return `<a class="home-platform-tile" href="/platforms/${html(activity.source)}">
     ${imageOrPlaceholder(activity.source === 'health' ? '/logos/healthconnect.png' : activity.image, 'home-platform-art', activity.title)}
-    <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(activity.source))}</span><span class="home-platform-title">${html(activity.title)}</span><span class="home-platform-meta">${html(meta)}</span></span>
+    <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(activity.source))}</span><span class="home-platform-title">${html(activity.title)}</span><span class="home-platform-meta" title="${html(meta)}">${html(meta)}</span></span>
   </a>`;
 }
 
@@ -203,7 +225,7 @@ function recentRow(activity: Activity): string {
   const time = when.time ? `${when.date} · ${when.time}` : when.date;
   return `<li class="home-recent-item">
     ${imageOrPlaceholder(activity.image, 'home-recent-art', activity.title)}
-    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(activity.mediaKind)}</span></span><span class="home-recent-title">${html(activity.title)}</span><span class="home-recent-meta">${html(meta)}</span></span>
+    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(activity.mediaKind)}</span></span>${activity.source === 'health' ? `<a class="home-recent-title" href="/platforms/health${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span></span>
     <time class="home-recent-time"${when.datetime ? ` datetime="${html(when.datetime)}"` : ''}>${html(time)}${when.time ? ' GMT+8' : ''}</time>
   </li>`;
 }
@@ -212,9 +234,9 @@ function metric(label: string, value: string, note: string): string {
   return `<div class="home-metric"><span class="home-metric-label">${html(label)}</span><strong class="home-metric-value">${html(value)}</strong><span class="home-metric-note">${html(note)}</span></div>`;
 }
 
-function timePanel(timeSpent: TimeSpentSummary | null): string {
+function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null): string {
   const window = homeTimeWindow(timeSpent);
-  const entries = (timeSpent?.sources ?? [])
+  const entries = [...(timeSpent?.sources ?? []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : [])]
     .filter((entry) => entry.windows[window.key] > 0)
     .sort((a, b) => b.windows[window.key] - a.windows[window.key]);
   if (!entries.length) return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">No time records are available yet.</p><div class="home-empty">Time appears after the first platform sync.</div></div>`;
@@ -222,35 +244,26 @@ function timePanel(timeSpent: TimeSpentSummary | null): string {
   const rows = entries.map((entry) => {
     const seconds = entry.windows[window.key];
     const approx = entry.method === 'estimated' ? '~' : '';
-    return `<a class="home-time-row" href="/platforms/${html(entry.source)}"><span class="home-time-label">${html(sourceLabel(entry.source))}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
+    const label = entry.source === 'health-sleep' ? 'Health · sleep' : entry.source === 'health' ? 'Health · exercise' : sourceLabel(entry.source);
+    const href = entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${html(entry.source)}`;
+    return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${entry.source.startsWith('health') ? `;background:${entry.source === 'health-sleep' ? '#a8c7fa' : '#67d5c3'}` : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
   }).join('');
-  return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div></div>`;
-}
-
-function healthPanel(snapshot: HealthConnectSnapshot): string {
-  const count = (value: number) => new Intl.NumberFormat('en').format(value);
-  const hasSteps = (snapshot.extra.coverage.steps ?? 0) > 0;
-  const hasExercise = (snapshot.extra.coverage.exercise_session ?? 0) > 0;
-  const exerciseSeconds = snapshot.stats.totalExerciseSeconds ?? 0;
-  const recentSteps = snapshot.extra.daily.find((day) => day.steps > 0);
-  return `<section class="home-health health-platform" id="health" aria-labelledby="home-health-title">
-    <div class="home-health-head"><img src="/logos/healthconnect.png" alt="Health Connect logo" width="36" height="36"><h2 id="home-health-title">Health · 睡眠與活動</h2><a href="/platforms/health#sleep">完整 Health →</a></div>
-    ${sleepSection(snapshot.extra, { compact: true, dayLimit: 7 })}
-    <div class="home-health-movement">
-      <span>運動 <strong>${hasExercise ? `${count(snapshot.stats.workouts ?? 0)} 次 · ${exerciseSeconds ? timeAmount(exerciseSeconds) : '0m'}` : '未提供'}</strong> <small>${hasExercise ? '累計' : ''}</small></span>
-      <span>步數 <strong>${hasSteps ? count(snapshot.stats.totalSteps ?? 0) : '未提供'}</strong> <small>${hasSteps ? '累計' : ''}</small></span>
-      ${recentSteps ? `<span>最近步數 <strong>${count(recentSteps.steps)}</strong> <small>${html(recentSteps.day)}</small></span>` : ''}
-    </div>
-  </section>`;
+  return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time; shown separately from exercise and excluded from the overview time total.</p>' : ''}</div>`;
 }
 
 function rhythmPanel(activities: Activity[]): string {
   const counts = exactHours(activities);
-  const max = Math.max(1, ...counts);
-  const bars = counts.map((count, hour) => `<span class="home-rhythm-bar" style="height:${count ? Math.max(10, Math.round(count / max * 100)) : 4}%" title="${hour}:00 · ${count} activities" aria-label="${hour}:00, ${count} activities"></span>`).join('');
+  const total = (count: typeof counts[number]) => count.other + count.sleep + count.exercise;
+  const max = Math.max(1, ...counts.map(total));
+  const bars = counts.map((count, hour) => {
+    const sum = total(count);
+    const label = `${hour}:00 · ${sum} activities · ${count.sleep} sleep wake-ups · ${count.exercise} exercise starts`;
+    return `<span class="home-rhythm-bar" data-hour="${hour}" style="background:var(--surface-raised);height:${sum ? Math.max(10, Math.round(sum / max * 100)) : 4}%" title="${label}" aria-label="${label}">${(['other', 'sleep', 'exercise'] as const).map((kind) => count[kind] ? `<span class="home-rhythm-${kind}" data-count="${count[kind]}" style="height:${count[kind] / sum * 100}%"></span>` : '').join('')}</span>`;
+  }).join('');
   const labels = [0, 3, 6, 9, 12, 15, 18, 21].map((hour) => `<span>${hour}:00</span>`).join('');
-  const hasData = counts.some(Boolean);
-  return `<div class="home-panel"><h2>Activity rhythm</h2><p class="home-panel-intro">Exact timestamps, shown in Taipei time.</p>${hasData ? `<div class="home-rhythm" role="img" aria-label="Activity by hour">${bars}</div><div class="home-rhythm-labels">${labels}</div>` : '<div class="home-empty">No exact timestamps have been collected yet.</div>'}</div>`;
+  const hasData = counts.some((count) => total(count) > 0);
+  const hasHealth = counts.some((count) => count.sleep || count.exercise);
+  return `<div class="home-panel"><h2>Activity rhythm</h2><p class="home-panel-intro">Exact timestamps, shown in Taipei time.</p>${hasData ? `<div class="home-rhythm" role="img" aria-label="Activity by hour">${bars}</div><div class="home-rhythm-labels">${labels}</div>${hasHealth ? '<div class="home-rhythm-legend"><span><i class="home-rhythm-other"></i>Other activity</span><span><i class="home-rhythm-sleep"></i>Sleep wake-up</span><span><i class="home-rhythm-exercise"></i>Exercise start</span></div><p class="home-footnote">Counts of events, not hours asleep. Daily step totals have no exact time and are excluded.</p>' : ''}` : '<div class="home-empty">No exact timestamps have been collected yet.</div>'}</div>`;
 }
 
 export function homePage(data: HomepageData): string {
@@ -274,9 +287,8 @@ export function homePage(data: HomepageData): string {
       ${metric('Public entries', String(data.publicActivityCount), 'in the archive')}
       ${metric('Active platforms', String(data.connectedSources), 'currently configured')}
     </section>
-    ${data.health ? healthPanel(data.health) : ''}
     <section class="home-section"><div class="home-section-head"><div><h2>Latest from your platforms</h2><p>One current signal from each connected source.</p></div><a href="/platforms">View all platforms →</a></div>${highlights}</section>
-    <section class="home-section home-dashboard-grid">${rhythmPanel(data.allActivities)}${timePanel(data.timeSpent)}</section>
+    <section class="home-section home-dashboard-grid">${rhythmPanel(data.allActivities)}${timePanel(data.timeSpent, data.healthSleepTime)}</section>
     <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Recent activity</h2><p>The latest public entries across every medium.</p></div><a href="/profile">Show all →</a></div>${recent}<p class="home-footnote">${data.lastUpdated ? `Last synced ${html(data.lastUpdated)}. ` : ''}High-frequency music and YouTube activity are sampled so every medium remains visible.</p></section>
   </div>`;
   return shell(`${data.ownerName} · overview`, body, 'home', homeStyles);

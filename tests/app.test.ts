@@ -113,11 +113,12 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   const homeHtml = await (await app.request('/')).text();
   assert.match(homeHtml, /Health/);
   assert.match(homeHtml, /4,321 steps/);
-  assert.match(homeHtml, /id="health"/);
+  assert.doesNotMatch(homeHtml, /id="health"|home-health-head/);
   assert.match(homeHtml, /href="\/platforms\/health#sleep"/);
-  assert.match(homeHtml, /<details class="sleep-row">/);
+  assert.match(homeHtml, /home-rhythm-sleep/);
+  assert.match(homeHtml, /Health · sleep/);
+  assert.match(homeHtml, /Health · exercise/);
   assert.match(homeHtml, /00:00–08:00/);
-  assert.ok(homeHtml.indexOf('id="health"') < homeHtml.indexOf('Latest from your platforms'));
   assert.doesNotMatch(homeHtml, /app-health-sleep-1|com\.garmin|beatsPerMinute/);
   const publicStatus = await (await app.request('/status')).text();
   assert.match(publicStatus, /"source":"health"/);

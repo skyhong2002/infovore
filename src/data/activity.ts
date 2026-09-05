@@ -89,8 +89,11 @@ export function selectHomepageActivities(
   let musicCount = 0;
   let youtubeCount = 0;
   let regularCount = 0;
+  let healthCount = 0;
+  const healthBudget = activities.some((activity) => activity.source !== 'health') ? Math.max(1, Math.floor(limit / 4)) : limit;
 
   for (const activity of activities) {
+    if (activity.source === 'health' && healthCount >= healthBudget) continue;
     if (isMusic(activity)) {
       const day = activityTaipeiDay(activity);
       if (musicCount >= musicBudget || seenMusicDays.has(day)) continue;
@@ -106,6 +109,7 @@ export function selectHomepageActivities(
       regularCount++;
     }
     selected.push(activity);
+    if (activity.source === 'health') healthCount++;
     if (selected.length >= limit) break;
   }
   return selected;

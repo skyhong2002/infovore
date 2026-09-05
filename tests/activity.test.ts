@@ -72,6 +72,15 @@ test('homepage still shows one representative when the archive only contains mus
   assert.deepEqual(selectHomepageActivities(music).map((activity) => activity.title), ['latest']);
 });
 
+test('health sessions appear in Recent activity without taking over the mixed feed', () => {
+  const health = Array.from({ length: 30 }, (_, i) => homepageActivity(`sleep-${i}`, 'fitness', '2026-09-04T23:00:00Z', 'health'));
+  const movies = Array.from({ length: 30 }, (_, i) => homepageActivity(`movie-${i}`, 'movie', '2026-09-03T23:00:00Z'));
+  const selected = selectHomepageActivities([...health, ...movies], 24);
+  assert.equal(selected.length, 24);
+  assert.equal(selected.filter(a => a.source === 'health').length, 6);
+  assert.equal(selectHomepageActivities(health, 24).length, 24);
+});
+
 test('homepage gives YouTube its own budget and keeps one video per Taipei day', () => {
   const activities: Activity[] = [];
   for (let index = 0; index < 50; index++) {

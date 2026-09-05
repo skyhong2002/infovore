@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { activityFromEntry } from './activity.js';
 import { taipeiDay, taipeiWindowStarts } from './time.js';
 import { sleepDays } from '../health/sleep.js';
+import { recordedSleepWindows } from '../health/home.js';
 import type { Activity, SourceSnapshot } from './types.js';
 import type {
   YoutubeChannelMetadata,
@@ -2162,6 +2163,12 @@ export class Repository {
         coverage: status.recordsByType,
       },
     };
+  }
+
+  healthConnectSleepTime(now = new Date()): TimeWindows {
+    const rows = this.db.prepare(`SELECT start_at, end_at FROM health_connect_records
+      WHERE data_type='sleep_session'`).all() as Array<{ start_at: string; end_at: string }>;
+    return recordedSleepWindows(rows, now);
   }
 
   latestRuns(): SyncRun[] {

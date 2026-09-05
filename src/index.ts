@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
 import { Repository } from './data/database.js';
-import { activityFromEntry, selectHomepageActivities } from './data/activity.js';
+import { selectHomepageActivities } from './data/activity.js';
 import { nextIntervalAt } from './data/schedule.js';
 import type { SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
@@ -18,6 +18,7 @@ import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
 import { html, nowPage, profilePage, shell, wrappedPage } from './output/pages.js';
 import { homePage } from './output/home.js';
+import { healthHomepageActivities } from './health/home.js';
 import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
 import { statsPage } from './output/stats.js';
 import { handleMcpRequest } from './mcp.js';
@@ -238,11 +239,8 @@ function lastUpdatedLabel(): string | null {
 app.get('/', (c) => {
   const now = Date.now();
   const healthSnapshot = config.sourceEnabled('health') && config.healthConnect.token ? repository.healthConnectSnapshot(config.ownerName) : null;
-  const latestHealth = healthSnapshot?.entries.find((entry) => entry.status === 'daily');
-  const healthActivity = latestHealth
-    ? activityFromEntry({ ...latestHealth, visibility: 'public' })
-    : null;
-  const all = [...repository.listActivities(500), ...(healthActivity ? [healthActivity] : [])]
+  const healthActivities = healthSnapshot ? healthHomepageActivities(healthSnapshot) : [];
+  const all = [...repository.listActivities(500).filter((activity) => activity.source !== 'health'), ...healthActivities]
     .sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
   const eligible = all
     .filter((activity) => {
@@ -252,6 +250,10 @@ app.get('/', (c) => {
   const combined = [...eligible]
     .sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
   const recent = selectHomepageActivities(combined, 24);
+  const highlights = latestSourceActivities(combined);
+  const latestSleep = combined.find((activity) => activity.source === 'health' && activity.status === 'sleep');
+  const healthHighlight = highlights.findIndex((activity) => activity.source === 'health');
+  if (latestSleep && healthHighlight >= 0) highlights[healthHighlight] = latestSleep;
   const profileSnapshot = getCache<SourceSnapshot>('data:statsfm')?.data;
   const sourceCounts = repository.countBySource();
   const publicActivityCount = repository.countPublicActivities() + youtubeLifetimeWatches();
@@ -263,11 +265,11 @@ app.get('/', (c) => {
     lastUpdated: lastUpdatedLabel(),
     allActivities: combined,
     recentActivities: recent,
-    sourceHighlights: latestSourceActivities(combined),
+    sourceHighlights: highlights,
     timeSpent: repository.timeSpent(),
     publicActivityCount,
     connectedSources,
-    health: healthSnapshot,
+    healthSleepTime: healthSnapshot ? repository.healthConnectSleepTime(new Date(now)) : null,
   }));
 });
 
