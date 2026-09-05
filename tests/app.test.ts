@@ -15,6 +15,8 @@ const YOUTUBE_SECRET = 'test-private-data-key-with-at-least-32-characters';
 
 test('Health Connect ingestion is authenticated, bounded, private, and idempotent', async () => {
   const beforeSleepCard = await (await app.request('/card/health.svg')).text();
+  const beforeVariants = await Promise.all(['health-sleep', 'health-sleep-stages', 'health-exercise', 'health-steps']
+    .map(async (name) => [name, await (await app.request(`/card/${name}.svg`)).text()] as const));
   const payload = {
     syncId: 'app-health-sync-0001',
     deviceId: 'app-health-device-01',
@@ -76,6 +78,21 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   const status = await ingestApp.request('/api/ingest/health-connect/status', { headers });
   assert.equal(status.status, 200);
   assert.equal((await status.json() as { recordsByType: Record<string, number> }).recordsByType.heart_rate, 1);
+
+  // A directly embedded variant must refresh all cards, without a gallery visit.
+  for (const [name, before] of beforeVariants) {
+    const variant = await app.request(`/card/${name}.svg`);
+    assert.equal(variant.status, 200);
+    assert.notEqual(await variant.text(), before, `${name} refreshes after sync`);
+  }
+  const gallery = load(await (await app.request('/cards')).text());
+  assert.equal(gallery('.card-gallery-section').filter((_, section) => gallery(section).find('h2').text() === 'Health Connect').find('img').length, 5);
+  for (const [name] of beforeVariants) {
+    assert.equal(gallery(`img[src^="/card/${name}.webp?v="]`).length, 1);
+    const raster = await app.request(`/card/${name}.webp?scale=1`);
+    assert.equal(raster.status, 200);
+    assert.equal(raster.headers.get('content-type'), 'image/webp');
+  }
 
   const platformIndex = await (await app.request('/platforms')).text();
   assert.match(platformIndex, /href="\/platforms\/health"/);

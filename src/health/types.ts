@@ -102,6 +102,8 @@ export interface SleepDay {
 
 export interface HealthConnectExtra {
   daily: HealthDailySummary[];
+  // Latest positive step days, independent of the recent activity cutoff.
+  steps?: { days: Array<{ day: string; steps: number }> };
   sleep?: {
     // Most recent 30 recorded wake-up days, independent of other record types.
     days: SleepDay[];

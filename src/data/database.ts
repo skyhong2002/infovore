@@ -2135,6 +2135,12 @@ export class Repository {
       .sort((a, b) => b.activityAt.localeCompare(a.activityAt));
     const totalSteps = Math.round(Number(totals.steps));
     const stepDays = Number(totals.step_days);
+    const recentStepDays = this.db.prepare(`
+      SELECT date(start_at, '+8 hours') day,
+        ROUND(SUM(COALESCE(json_extract(payload_json, '$.count'), 0))) steps
+      FROM health_connect_records WHERE data_type='steps'
+      GROUP BY day HAVING steps > 0 ORDER BY day DESC LIMIT 14
+    `).all() as Array<{ day: string; steps: number }>;
     return {
       source: 'health',
       profile: { id: 'health-connect', name: ownerName, avatar: '', url: '' },
@@ -2150,6 +2156,7 @@ export class Repository {
       entries,
       extra: {
         daily,
+        steps: { days: recentStepDays.map((day) => ({ day: day.day, steps: Number(day.steps) })) },
         sleep: {
           days: sleepDays(sleepRows),
           totalSessions: status.recordsByType.sleep_session ?? 0,

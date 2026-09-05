@@ -76,11 +76,18 @@ change.
 
 ## Cards
 
-Fourteen cards in total — combined and single-medium variants:
+Nineteen cards in total — combined and single-medium variants:
 `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
 `simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
-`youtube` / `youtube-channels` / `youtube-topics`, `health`.
+`youtube` / `youtube-channels` / `youtube-topics`,
+`health` (latest sleep), `health-sleep` (14 recorded wake-up days),
+`health-sleep-stages` (stage proportions and efficiency), `health-exercise`, `health-steps`.
+
+Health cards use Taipei time and the official Health Connect logo. Missing
+sleep stages remain unknown; efficiency is not a Garmin sleep score. Step
+history shows the latest positive recorded days, not missing days as zero.
+All five variants refresh together after Android sync, including direct embeds.
 
 Each card is served as **svg** (vector), **png**, or **webp** — the previews
 above use webp (≈10× smaller than the SVG), so this page loads fast.

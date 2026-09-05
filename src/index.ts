@@ -28,7 +28,7 @@ import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } fro
 import { buildSimklCard, buildSimklMoviesCard, buildSimklShowsCard } from './output/simkl.js';
 import { buildGoodreadsCard } from './output/goodreads.js';
 import { buildYoutubeChannelsCard, buildYoutubeOverviewCard, buildYoutubeTopicsCard } from './output/youtube.js';
-import { buildHealthCard } from './output/health.js';
+import { buildHealthCard, buildHealthSleepCard, buildHealthSleepStagesCard, buildHealthExerciseCard, buildHealthStepsCard } from './output/health.js';
 
 // Registration point: a new source module goes in `src/sources/`, returns a
 // `SourceSnapshot`, and gets one entry here. A new output module goes in
@@ -69,6 +69,10 @@ const cards: Record<string, CardDefinition> = {
   'youtube-channels': defineCard('youtube', buildYoutubeChannelsCard),
   'youtube-topics': defineCard('youtube', buildYoutubeTopicsCard),
   health: defineCard('health', buildHealthCard),
+  'health-sleep': defineCard('health', buildHealthSleepCard),
+  'health-sleep-stages': defineCard('health', buildHealthSleepStagesCard),
+  'health-exercise': defineCard('health', buildHealthExerciseCard),
+  'health-steps': defineCard('health', buildHealthStepsCard),
 };
 
 const repository = new Repository(config.databasePath);
@@ -133,14 +137,17 @@ let healthCardRefresh: Promise<void> | null = null;
 app.use('*', async (c, next) => {
   if (config.healthConnect.token && (
     c.req.path === '/platforms/health' || c.req.path === '/cards' ||
-    /^\/card\/health\.(svg|png|webp)$/.test(c.req.path)
+    /^\/card\/health(?:-[a-z-]+)?\.(svg|png|webp)$/.test(c.req.path)
   )) {
     if (healthCardRefresh) await healthCardRefresh;
     const revision = `${repository.healthConnectStatus().lastSyncedAt}:${new Date().toISOString().slice(0, 10)}`;
     if (revision !== healthCardRevision) {
       healthCardRefresh = (async () => {
-        const svg = await buildHealthCard(repository.healthConnectSnapshot(config.ownerName));
-        setCache('svg:health', svg);
+        const snapshot = repository.healthConnectSnapshot(config.ownerName);
+        // Publish one coherent revision only after every variant renders successfully.
+        const rendered = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === 'health')
+          .map(async ([name, card]) => [name, await card.build(snapshot)] as const));
+        for (const [name, svg] of rendered) setCache(`svg:${name}`, svg);
         healthCardRevision = revision;
       })();
       try { await healthCardRefresh; } finally { healthCardRefresh = null; }
@@ -187,7 +194,7 @@ const allSections: PlatformDefinition[] = [
   },
   {
     source: 'health', title: 'Health Connect', description: 'Daily movement, workouts, sleep, heart rate and body measurements from Android and Garmin.',
-    accent: '#a8c7fa', cards: ['health'], jsonUrl: '/api/health.json', logo: '/logos/healthconnect.png',
+    accent: '#a8c7fa', cards: ['health', 'health-sleep', 'health-sleep-stages', 'health-exercise', 'health-steps'], jsonUrl: '/api/health.json', logo: '/logos/healthconnect.png',
   },
 ];
 
@@ -335,7 +342,7 @@ app.get('/platforms/:source', (c) => {
       definition,
       repository.healthConnectSnapshot(config.ownerName),
       status.lastSyncedAt,
-      { health: version('health') },
+      Object.fromEntries((definition.cards ?? []).map((name) => [name, version(name)])),
       timeSpent,
     ));
   }
