@@ -1,6 +1,7 @@
 import type { Activity } from '../data/types.js';
 import type { WrappedSummary } from '../data/database.js';
 import { config } from '../config.js';
+import { healthActivityMeta } from './health-activity.js';
 
 export function html(value: unknown): string {
   return String(value ?? '').replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&#39;', '"': '&quot;' }[char]!));
@@ -25,6 +26,7 @@ export function timeAmount(seconds: number): string {
 }
 
 const styles = `
+  .health-activity{min-width:0}.health-activity>div{min-width:0}.entry.health-activity img{background:#fff;padding:6px;object-fit:contain;width:48px;height:48px}.health-activity h3 a{color:inherit;text-decoration:none}.health-activity .health-activity-summary{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:11px;line-height:1.5}.health-activity time{display:block;color:var(--quiet);font-size:10px;margin-top:4px}
   .sleep-latest-label{color:#a8c7fa;font-size:12px;margin:0 0 10px}
   .sleep-stats{grid-template-columns:repeat(4,minmax(0,1fr))!important}.sleep-stats .platform-stat{border-top:2px solid #7cacf8}.sleep-stats .platform-stat strong{font-variant-numeric:tabular-nums;font-size:30px}.sleep-stats .platform-stat span{color:#bbc7db}.sleep-stats .platform-stat small{color:#9aa8bb;font-size:11px}
   .sleep-chart-heading{align-items:center;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin:18px 0 10px}.sleep-chart-heading h3{font-size:16px;margin:0 0 2px}.sleep-chart-heading p,.sleep-chart-heading>span{color:#9aa8bb;font-size:12px;margin:0}
@@ -108,6 +110,13 @@ export function sourceLabel(source: string): string {
 
 function activityCard(activity: Activity): string {
   const when = activity.occurredAt ?? activity.firstSeenAt;
+  if (activity.source === 'health') {
+    const date = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(when));
+    const clock = activity.occurredAtPrecision === 'exact'
+      ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(when)) : '';
+    const summary = healthActivityMeta(activity);
+    return `<article class="card entry health-activity" id="activity-${html(activity.id)}"><img src="/logos/healthconnect.png" alt="Health Connect logo" width="48" height="48"><div><span class="pill">Health · ${html(activity.status)}</span><h3><a href="/platforms/health${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a></h3><div class="muted health-activity-summary" title="${html(summary)}">${html(summary)}</div><time datetime="${html(when)}">${html(date)}${clock ? ` · ${clock} GMT+8${activity.status === 'sleep' ? ' · 醒來' : ''}` : ' · 每日彙總'}</time></div></article>`;
+  }
   const date = /^\d{4}-\d{2}-\d{2}/.test(when)
     ? new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(when))
     : when;
@@ -119,7 +128,7 @@ export function nowPage(ownerName: string, current: Activity[], upcoming: Activi
   const section = (title: string, description: string, entries: Activity[]) => `<section class="content-section"><div class="section-heading"><div><h2>${title}</h2><p>${description}</p></div><span>${entries.length} entries</span></div>${entries.length ? `<div class="grid">${entries.map(activityCard).join('')}</div>` : '<div class="empty">Nothing here yet.</div>'}</section>`;
   const intro = `<section class="page-intro"><div><div class="eyebrow">Present view</div><h1>Now</h1><p>A short-term view of what ${html(ownerName)} is in the middle of, what is coming next, and what just happened.</p></div><div class="page-intro-aside">For the full personal overview, return home.</div></section>
     <div class="context-line"><a href="/">Home</a><span>→</span><strong>Now</strong><span>→</span><a href="/profile">Long-term archive</a></div>`;
-  return shell(`${ownerName} · now`, intro + section('Currently', 'Media with an active reading, watching, or playing status.', current) + section('Upcoming events', 'Ticketed and planned real-world activities.', upcoming) + section('Just happened', 'The latest completed or recorded entries.', recent), 'now');
+  return shell(`${ownerName} · now`, intro + section('Currently', 'Media with an active reading, watching, or playing status.', current) + section('Upcoming events', 'Ticketed and planned real-world activities.', upcoming) + section('Just happened', 'Recent media, sleep, exercise and daily steps. High-frequency sources are sampled.', recent), 'now');
 }
 
 export function profilePage(ownerName: string, total: number, bySource: Record<string, number>, latest: Activity[]): string {

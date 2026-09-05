@@ -1,10 +1,10 @@
 import { activityFromEntry } from '../data/activity.js';
-import { taipeiWindowStarts } from '../data/time.js';
+import { taipeiDay, taipeiWindowStarts } from '../data/time.js';
 import type { Activity } from '../data/types.js';
 import type { TimeWindows } from '../data/database.js';
 import type { HealthConnectSnapshot } from './types.js';
 
-// Homepage-only public summaries; never persist raw records into the media feed.
+// Public dashboard summaries; never persist raw records into the media feed.
 export function healthHomepageActivities(snapshot: HealthConnectSnapshot): Activity[] {
   const sleeps = (snapshot.extra.sleep?.days ?? []).flatMap((day) => day.intervals.map((session) => activityFromEntry({
     source: 'health', sourceItemId: `sleep:${session.startTime}:${session.endTime}`, kind: 'fitness',
@@ -27,6 +27,20 @@ export function healthHomepageActivities(snapshot: HealthConnectSnapshot): Activ
     activityAt: day.day, rating: null, visibility: 'public', extra: { steps: day.steps },
   }, `${day.day}T00:00:00+08:00`));
   return [...sleeps, ...exercise, ...steps].sort((a, b) => Date.parse(b.occurredAt!) - Date.parse(a.occurredAt!));
+}
+
+// Home and Now must use the same live projection. Day-only step totals have no
+// clock time; compare their Taipei date, not an invented midnight timestamp.
+export function dashboardActivities(media: Activity[], health: HealthConnectSnapshot | null, now: Date): Activity[] {
+  const items = [...media.filter((activity) => activity.source !== 'health'), ...(health ? healthHomepageActivities(health) : [])];
+  const seen = new Set<string>();
+  return items.filter((activity) => {
+    if (activity.visibility !== 'public' || seen.has(activity.id)) return false;
+    seen.add(activity.id);
+    if (!activity.occurredAt) return true;
+    if (activity.occurredAtPrecision === 'day') return taipeiDay(activity.occurredAt) <= taipeiDay(now);
+    return activity.occurredAtPrecision !== 'exact' || Date.parse(activity.occurredAt) <= +now;
+  }).sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
 }
 
 // Recorded session time (including awake), not time asleep. Merge overlapping

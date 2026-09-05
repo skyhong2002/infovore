@@ -18,7 +18,7 @@ import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
 import { html, nowPage, profilePage, shell, wrappedPage } from './output/pages.js';
 import { homePage } from './output/home.js';
-import { healthHomepageActivities } from './health/home.js';
+import { dashboardActivities } from './health/home.js';
 import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
 import { statsPage } from './output/stats.js';
 import { handleMcpRequest } from './mcp.js';
@@ -236,19 +236,15 @@ function lastUpdatedLabel(): string | null {
   return timestamps.length ? formatGmt8(Math.max(...timestamps)) : null;
 }
 
+function dashboardView(now: Date) {
+  const healthSnapshot = config.sourceEnabled('health') && config.healthConnect.token
+    ? repository.healthConnectSnapshot(config.ownerName, now) : null;
+  return { healthSnapshot, activities: dashboardActivities(repository.listActivities(500), healthSnapshot, now) };
+}
+
 app.get('/', (c) => {
-  const now = Date.now();
-  const healthSnapshot = config.sourceEnabled('health') && config.healthConnect.token ? repository.healthConnectSnapshot(config.ownerName) : null;
-  const healthActivities = healthSnapshot ? healthHomepageActivities(healthSnapshot) : [];
-  const all = [...repository.listActivities(500).filter((activity) => activity.source !== 'health'), ...healthActivities]
-    .sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
-  const eligible = all
-    .filter((activity) => {
-      if (!activity.occurredAt || !['exact', 'day'].includes(activity.occurredAtPrecision)) return true;
-      return Date.parse(activity.occurredAt) <= now;
-    });
-  const combined = [...eligible]
-    .sort((a, b) => Date.parse(b.occurredAt ?? '') - Date.parse(a.occurredAt ?? ''));
+  const now = new Date();
+  const { healthSnapshot, activities: combined } = dashboardView(now);
   const recent = selectHomepageActivities(combined, 24);
   const highlights = latestSourceActivities(combined);
   const latestSleep = combined.find((activity) => activity.source === 'health' && activity.status === 'sleep');
@@ -269,7 +265,7 @@ app.get('/', (c) => {
     timeSpent: repository.timeSpent(),
     publicActivityCount,
     connectedSources,
-    healthSleepTime: healthSnapshot ? repository.healthConnectSleepTime(new Date(now)) : null,
+    healthSleepTime: healthSnapshot ? repository.healthConnectSleepTime(now) : null,
   }));
 });
 
@@ -463,10 +459,12 @@ function latestSourceActivities(items: ReturnType<Repository['listActivities']>)
 }
 
 app.get('/now', (c) => {
-  const now = new Date().toISOString();
-  const current = currentActivities(repository.listActivities(500));
-  const upcoming = upcomingActivities(now);
-  const recent = repository.queryActivities({ until: now, limit: 24 }).data;
+  const now = new Date();
+  const { activities } = dashboardView(now);
+  const current = currentActivities(activities);
+  const upcoming = upcomingActivities(now.toISOString());
+  const recent = selectHomepageActivities(activities, 24);
+  c.header('Cache-Control', 'no-cache');
   return c.html(nowPage(config.ownerName, current, upcoming, recent));
 });
 

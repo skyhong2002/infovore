@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { strToU8, zipSync } from 'fflate';
+import { load } from 'cheerio';
 import { app, repository } from '../src/index.js';
 import { createIngestApp } from '../src/ingest.js';
 import { setCache } from '../src/data/cache.js';
@@ -120,6 +121,20 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   assert.match(homeHtml, /Health · exercise/);
   assert.match(homeHtml, /00:00–08:00/);
   assert.doesNotMatch(homeHtml, /app-health-sleep-1|com\.garmin|beatsPerMinute/);
+  const nowResponse = await app.request('/now');
+  assert.equal(nowResponse.status, 200);
+  assert.equal(nowResponse.headers.get('cache-control'), 'no-cache');
+  const nowHtml = await nowResponse.text();
+  const nowPage = load(nowHtml);
+  const recentHealth = nowPage('.content-section').filter((_, section) => nowPage(section).find('h2').text() === 'Just happened');
+  assert.equal(recentHealth.find('.health-activity').length, 3);
+  assert.match(recentHealth.text(), /Sleep · 睡眠/);
+  assert.match(recentHealth.text(), /00:00–08:00/);
+  assert.match(recentHealth.text(), /30 min exercise/);
+  assert.match(recentHealth.text(), /4,321 steps/);
+  assert.equal(nowPage('.content-section').first().find('.health-activity').length, 0);
+  assert.equal(recentHealth.find('a[href="/platforms/health#sleep"]').length, 1);
+  assert.doesNotMatch(nowHtml, /app-health-sleep-1|app-health-record-1|com\.garmin|beatsPerMinute/);
   const publicStatus = await (await app.request('/status')).text();
   assert.match(publicStatus, /"source":"health"/);
 
