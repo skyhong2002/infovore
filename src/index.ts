@@ -325,6 +325,7 @@ app.get('/', (c) => {
     publicActivityCount,
     connectedSources,
     dayflow: dayflowEnabled ? getCache<DayflowSnapshot>('data:dayflow')?.data : null,
+    coverage: repository.activityCoverage(now, { dayflow: dayflowEnabled, health: Boolean(healthSnapshot) }),
     healthSleepTime: healthSnapshot ? repository.healthConnectSleepTime(now) : null,
   }));
 });

@@ -1,3 +1,4 @@
+import { recordedCoverage, type RecordedInterval } from './coverage.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -673,6 +674,28 @@ export class Repository {
 
   listActivities(limit = 100): Activity[] {
     return this.queryActivities({ limit }).data;
+  }
+
+  activityCoverage(now = new Date(), enabled = { dayflow: true, health: true }) {
+    const since = new Date(+taipeiWindowStarts(now).day - 6 * 86400000).toISOString();
+    const intervals: RecordedInterval[] = [];
+    if (enabled.dayflow) intervals.push(...this.dayflow.recordedIntervals(taipeiDay(new Date(Date.parse(since) - 86400000)), now));
+    if (enabled.health) {
+      const rows = this.db.prepare(`SELECT data_type, start_at, end_at FROM health_connect_records
+        WHERE data_type IN ('sleep_session', 'exercise_session') AND end_at >= ? AND start_at <= ?`)
+        .all(since, now.toISOString()) as Array<{ data_type: string; start_at: string; end_at: string }>;
+      intervals.push(...rows.map(row => ({ source: row.data_type === 'sleep_session' ? 'health-sleep' : 'health',
+        start: Date.parse(row.start_at), end: Date.parse(row.end_at) })));
+    }
+    // Listening records have an end timestamp and duration; daily totals and
+    // completion timestamps from other media cannot locate a recorded interval.
+    const music = this.db.prepare(`SELECT occurred_at, json_extract(extra_json, '$.durationMs') duration
+      FROM activities WHERE source = 'statsfm' AND visibility = 'public' AND occurred_precision = 'exact'
+        AND occurred_at <= ? AND occurred_at >= ?`)
+      .all(now.toISOString(), since) as Array<{ occurred_at: string; duration: number }>;
+    intervals.push(...music.map(row => ({ source: 'statsfm', start: Date.parse(row.occurred_at) - Number(row.duration),
+      end: Date.parse(row.occurred_at) })));
+    return recordedCoverage(intervals, now);
   }
 
   latestPublicActivitiesBySource(now = new Date()): Activity[] {

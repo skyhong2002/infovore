@@ -40,15 +40,15 @@ test('Health is integrated into the four existing homepage sections, never a sta
     const sleep = activities.find(a => a.status === 'sleep')!;
     assert.equal(sleep.occurredAt, '2026-09-04T23:00:00.000Z');
     const page = load(homePage({ ...home, allActivities: activities, recentActivities: activities,
-      sourceHighlights: [sleep], healthSleepTime: repository.healthConnectSleepTime(now), timeSpent: repository.timeSpent(now),
+      sourceHighlights: [sleep], coverage: repository.activityCoverage(now), healthSleepTime: repository.healthConnectSleepTime(now), timeSpent: repository.timeSpent(now),
     }));
     assert.equal(page('#health, .home-health, .sleep-row').length, 0);
     assert.match(page('.home-platform-scroller').text(), /Sleep · 睡眠/);
     assert.match(page('.home-platform-scroller').text(), /23:00–07:00/);
     assert.equal(page('.home-platform-scroller img').attr('src'), '/logos/healthconnect.png');
-    assert.equal(page('[data-hour="7"] .home-rhythm-sleep').attr('data-count'), '1');
-    assert.equal(page('[data-hour="9"] .home-rhythm-exercise').attr('data-count'), '1');
-    assert.equal(page('[data-hour="8"] .home-rhythm-exercise').length, 0, 'steps are not midnight events');
+    assert.equal(page('.home-coverage-day').length, 7);
+    assert.equal(page('.home-coverage-day').first().attr('data-recorded-seconds'), String(7.5 * 3600));
+    assert.equal(page('.home-coverage-day').first().find('[data-source="health-sleep"] span').length, 1);
     assert.match(page('[data-source="health-sleep"]').text(), /8h/);
     assert.match(page('[data-source="health"]').text(), /30m/);
     assert.equal(page('#recent .home-recent-item').length, 3);

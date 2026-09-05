@@ -140,7 +140,8 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   assert.doesNotMatch(healthRow.text(), /4,321 steps|Sleep · 睡眠/);
   assert.doesNotMatch(homeHtml, /id="health"|home-health-head/);
   assert.match(homeHtml, /href="\/platforms\/health"/);
-  assert.match(homeHtml, /home-rhythm-sleep/);
+  assert.equal(homePage('.home-coverage-day').length, 7);
+  assert.ok(homePage('.home-coverage-lane[data-source="health-sleep"] span').length);
   assert.match(homeHtml, /Health · sleep/);
   assert.match(homeHtml, /Health · exercise/);
   assert.match(homeHtml, /00:00–08:00/);

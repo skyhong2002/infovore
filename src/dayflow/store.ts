@@ -32,6 +32,18 @@ export class DayflowStore {
     const row = this.db.prepare('SELECT MAX(received_at) lastSyncedAt, MIN(day) firstDay, MAX(day) lastDay, COUNT(DISTINCT day) days, COALESCE(SUM(revision), 0) revision FROM dayflow_days').get()!;
     return { lastSyncedAt: row.lastSyncedAt as string | null, firstDay: row.firstDay as string | null, lastDay: row.lastDay as string | null, days: Number(row.days), revision: Number(row.revision) };
   }
+  recordedIntervals(since: string, now = new Date()) {
+    const rows = this.db.prepare('SELECT payload_json FROM dayflow_days WHERE day >= ?').all(since) as Array<{ payload_json: string }>;
+    return rows.flatMap(row => {
+      const batch = JSON.parse(row.payload_json) as DayflowBatch;
+      const boundary = Date.parse(`${batch.day}T04:00:00+08:00`);
+      return batch.cards.filter(card => card.category.toLowerCase() !== 'system'
+        && card.subcategory?.toLowerCase() !== 'error').map(card => ({ source: 'dayflow',
+          start: Math.max(boundary, Date.parse(card.start)),
+          end: Math.min(boundary + 86400000, Date.parse(card.end), +now),
+        }));
+    });
+  }
   snapshot(owner: string, now = new Date()): DayflowSnapshot {
     const rows = this.db.prepare('SELECT payload_json FROM dayflow_days ORDER BY day DESC, device_id').all() as Array<{ payload_json: string }>;
     const byDay = new Map<string, DayflowBatch[]>();
