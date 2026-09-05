@@ -2,6 +2,7 @@ import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 import type { HealthConnectExtra, HealthDailySummary } from '../health/types.js';
 import { html, shell, timeAmount } from './pages.js';
+import { sleepSection } from './sleep.js';
 
 export interface PlatformDefinition {
   source: string;
@@ -185,28 +186,7 @@ function healthDetails(extra: HealthConnectExtra): string {
     <div class="health-days">${dayRows || '<div class="empty">Daily summaries will appear as the initial import progresses.</div>'}</div></section>
     <section><div class="platform-section-heading"><h2>Data coverage</h2><span>stored privately</span></div>
     <div class="platform-tags">${coverage || '<span>Waiting for Health Connect data</span>'}</div>
-    <div class="platform-note">This page exposes daily aggregates and recent workout summaries only. Raw heart-rate samples, record identifiers, device identifiers, notes, and data-origin package names remain private.</div></section>`;
-}
-
-function sleepSection(extra: HealthConnectExtra): string {
-  const days = extra.sleep?.days ?? [];
-  const latest = days[0];
-  const average = days.length ? days.reduce((sum, day) => sum + day.sessionSeconds, 0) / days.length : 0;
-  const maxSeconds = Math.max(1, ...days.map((day) => day.sessionSeconds));
-  const content = latest ? `<div class="platform-stats">
-    <div class="platform-stat"><span>Latest sleep session duration</span><strong>${timeAmount(latest.sessionSeconds)}</strong><small>${html(date(latest.day))}</small></div>
-    <div class="platform-stat"><span>Average · ${days.length} recorded days</span><strong>${timeAmount(average)}</strong></div>
-    <div class="platform-stat"><span>Sleep sessions received</span><strong>${number(extra.sleep?.totalSessions ?? 0)}</strong></div>
-    </div><div class="health-days" style="margin-top:14px">${days.slice(0, 14).map((day) => `<article class="health-day">
-      <time datetime="${html(day.day)}">${html(date(day.day))}</time>
-      <div class="health-step-track"><span style="background:#c084fc;width:${Math.max(2, Math.round(day.sessionSeconds / maxSeconds * 100))}%"></span></div>
-      <strong>${timeAmount(day.sessionSeconds)}</strong><p>${day.sessions} sleep session${day.sessions === 1 ? '' : 's'}</p>
-    </article>`).join('')}</div>
-    <p class="platform-note">Grouped by wake-up date in Taipei. Session duration includes awake periods; it is not a sleep score or time asleep. Dates are the latest recorded days, which may be historical.</p>`
-    : `<div class="empty"><strong>尚未收到睡眠紀錄 · No sleep records received</strong>
-      <p>已收到步數或運動，不代表睡眠已同步。請在 Infovore Health App 按「只同步睡眠」，查看睡眠筆數或錯誤。</p>
-      <p>若顯示 0 筆，請到 Health Connect 的睡眠資料確認是否有紀錄，並檢查 Garmin Connect 的睡眠寫入權限與 Infovore 的睡眠讀取權限。</p></div>`;
-  return `<section id="sleep"><div class="platform-section-heading"><h2>Sleep · 睡眠</h2><span>latest recorded wake-up days</span></div>${content}</section>`;
+    <div class="platform-note">This page exposes daily aggregates, recent workout summaries, and sleep start/end times with sleep stages. Raw heart-rate samples, record identifiers, device identifiers, notes, and data-origin package names remain private.</div></section>`;
 }
 
 function platformNav(active?: string): string {

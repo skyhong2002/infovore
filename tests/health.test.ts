@@ -100,15 +100,23 @@ test('sleep stays visible outside the recent activity window and uses Taipei wak
   };
   repository.ingestHealthConnect(batch);
   const snapshot = repository.healthConnectSnapshot('Sky', NOW);
-  assert.deepEqual(snapshot.extra.sleep, {
-    days: [{ day: '2026-07-02', sessionSeconds: 32400, sessions: 2 }], totalSessions: 2,
-  });
+  assert.equal(snapshot.extra.sleep?.totalSessions, 2);
+  assert.deepEqual(snapshot.extra.sleep?.days.map(({ intervals, ...day }) => day), [
+    { day: '2026-07-02', sessionSeconds: 32400, sessions: 2 },
+  ]);
+  assert.equal(snapshot.extra.sleep?.days[0]?.intervals[0]?.startTime, '2026-07-01T15:00:00Z');
   assert.equal(snapshot.extra.daily[0].sleepSeconds, 0);
   const page = platformPage('Sky', definition, snapshot, null);
   assert.match(page, /Sleep · 睡眠/);
   assert.match(page, /9h/);
   assert.doesNotMatch(page, /No sleep records received|private-note|private-sleep/);
-  assert.doesNotMatch(JSON.stringify(snapshot.extra.sleep), /T15:|T23:|private-note|com\.garmin/);
+  // Public sleep times are intentional; raw metadata and free-text remain private.
+  assert.doesNotMatch(JSON.stringify(snapshot.extra.sleep), /private-note|private-sleep|private-nap|com\.garmin/);
+  for (const tick of ['8pm', '12am', '4am', '8am', '12pm', '4pm']) assert.ok(page.includes(tick));
+  assert.match(page, /23:00/);
+  assert.match(page, /07:00/);
+  assert.match(page, /13:00/);
+  assert.match(page, /效率 — · 階段不完整/);
   await buildHealthCard(snapshot);
   repository.close();
 });

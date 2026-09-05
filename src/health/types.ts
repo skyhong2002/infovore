@@ -74,11 +74,37 @@ export interface HealthLatestMeasurements {
   bodyFatAt: string | null;
 }
 
+export type SleepStage = 'awake' | 'asleep' | 'light' | 'deep' | 'rem' | 'unknown';
+
+export interface SleepInterval {
+  startTime: string;
+  endTime: string;
+  stage: SleepStage;
+}
+
+export interface SleepSession {
+  startTime: string;
+  endTime: string;
+  sessionSeconds: number;
+  segments: SleepInterval[];
+  stageSeconds: Record<SleepStage, number>;
+  asleepSeconds: number;
+  // Only available when the entire session is classified, not a vendor sleep score.
+  efficiency: number | null;
+}
+
+export interface SleepDay {
+  day: string;
+  sessionSeconds: number;
+  sessions: number;
+  intervals: SleepSession[];
+}
+
 export interface HealthConnectExtra {
   daily: HealthDailySummary[];
   sleep?: {
     // Most recent 30 recorded wake-up days, independent of other record types.
-    days: Array<{ day: string; sessionSeconds: number; sessions: number }>;
+    days: SleepDay[];
     totalSessions: number;
   };
   latest: HealthLatestMeasurements;

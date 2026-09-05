@@ -119,7 +119,14 @@ Android Health Connect, including data Garmin Connect writes there on Android
 14+. Raw records remain in dedicated private SQLite tables and are never
 included in the public timeline or feeds. `/platforms/health`,
 `/card/health.*`, the homepage, time statistics, and `/api/health.json` expose
-only daily aggregates, recent workout summaries, and latest measurements;
+daily aggregates, recent workout summaries, and latest measurements. The health
+page and JSON/MCP projection also publish sleep start/end times and normalized
+sleep stages for the latest 30 recorded Taipei wake-up days, as requested for
+the public sleep timeline. The page displays the latest 14 days on a shared
+horizontal clock axis (8pm–12pm, extended for naps or outlying sessions), with
+deep/light/REM/awake stages, recorded time asleep, and session sleep efficiency.
+Missing or conflicting stages stay unknown and suppress efficiency; efficiency
+is not Garmin's proprietary sleep score. This exposes sleep schedules publicly;
 the `get_health_summary` MCP tool exposes the same safe projection. Record/device
 identifiers, origins, notes, and raw heart-rate samples stay private. See
 [`android/README.md`](android/README.md) for setup, permissions, and build steps.

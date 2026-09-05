@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { activityFromEntry } from './activity.js';
 import { taipeiDay, taipeiWindowStarts } from './time.js';
+import { sleepDays } from '../health/sleep.js';
 import type { Activity, SourceSnapshot } from './types.js';
 import type {
   YoutubeChannelMetadata,
@@ -2023,12 +2024,17 @@ export class Repository {
 
   healthConnectSnapshot(ownerName: string, now = new Date()): HealthConnectSnapshot {
     const status = this.healthConnectStatus();
-    const sleepDays = this.db.prepare(`
-      SELECT date(end_at, '+8 hours') day, COUNT(*) sessions,
-        ROUND(SUM(MAX(0, (julianday(end_at)-julianday(start_at))*86400.0))) session_seconds
+    const sleepRows = this.db.prepare(`
+      SELECT date(end_at, '+8 hours') day, start_at, end_at,
+        json_extract(payload_json, '$.stages') stages_json
       FROM health_connect_records WHERE data_type='sleep_session'
-      GROUP BY day ORDER BY day DESC LIMIT 30
-    `).all() as Array<{ day: string; sessions: number; session_seconds: number }>;
+        AND date(end_at, '+8 hours') IN (
+          SELECT date(end_at, '+8 hours') FROM health_connect_records
+          WHERE data_type='sleep_session'
+          GROUP BY date(end_at, '+8 hours') ORDER BY date(end_at, '+8 hours') DESC LIMIT 30
+        )
+      ORDER BY end_at DESC, start_at
+    `).all() as Array<{ day: string; start_at: string; end_at: string; stages_json: string | null }>;
     const cutoff = new Date(taipeiWindowStarts(now).day.getTime() - 29 * 86_400_000).toISOString();
     const totals = this.db.prepare(`
       SELECT
@@ -2144,9 +2150,7 @@ export class Repository {
       extra: {
         daily,
         sleep: {
-          days: sleepDays.map((row) => ({
-            day: row.day, sessions: Number(row.sessions), sessionSeconds: Number(row.session_seconds),
-          })),
+          days: sleepDays(sleepRows),
           totalSessions: status.recordsByType.sleep_session ?? 0,
         },
         latest: {
