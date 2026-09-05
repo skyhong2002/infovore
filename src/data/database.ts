@@ -2030,7 +2030,9 @@ export class Repository {
         COUNT(DISTINCT CASE WHEN data_type='steps' THEN date(start_at, '+8 hours') END) step_days,
         COUNT(CASE WHEN data_type='exercise_session' THEN 1 END) workouts,
         COALESCE(SUM(CASE WHEN data_type='steps' THEN json_extract(payload_json, '$.count') ELSE 0 END), 0) steps,
-        COALESCE(SUM(CASE WHEN data_type='distance' THEN json_extract(payload_json, '$.meters') ELSE 0 END), 0) meters
+        COALESCE(SUM(CASE WHEN data_type='distance' THEN json_extract(payload_json, '$.meters') ELSE 0 END), 0) meters,
+        COALESCE(SUM(CASE WHEN data_type='exercise_session'
+          THEN MAX(0, (julianday(end_at)-julianday(start_at))*86400.0) ELSE 0 END), 0) exercise_seconds
       FROM health_connect_records
     `).get() as Record<string, number>;
     const dailyRows = this.db.prepare(`
@@ -2127,6 +2129,7 @@ export class Repository {
         records: status.totalStored,
         trackedDays: Number(totals.tracked_days),
         workouts: Number(totals.workouts),
+        totalExerciseSeconds: Math.round(Number(totals.exercise_seconds)),
         totalSteps,
         averageDailySteps: stepDays ? Math.round(totalSteps / stepDays) : 0,
         totalDistanceKm: Math.round(Number(totals.meters) / 100) / 10,

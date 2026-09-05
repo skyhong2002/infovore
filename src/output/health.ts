@@ -16,23 +16,69 @@ function amount(value: number): string {
   return new Intl.NumberFormat('en').format(value);
 }
 
+function compact(value: number): string {
+  return new Intl.NumberFormat('en', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function duration(seconds: number): string {
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${(seconds / 3600).toFixed(1)}h`;
+}
+
 export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>): Promise<string> {
   const daily = data.extra.daily.slice(0, 7);
-  const today = daily[0];
-  const maxSteps = Math.max(1, ...daily.map((day) => day.steps));
+  const stepDays = daily.filter((day) => day.steps > 0);
+  const maxSteps = Math.max(1, ...stepDays.map((day) => day.steps));
+  const coverage = data.extra.coverage ?? {};
+  const available = [
+    ['Steps', 'steps'],
+    ['Exercise', 'exercise_session'],
+    ['Distance', 'distance'],
+    ['Calories', 'total_calories_burned'],
+    ['Heart', 'heart_rate'],
+    ['Sleep', 'sleep_session'],
+    ['Weight', 'weight'],
+    ['Body fat', 'body_fat'],
+  ].filter(([, type]) => (coverage[type] ?? 0) > 0);
+  const waiting = 8 - available.length;
   const metric = (label: string, value: string, color = C.accent) => h(
     'div',
     { style: { display: 'flex', flexDirection: 'column', backgroundColor: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px', width: 108 } },
     h('span', { style: { color: C.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 } }, label),
     h('span', { style: { color, fontSize: 20, fontWeight: 700, marginTop: 5 } }, value),
   );
-  const bars = [...daily].reverse().map((day) => h(
+  const bars = [...stepDays].reverse().map((day) => h(
     'div',
     { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', width: 54, height: 112 } },
     h('span', { style: { color: C.text, fontSize: 9, marginBottom: 4 } }, amount(day.steps)),
     h('div', { style: { backgroundColor: C.accent, borderRadius: 4, display: 'flex', width: 28, height: Math.max(4, Math.round(day.steps / maxSteps * 70)) } }),
     h('span', { style: { color: C.dim, fontSize: 9, marginTop: 5 } }, day.day.slice(5)),
   ));
+  const coverageChips = available.map(([label, type]) => h(
+    'div',
+    { style: { alignItems: 'center', backgroundColor: C.panel, border: `1px solid ${C.border}`, borderRadius: 999, color: C.dim, display: 'flex', fontSize: 10, padding: '6px 10px' } },
+    h('span', { style: { color: C.accent, fontWeight: 700, marginRight: 5 } }, '✓'),
+    `${label} ${compact(coverage[type] ?? 0)}`,
+  ));
+  const lower = stepDays.length > 0
+    ? h(
+      'div',
+      { style: { display: 'flex', flexDirection: 'column', marginTop: 18 } },
+      h('div', { style: { color: C.dim, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' } }, 'Recent step days'),
+      h('div', { style: { alignItems: 'flex-end', display: 'flex', justifyContent: 'space-between', marginTop: 6 } }, ...bars),
+    )
+    : h(
+      'div',
+      { style: { backgroundColor: '#0b1d16', border: `1px solid ${C.border}`, borderRadius: 10, display: 'flex', flexDirection: 'column', marginTop: 18, padding: '12px 14px' } },
+      h('div', { style: { alignItems: 'center', display: 'flex' } },
+        h('span', { style: { color: C.dim, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' } }, 'Sync coverage'),
+        h('span', { style: { color: C.dim, fontSize: 10, marginLeft: 'auto' } }, waiting ? `${waiting} data types not available yet` : 'All data types available'),
+      ),
+      h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 } }, ...coverageChips),
+    );
   const node = h(
     'div',
     { style: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '22px 24px', fontFamily: 'Inter' } },
@@ -42,17 +88,17 @@ export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>):
       h('div', { style: { alignItems: 'center', backgroundColor: C.accent, borderRadius: 10, color: C.bg, display: 'flex', fontSize: 22, fontWeight: 700, height: 38, justifyContent: 'center', marginRight: 10, width: 38 } }, '♥'),
       h('div', { style: { display: 'flex', flexDirection: 'column' } },
         h('span', { style: { color: C.text, fontSize: 19, fontWeight: 700 } }, 'Health Connect'),
-        h('span', { style: { color: C.dim, fontSize: 10, marginTop: 2 } }, `${amount(data.stats.records ?? 0)} private records · latest ${today?.day ?? '—'}`),
+        h('span', { style: { color: C.dim, fontSize: 10, marginTop: 2 } }, `${amount(data.stats.records ?? 0)} records · ${amount(data.stats.trackedDays ?? 0)} tracked days`),
       ),
       h('span', { style: { color: C.text, fontSize: 13, fontWeight: 700, marginLeft: 'auto' } }, data.profile.name),
     ),
     h('div', { style: { display: 'flex', gap: 10, marginTop: 18 } },
-      metric('Latest steps', today ? amount(today.steps) : '—'),
-      metric('Exercise', today?.exerciseSeconds ? `${Math.round(today.exerciseSeconds / 60)}m` : '—', C.blue),
-      metric('Sleep', today?.sleepSeconds ? `${(today.sleepSeconds / 3600).toFixed(1)}h` : '—', '#c084fc'),
-      metric('Heart', today?.heartRateAverage ? `${today.heartRateAverage} bpm` : '—', '#fb7185'),
+      metric('Total steps', compact(data.stats.totalSteps ?? 0)),
+      metric('Daily average', compact(data.stats.averageDailySteps ?? 0)),
+      metric('Workouts', amount(data.stats.workouts ?? 0), C.blue),
+      metric('Active time', duration(data.stats.totalExerciseSeconds ?? 0), '#c084fc'),
     ),
-    h('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 18 } }, ...bars),
+    lower,
   );
-  return renderCard(node, 520, 350);
+  return renderCard(node, 520, 300);
 }

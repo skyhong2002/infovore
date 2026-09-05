@@ -38,7 +38,14 @@ const kindLabels: Record<string, string> = {
 
 // Machine-facing snapshot stats (raw units for the time ledger and
 // timeSpent()) that would render as absurd tiles.
-const hiddenStats = new Set(['animeSeconds', 'weekMinutes', 'monthMinutes', 'yearMinutes', 'lifetimeMinutes']);
+const hiddenStats = new Set([
+  'animeSeconds',
+  'totalExerciseSeconds',
+  'weekMinutes',
+  'monthMinutes',
+  'yearMinutes',
+  'lifetimeMinutes',
+]);
 
 const timeNotes: Record<string, string> = {
   statsfm: "Measured from individual stream durations; the longer windows come from stats.fm's full listening history.",

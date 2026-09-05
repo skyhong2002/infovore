@@ -56,6 +56,7 @@ test('Health Connect builds a safe, complete platform projection and measured ex
   assert.equal(snapshot.stats.totalSteps, 3000);
   assert.equal(snapshot.stats.totalDistanceKm, 1.5);
   assert.equal(snapshot.stats.workouts, 1);
+  assert.equal(snapshot.stats.totalExerciseSeconds, 1800);
   assert.deepEqual(snapshot.extra.daily[0], {
     day: '2026-09-05', steps: 3000, distanceMeters: 1500, kilocalories: 500,
     exerciseSeconds: 1800, sleepSeconds: 28800,
