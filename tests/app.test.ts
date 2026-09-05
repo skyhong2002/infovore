@@ -144,7 +144,7 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   assert.ok(homePage('.home-coverage-lane[data-source="health-sleep"] span').length);
   assert.match(homeHtml, /Health · sleep/);
   assert.match(homeHtml, /Health · exercise/);
-  assert.match(homeHtml, /00:00–08:00/);
+  assert.match(homeHtml, /average sleep/);
   assert.doesNotMatch(homeHtml, /app-health-sleep-1|com\.garmin|beatsPerMinute/);
   const nowResponse = await app.request('/now');
   assert.equal(nowResponse.status, 200);
@@ -234,7 +234,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(homeHtml, /Kitsu/);
   assert.match(homeHtml, /href="\/platforms\/kitsu"/);
   assert.match(homeHtml, /Personal lifelog dashboard/);
-  assert.match(homeHtml, /Latest from your platforms/);
+  assert.match(homeHtml, /Platform overview/);
   assert.match(homeHtml, /Time by platform/);
   assert.match(homeHtml, /Active days/);
   assert.match(homeHtml, /Activity rhythm/);

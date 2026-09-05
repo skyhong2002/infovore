@@ -1,3 +1,4 @@
+import type { PlatformOverview } from './overview.js';
 import { recordedCoverage, type CoverageDay } from '../data/coverage.js';
 import type { TimeSpentSummary, TimeWindows } from '../data/database.js';
 import { dayflowDay, type DayflowSnapshot } from '../dayflow/types.js';
@@ -11,7 +12,7 @@ export interface HomepageData {
   lastUpdated: string | null;
   allActivities: Activity[];
   recentActivities: Activity[];
-  sourceHighlights: Activity[];
+  platformOverviews?: PlatformOverview[];
   timeSpent: TimeSpentSummary | null;
   publicActivityCount: number;
   connectedSources: number;
@@ -59,15 +60,15 @@ const homeStyles = `
   .home-section-head p{color:var(--muted);font-size:12px;margin:4px 0 0}
   .home-section-head a{color:var(--muted);font-size:12px;text-decoration:none;white-space:nowrap}
   .home-section-head a:hover{color:var(--blue)}
-  .home-platform-scroller{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 8px;scroll-snap-type:x proximity}
+  .home-platform-scroller{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px}
   .home-platform-tile{align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;color:inherit;display:flex;flex:0 0 260px;gap:12px;min-height:88px;padding:10px;text-decoration:none;scroll-snap-align:start}
   .home-platform-tile:hover{border-color:var(--line-strong)}
   .home-platform-tile img,.home-platform-placeholder{background:var(--surface-raised);border-radius:7px;display:block;flex:0 0 66px;height:66px;object-fit:cover;width:66px}
   .home-platform-placeholder{align-items:center;color:var(--blue);display:flex;font-size:20px;font-weight:700;justify-content:center}
   .home-platform-copy{min-width:0}
   .home-platform-source{color:var(--blue);display:block;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
-  .home-platform-title{color:var(--text);display:block;font-size:13px;font-weight:700;line-height:1.3;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .home-platform-meta{color:var(--muted);display:block;font-size:11px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .home-platform-title{color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:13px;font-weight:700;line-height:1.3;margin-top:3px;overflow:hidden;overflow-wrap:anywhere}
+  .home-platform-meta{color:var(--muted);display:block;font-size:11px;margin-top:4px;white-space:normal;line-height:1.5}
   .home-dashboard-grid{display:grid;gap:16px;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr)}
   .home-panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;min-width:0;padding:18px}
   .home-panel h2{font-size:18px;margin:0}
@@ -180,34 +181,15 @@ function profileAvatar(data: HomepageData): string {
   return `<span class="home-avatar-placeholder" aria-hidden="true">${html(data.ownerName.slice(0, 1).toUpperCase())}</span>`;
 }
 
-function keywordSummary(dayflow?: DayflowSnapshot | null): string {
-  const pools = dayflow?.extra.keywordPools;
-  if (!pools) return '';
-  return [pools.distinctive.length ? `Distinctive: ${pools.distinctive.slice(0, 3).map(k => k.name).join(' · ')}` : '',
-    pools.all.length ? `Recent: ${pools.all.slice(0, 3).map(k => k.name).join(' · ')}` : '']
-    .filter(Boolean).map(line => `<span class="home-platform-meta">${html(line)}</span>`).join('');
-}
-
 function dailyKeywords(activity: Activity, dayflow?: DayflowSnapshot | null): string {
   const day = dayflow?.extra.daily.find(day => `day:${day.day}` === activity.sourceItemId);
   return day?.keywords?.length ? `<span class="home-keywords">${day.keywords.slice(0, 6).map(k => `<span>${html(k.name)}</span>`).join('')}</span>` : '';
 }
 
-function sourceHighlight(activity: Activity, timeSpent: TimeSpentSummary | null, dayflow?: DayflowSnapshot | null): string {
-  const when = formatDate(activity);
-  const window = homeTimeWindow(timeSpent);
-  const sourceTime = timeSpent?.sources.find((entry) => entry.source === activity.source);
-  const time = sourceTime && sourceTime.windows[window.key]
-    ? `${sourceTime.method === 'estimated' ? '~' : ''}${timeAmount(sourceTime.windows[window.key])} ${window.label}`
-    : '';
-  const meta = (activity.source === 'dayflow' ? [`${timeAmount(Number(activity.extra.activeMinutes) * 60)} active`, when.date]
-    : activity.source === 'health' ? [healthActivityMeta(activity), when.date]
-    : [time, activity.status?.replaceAll('_', ' '), activity.extra.artist ?? activity.extra.author ?? activity.extra.channel, when.date])
-    .filter(Boolean)
-    .join(' · ');
-  return `<a class="home-platform-tile" href="/platforms/${html(activity.source)}">
-    ${imageOrPlaceholder(activity.source === 'health' ? '/logos/healthconnect.png' : activity.image, 'home-platform-art', activity.title)}
-    <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(activity.source))}</span><span class="home-platform-title">${html(activity.title)}</span><span class="home-platform-meta" title="${html(meta)}">${html(meta)}</span>${activity.source === 'dayflow' ? keywordSummary(dayflow) : ''}</span>
+function overviewTile(item: PlatformOverview): string {
+  return `<a class="home-platform-tile" href="/platforms/${html(item.source)}">
+    ${imageOrPlaceholder(item.image, 'home-platform-art', item.title)}
+    <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(item.source))}</span><span class="home-platform-title" title="${html(item.title)}">${html(item.title)}</span><span class="home-platform-meta">${html(item.detail)}</span></span>
   </a>`;
 }
 
@@ -269,9 +251,9 @@ export function homePage(data: HomepageData): string {
   const recent = data.recentActivities.length
     ? `<ul class="home-recent-list">${data.recentActivities.map(activity => recentRow(activity, data.dayflow)).join('')}</ul>`
     : '<div class="home-empty">No activity has been collected yet.</div>';
-  const highlights = data.sourceHighlights.length
-    ? `<div class="home-platform-scroller">${data.sourceHighlights.map((activity) => sourceHighlight(activity, data.timeSpent, data.dayflow)).join('')}</div>`
-    : '<div class="home-empty">No platform activity has been collected yet.</div>';
+  const highlights = data.platformOverviews?.length
+    ? `<div class="home-platform-scroller">${data.platformOverviews.map(overviewTile).join('')}</div>`
+    : '<div class="home-empty">No platform summaries are available yet.</div>';
   const updated = data.lastUpdated ? `Updated ${data.lastUpdated}` : 'Waiting for the first sync';
   const body = `<div class="home-page">
     <section class="home-profile" aria-labelledby="home-title">
@@ -285,7 +267,7 @@ export function homePage(data: HomepageData): string {
       ${metric('Public entries', String(data.publicActivityCount), 'in the archive')}
       ${metric('Active platforms', String(data.connectedSources), 'currently configured')}
     </section>
-    <section class="home-section"><div class="home-section-head"><div><h2>Latest from your platforms</h2><p>One current signal from each connected source.</p></div><a href="/platforms">View all platforms →</a></div>${highlights}</section>
+    <section class="home-section"><div class="home-section-head"><div><h2>Platform overview</h2><p>Current interests, library progress and recent trends.</p></div><a href="/platforms">View all platforms →</a></div>${highlights}</section>
     <section class="home-section home-dashboard-grid">${rhythmPanel(data.coverage ?? recordedCoverage([]))}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow)}</section>
     <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Recent activity</h2><p>The latest public activity from each source.</p></div><a href="/profile">Show all →</a></div>${recent}<p class="home-footnote">${data.lastUpdated ? `Last synced ${html(data.lastUpdated)}. ` : ''}Each source appears once, with its latest activity.</p></section>
   </div>`;

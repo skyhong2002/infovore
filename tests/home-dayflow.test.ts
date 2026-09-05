@@ -1,3 +1,4 @@
+import { platformOverview } from '../src/output/overview.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { load } from 'cheerio';
@@ -7,7 +8,7 @@ import { homePage, type HomepageData } from '../src/output/home.js';
 
 const home: HomepageData = {
   ownerName: 'Sky', avatar: '', lastUpdated: null, allActivities: [], recentActivities: [],
-  sourceHighlights: [], timeSpent: null, publicActivityCount: 0, connectedSources: 1,
+  platformOverviews: [], timeSpent: null, publicActivityCount: 0, connectedSources: 1,
 };
 
 test('Dayflow joins platform highlights, time rows and recent activity without a standalone section', () => {
@@ -26,12 +27,12 @@ test('Dayflow joins platform highlights, time rows and recent activity without a
       extra: { activeMinutes: 60, idleMinutes: 30 } }, '2026-09-05T04:00:00+08:00');
     dayflow.extra.daily = [{ day: '2026-09-05', trackedMinutes: 90, activeMinutes: 60,
       idleMinutes: 30, errorMinutes: 0, categories: [], keywords: [{ name: '<Garmin>', mentions: 2 }] }];
-    const page = load(homePage({ ...home, dayflow, sourceHighlights: [activity],
+    const page = load(homePage({ ...home, dayflow, platformOverviews: [platformOverview('dayflow', '/logos/dayflow.png', dayflow)],
       recentActivities: [activity], allActivities: [activity] }));
     assert.equal(page('#dayflow, .home-dayflow-panel').length, 0);
     const tile = page('.home-platform-tile[href="/platforms/dayflow"]');
-    assert.match(tile.text(), /Distinctive: <Garmin>/);
-    assert.match(tile.text(), /Recent: Discord/);
+    assert.match(tile.text(), /Distinctive lately: <Garmin>/);
+    assert.doesNotMatch(tile.text(), /Computer activity/);
     assert.equal(page('garmin').length, 0);
     assert.match(page('[data-source="dayflow"]').text(), /Dayflow · active.*1h/);
     assert.equal(page('#recent a').first().attr('href'), '/profile');

@@ -1,3 +1,4 @@
+import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import type { DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
@@ -305,10 +306,6 @@ app.get('/', (c) => {
   const now = new Date();
   const { healthSnapshot, activities: combined } = dashboardView(now);
   const recent = latestSourceActivities(combined);
-  const highlights = latestSourceActivities(combined);
-  const latestSleep = combined.find((activity) => activity.source === 'health' && activity.status === 'sleep');
-  const healthHighlight = highlights.findIndex((activity) => activity.source === 'health');
-  if (latestSleep && healthHighlight >= 0) highlights[healthHighlight] = latestSleep;
   const profileSnapshot = getCache<SourceSnapshot>('data:statsfm')?.data;
   const sourceCounts = repository.countBySource();
   const publicActivityCount = repository.countPublicActivities() + youtubeLifetimeWatches();
@@ -320,7 +317,11 @@ app.get('/', (c) => {
     lastUpdated: lastUpdatedLabel(),
     allActivities: combined,
     recentActivities: recent,
-    sourceHighlights: highlights,
+    platformOverviews: [
+      ...sections.map(section => platformOverview(section.source, section.logo ?? `/logos/${section.source}.png`,
+        section.source === 'health' ? healthSnapshot : getCache<SourceSnapshot<unknown>>(`data:${section.source}`)?.data, now)),
+      ...(sourceCounts.events ? [platformOverview('events', '', manualEventsSnapshot(), now)] : []),
+    ],
     timeSpent: repository.timeSpent(),
     publicActivityCount,
     connectedSources,
