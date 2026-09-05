@@ -1,3 +1,4 @@
+import { coverageSources } from './rhythm.js';
 import type { PlatformOverview } from './overview.js';
 import { recordedCoverage, type CoverageDay } from '../data/coverage.js';
 import type { TimeSpentSummary, TimeWindows } from '../data/database.js';
@@ -228,19 +229,14 @@ function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows |
 }
 
 function rhythmPanel(days: CoverageDay[]): string {
-  const sources: Record<string, { label: string; color: string }> = {
-    dayflow: { label: 'Dayflow', color: '#f59b45' },
-    'health-sleep': { label: 'Sleep', color: '#a8c7fa' },
-    health: { label: 'Exercise', color: '#67d5c3' },
-    statsfm: { label: 'Music', color: '#1ed760' },
-  };
+  const sources = coverageSources;
   const clock = (hour: number) => `${String(Math.floor(hour)).padStart(2, '0')}:${String(Math.min(59, Math.floor((hour % 1) * 60 + 0.00001))).padStart(2, '0')}`;
   const rows = days.map(day => `<div class="home-coverage-day" data-day="${day.day}" data-recorded-seconds="${day.recordedSeconds}">
     <div class="home-coverage-label"><time datetime="${day.day}">${day.day.slice(5)}</time><span>${html(timeAmount(day.recordedSeconds))} / 24h</span></div>
     <div class="home-coverage-track" aria-label="${day.day}: ${html(timeAmount(day.recordedSeconds))} recorded out of 24 hours">
       ${day.lanes.length ? day.lanes.map(lane => `<div class="home-coverage-lane" data-source="${html(lane.source)}">${lane.spans.map(span => `<span style="left:${span.startHour / 24 * 100}%;width:${(span.endHour - span.startHour) / 24 * 100}%;background:${sources[lane.source]?.color ?? '#8caacb'}" title="${html(sources[lane.source]?.label ?? lane.source)} · ${clock(span.startHour)}–${clock(span.endHour)}"></span>`).join('')}</div>`).join('') : '<div class="home-coverage-lane"></div>'}
     </div></div>`).join('');
-  return `<div class="home-panel"><h2>Activity rhythm</h2><p class="home-panel-intro">Recorded time each day · recent 7 days · Taipei time</p>
+  return `<div class="home-panel"><h2>Activity rhythm</h2><a href="/card/activity-rhythm.svg" style="float:right;color:var(--muted);font-size:11px">Share card ↗</a><p class="home-panel-intro">Recorded time each day · recent 7 days · Taipei time</p>
     <div class="home-coverage-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24h</span></div>${rows}
     <div class="home-rhythm-legend">${Object.values(sources).map(source => `<span><i style="background:${source.color}"></i>${source.label}</span>`).join('')}<span><i style="background:var(--surface-raised)"></i>Unrecorded</span></div>
     <p class="home-footnote">Overlapping time counts once. Dayflow includes idle records; analysis errors are excluded. Music uses track duration. Daily totals and events without a duration are excluded.</p></div>`;

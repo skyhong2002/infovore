@@ -1,3 +1,4 @@
+import { buildRhythmCard } from './output/rhythm.js';
 import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import type { DayflowSnapshot } from './dayflow/types.js';
@@ -161,6 +162,28 @@ app.use('*', async (c, next) => {
         })();
         try { await dayflowRender; } finally { dayflowRender = null; }
       }
+    }
+  }
+  await next();
+});
+
+// This card combines sources, so its cache follows the resulting coverage,
+// including independent ingestion and midnight rollover, rather than one sync.
+let rhythmKey = '';
+let rhythmRender: Promise<void> | null = null;
+app.use('*', async (c, next) => {
+  if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/activity-rhythm\.(svg|png|webp)$/.test(c.req.path))) {
+    if (rhythmRender) await rhythmRender;
+    const now = new Date(Math.floor(Date.now() / 60000) * 60000);
+    const days = repository.activityCoverage(now, { dayflow: dayflowEnabled,
+      health: Boolean(config.healthConnect.token) && config.sourceEnabled('health') });
+    const key = JSON.stringify(days);
+    if (key !== rhythmKey) {
+      rhythmRender = (async () => {
+        setCache('svg:activity-rhythm', await buildRhythmCard(config.ownerName, days));
+        rhythmKey = key;
+      })();
+      try { await rhythmRender; } finally { rhythmRender = null; }
     }
   }
   await next();
@@ -412,7 +435,8 @@ app.get('/platforms/:source', (c) => {
 });
 
 app.get('/cards', (c) => {
-  const body = sections
+  const rhythm = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/">Activity rhythm</a></h2><span>Daily recording coverage across platforms</span></div><div class="card-gallery-row"><a href="/card/activity-rhythm.svg?v=${version('activity-rhythm')}"><img src="/card/activity-rhythm.webp?v=${version('activity-rhythm')}" alt="Activity rhythm · seven daily 24-hour timelines" width="520" loading="lazy"></a></div><p><a href="/card/activity-rhythm.svg">SVG</a> · <a href="/card/activity-rhythm.png">PNG</a> · <a href="/card/activity-rhythm.webp">WebP</a></p></section>`;
+  const body = rhythm + sections
     .map((s) => {
       const externalUrl = s.url ?? '#';
       // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,
