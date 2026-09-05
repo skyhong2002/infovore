@@ -79,8 +79,8 @@ change.
 
 ## Cards
 
-Twenty cards in total — combined and single-medium variants:
-`dayflow` (computer activity and category time), `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
+Twenty-two cards in total — combined and single-medium variants:
+`dayflow` / `dayflow-keywords` / `dayflow-categories` (computer time, keywords and categories), `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
 `simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
 `youtube` / `youtube-channels` / `youtube-topics`,

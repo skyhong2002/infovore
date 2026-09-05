@@ -1,4 +1,4 @@
-import { buildDayflowCard } from './output/dayflow.js';
+import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import type { DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
 import { createHash } from 'node:crypto';
@@ -72,6 +72,8 @@ const cards: Record<string, CardDefinition> = {
   'youtube-channels': defineCard('youtube', buildYoutubeChannelsCard),
   'youtube-topics': defineCard('youtube', buildYoutubeTopicsCard),
   dayflow: defineCard('dayflow', buildDayflowCard),
+  'dayflow-keywords': defineCard('dayflow', buildDayflowKeywordsCard),
+  'dayflow-categories': defineCard('dayflow', buildDayflowCategoriesCard),
   health: defineCard('health', buildHealthCard),
   'health-sleep': defineCard('health', buildHealthSleepCard),
   'health-sleep-stages': defineCard('health', buildHealthSleepStagesCard),
@@ -146,12 +148,14 @@ app.use('*', async (c, next) => {
       restoreCache('data:dayflow', snapshot, status.lastSyncedAt ? Date.parse(status.lastSyncedAt) : 0);
       dayflowRevision = revision;
     }
-    if (c.req.path === '/cards' || c.req.path === '/platforms/dayflow' || /^\/card\/dayflow\.(svg|png|webp)$/.test(c.req.path)) {
+    if (c.req.path === '/cards' || c.req.path === '/platforms/dayflow' || /^\/card\/dayflow(?:-keywords|-categories)?\.(svg|png|webp)$/.test(c.req.path)) {
       if (dayflowRender) await dayflowRender;
       if (dayflowRenderRevision !== revision) {
         const snapshot = getCache<DayflowSnapshot>('data:dayflow')!.data!;
         dayflowRender = (async () => {
-          setCache('svg:dayflow', await buildDayflowCard(snapshot));
+          const rendered = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === 'dayflow')
+            .map(async ([name, card]) => [name, await card.build(snapshot)] as const));
+          for (const [name, svg] of rendered) setCache(`svg:${name}`, svg);
           dayflowRenderRevision = revision;
         })();
         try { await dayflowRender; } finally { dayflowRender = null; }
@@ -225,7 +229,7 @@ app.get('/og.png', (c) => {
 // URLs derive from config so a self-hosted instance links to its own profiles;
 // only sections whose source is enabled are shown.
 const allSections: PlatformDefinition[] = [
-  { source: 'dayflow', title: 'Dayflow', description: 'Daily computer activity, category breakdowns and active time from Dayflow.', accent: '#b5adff', cards: ['dayflow'], jsonUrl: '/api/dayflow.json', logo: '/logos/dayflow.png' },
+  { source: 'dayflow', title: 'Dayflow', description: 'Daily computer activity, category breakdowns and active time from Dayflow.', accent: '#b5adff', cards: ['dayflow', 'dayflow-keywords', 'dayflow-categories'], jsonUrl: '/api/dayflow.json', logo: '/logos/dayflow.png' },
   { source: 'backloggd', title: 'Backloggd', description: 'Games played, backlog totals, platforms and recent sessions.', accent: '#8dd3a8', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'] },
   { source: 'kitsu', title: 'Kitsu', description: 'Anime and manga progress, ratings and library status.', accent: '#f779a1', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
   { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },

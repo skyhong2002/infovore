@@ -95,5 +95,5 @@ export function summarizeDay(day: string, batches: DayflowBatch[], now = new Dat
   const values = [...categories.values()].sort((a, b) => b.minutes - a.minutes);
   const trackedMinutes = values.reduce((sum, c) => sum + c.minutes, 0);
   const idleMinutes = values.filter((c) => c.idle).reduce((sum, c) => sum + c.minutes, 0);
-  return { day, trackedMinutes, activeMinutes: trackedMinutes - idleMinutes, idleMinutes, errorMinutes, categories: values, keywords: dayflowKeywords(batches, now, 6) };
+  return { day, trackedMinutes, activeMinutes: trackedMinutes - idleMinutes, idleMinutes, errorMinutes, categories: values, keywords: dayflowKeywords(batches, now, 10) };
 }

@@ -11,7 +11,7 @@ const batch: DayflowBatch = {
   schemaVersion: 1, deviceId: 'test-mac', day: '2026-09-05', observedAt: now.toISOString(),
   timeZone: 'Asia/Taipei', dayBoundaryHour: 4,
   categories: [{ name: 'Work', color_hex: '#abcdef', is_idle: false, is_system: false }, { name: 'Idle', color_hex: '#888888', is_idle: true, is_system: true }],
-  cards: [{ record_id: 1, start: '2026-09-05T10:00:00+08:00', end: '2026-09-05T11:00:00+08:00', category: 'Work', duration_minutes: 60, title: 'SECRET TITLE', summary: 'SECRET SUMMARY', apps: ['secret.example'] }],
+  cards: [{ record_id: 1, start: '2026-09-05T10:00:00+08:00', end: '2026-09-05T11:00:00+08:00', category: 'Work', duration_minutes: 60, title: 'SECRET TITLE', summary: 'SECRET SUMMARY Claude', apps: ['secret.example'] }],
 };
 
 test('Dayflow respects the 4am boundary and rejects invalid batches', () => {
@@ -78,11 +78,14 @@ test('Dayflow HTTP ingestion enforces its dedicated token and refreshes public c
   assert.equal((await send(batch, 'test-token-with-at-least-32-characters')).status, 401);
   assert.equal((await ingest.request('/api/ingest/dayflow/status')).status, 401);
   assert.equal((await send({ ...batch, day: 'bad' })).status, 400);
-  const before = await (await app.request('/card/dayflow.svg')).text();
+  const variants = ['dayflow', 'dayflow-keywords', 'dayflow-categories'];
+  const before = await Promise.all(variants.map(async (name) => (await app.request(`/card/${name}.svg`)).text()));
   assert.equal((await send({ padding: 'x'.repeat(2 * 1024 * 1024) })).status, 413);
   assert.equal((await send(batch)).status, 200);
-  const after = await (await app.request('/card/dayflow.svg')).text();
-  assert.notEqual(before, after);
+  const after = await Promise.all(variants.map(async (name) => (await app.request(`/card/${name}.svg`)).text()));
+  for (let i = 0; i < variants.length; i++) assert.notEqual(before[i], after[i], variants[i]);
+  const gallery = await (await app.request('/cards')).text();
+  for (const name of variants) assert.ok(gallery.includes(`/card/${name}.webp`));
   for (const path of ['/api/dayflow.json', '/platforms/dayflow', '/', '/now', '/feed.json', '/api/activities.json']) {
     const response = await app.request(path);
     assert.equal(response.status, 200, path);
@@ -100,5 +103,5 @@ test('Dayflow HTTP ingestion enforces its dedicated token and refreshes public c
   assert.ok(status.sources.some((s: {source: string}) => s.source === 'dayflow'));
   assert.equal((await app.request('/card/dayflow.webp')).status, 200);
   assert.equal((await send({ ...batch, cards: [], observedAt: '2026-09-05T16:01:00Z' })).status, 200);
-  assert.notEqual(await (await app.request('/card/dayflow.svg')).text(), after);
+  for (let i = 0; i < variants.length; i++) assert.notEqual(await (await app.request(`/card/${variants[i]}.svg`)).text(), after[i], variants[i]);
 });

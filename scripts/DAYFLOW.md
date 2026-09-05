@@ -56,8 +56,8 @@ paths and raw app lists are not published. No external AI service is called.
 
 Each keyword counts at most once per device/record, ignoring idle, error,
 zero-duration and future records. Weekly keywords follow the same Monday 4am
-Taipei boundary as category totals. The page shows the top 12 weekly keywords
-and up to 6 per recorded day; the card shows the top 8 weekly keywords. Counts
+Taipei boundary as category totals. The page shows the top 36 weekly keywords
+and up to 10 per recorded day; the keywords card shows the top 24 weekly keywords. Counts
 are activity mentions, not time spent. Existing history is re-derived immediately;
 no new import is required. New vocabulary can be added without changing storage.
 
@@ -73,4 +73,6 @@ measures the last successful sync, not the last screen capture.
 Computer time can overlap music/video/game time, so it is not added to the
 cross-platform time ledger or Wrapped activity counts. Category statistics on
 the card are for the current Dayflow week; bars show seven most recent recorded
-days. The platform shows 30 recorded days and JSON retains the full daily series.
+days. Dayflow has three separate cards: `dayflow` for time, `dayflow-keywords` for
+narrative keywords, and `dayflow-categories` for category time and shares.
+The platform shows 30 recorded days and JSON retains the full daily series.

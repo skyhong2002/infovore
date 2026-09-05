@@ -3,7 +3,7 @@ import test from 'node:test';
 import { narrativeKeywords, dayflowKeywords } from '../src/dayflow/keywords.js';
 import { Repository } from '../src/data/database.js';
 import type { DayflowBatch } from '../src/dayflow/types.js';
-import { dayflowDetails, buildDayflowCard } from '../src/output/dayflow.js';
+import { dayflowDetails, buildDayflowKeywordsCard } from '../src/output/dayflow.js';
 
 const now = new Date('2026-09-06T00:00:00+08:00');
 const batch: DayflowBatch = { schemaVersion: 1, deviceId: 'mac', day: '2026-09-05', observedAt: now.toISOString(),
@@ -48,7 +48,7 @@ test('snapshot, page and card expose current-week keywords and recompute after r
     assert.match(page, /Keywords this week/);
     assert.match(page, /infovore · 2 activities/);
     assert.doesNotMatch(page, /Reviewed a|UnlistedProjectX|record_id/);
-    const svg = await buildDayflowCard(snapshot);
+    const svg = await buildDayflowKeywordsCard(snapshot);
     assert.match(svg, /#FFF0E6/);
     repo.dayflow.ingest({ ...batch, observedAt: '2026-09-05T16:01:00Z', cards: [] });
     assert.deepEqual(repo.dayflow.snapshot('Sky', now).extra.keywords, []);

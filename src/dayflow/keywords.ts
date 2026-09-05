@@ -57,7 +57,7 @@ export function narrativeKeywords(title: string, summary = ''): string[] {
   return matchers.filter(({ patterns }) => patterns.some((pattern) => pattern.test(prose))).map(({ name }) => name);
 }
 
-export function dayflowKeywords(batches: DayflowBatch[], now: Date, limit = 12): DayflowKeyword[] {
+export function dayflowKeywords(batches: DayflowBatch[], now: Date, limit = 36): DayflowKeyword[] {
   const counts = new Map<string, number>(), seen = new Set<string>();
   for (const batch of batches) for (const card of batch.cards) {
     const id = `${batch.deviceId}:${card.record_id}`;
