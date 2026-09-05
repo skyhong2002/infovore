@@ -248,7 +248,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.doesNotMatch(homeHtml, /Personal infoboard/);
   assert.doesNotMatch(homeHtml, /One timeline for everything worth remembering/);
   assert.match(homeHtml, /href="\/" aria-current="page">Home/);
-  assert.match(homeHtml, /property="og:image" content="http:\/\/localhost:3000\/og\.png\?v=life-rings"/);
+  assert.match(homeHtml, /property="og:image" content="http:\/\/localhost:3000\/og\.png\?v=life-rings-muted"/);
   assert.doesNotMatch(homeHtml, /src="\/card\//);
   assert.match(homeHtml, /img\[data-adaptive-media\]\{aspect-ratio:var\(--media-ratio,.75\)/);
   assert.match(homeHtml, /Math\.min\(2, Math\.max\(0\.5, naturalRatio\)\)/);

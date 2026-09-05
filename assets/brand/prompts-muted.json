@@ -1,0 +1,16 @@
+[
+  {
+    "key": "icon",
+    "prompt": "Edit the provided infovore life-rings icon. Preserve the exact geometry and proportions of its three nested rounded-square rings, upper-right detached circular dot, and central folded-page motif. Change only the palette and background: replace vivid blue with muted medium slate blue #7086A5, replace bright yellow with warm muted brass #BE9B65. Use flat solid ink, no lighting or gradients or texture. Remove the entire white background, including ALL white interior gaps and the central circular hole, to genuinely transparent alpha. The actual artwork uses only slate blue and muted brass. This must be a transparent PNG symbol, no wordmark, no border, no tile, no checkerboard baked into pixels. Crisp clean edges with no white fringe. Designed to sit directly on both ivory #F4F1EB and charcoal #20242B. Keep same centered square composition and margins."
+  },
+  {
+    "key": "mutedLockup",
+    "source": "assets/brand/life-rings-lockup.png",
+    "prompt": "Edit this infovore logo lockup. Preserve its exact life-rings geometry, proportions, detached dot, folded center, composition and lowercase infovore wordmark. Recolor all blue shapes and wordmark to muted slate blue #7086A5 and yellow accents to warm muted brass #BE9B65. Solid uniform warm ivory #F4F1EB background replacing white. Flat solid inks, absolutely no gradients, texture or shadows. Polished quiet editorial identity, crisp shapes. Same square format."
+  },
+  {
+    "key": "mutedSocial",
+    "source": "assets/brand/life-rings-social.png",
+    "prompt": "Edit this infovore social cover. Preserve the exact life-rings symbol geometry, wordmark infovore, composition and landscape ratio. Recolor blue to muted slate blue #7086A5 and yellow to warm muted brass #BE9B65. Replace white background with solid uniform warm ivory #F4F1EB. No texture, no gradients or shadows. Calm editorial palette, flat crisp shapes. No new text."
+  }
+]

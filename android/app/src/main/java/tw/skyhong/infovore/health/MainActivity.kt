@@ -59,7 +59,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "infovore"
         }, LinearLayout.LayoutParams(dp(64), dp(64)))
         root.addView(TextView(this).apply {
-            text = "Infovore Health 0.1.5"
+            text = "Infovore Health 0.1.6"
             textSize = 28f
         })
         root.addView(TextView(this).apply {
