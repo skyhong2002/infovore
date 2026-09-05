@@ -25,6 +25,10 @@ const stageDuration = (s: SleepSession, key: 'deep' | 'rem') => s.stageSeconds.u
   : `${s.stageSeconds.unknown + s.stageSeconds.asleep > 0 ? '≥ ' : ''}${duration(s.stageSeconds[key])}`;
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'block', color: C.text, fontSize: 11, ...style } }, value);
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
+// Reserve an actual gutter; text alignment alone can leave glyphs touching the chart.
+const asleepCell = (value: string, width: number, fontSize: number, color = C.text) => row([
+  text(value, { fontSize, color, whiteSpace: 'nowrap' }),
+], { width, flexShrink: 0, paddingLeft: 12, justifyContent: 'flex-end', alignItems: 'center' });
 const note = (value: string) => text(value, { color: C.dim, fontSize: 9, marginTop: 12, lineHeight: 1.5 });
 const empty = (value: string) => row([text(value, { color: C.dim, fontSize: 12 })], { padding: '20px 0' });
 const metric = (label: string, value: string) => row([
@@ -94,10 +98,10 @@ export async function buildHealthSleepCard(data: HealthConnectSnapshot): Promise
       ...axis.ticks.map((hour) => h('div', { style: { display: 'flex', position: 'absolute', left: x(hour), top: 0, height: 28, width: 1, backgroundColor: hour % 4 === 0 ? '#455263' : '#262e39' } })),
       ...s.segments.map((segment) => h('div', { style: { display: 'flex', position: 'absolute', top: 9, left: x(sleepHour(day.day, segment.startTime)), width: x(sleepHour(day.day, segment.endTime)) - x(sleepHour(day.day, segment.startTime)), height: 10, backgroundColor: STAGES.find((stage) => stage.key === segment.stage)!.color } })),
     ], { position: 'relative', width, height: 28 }),
-    text(asleep(s), { fontSize: 9, width: 74, textAlign: 'right', alignSelf: 'center' }),
+    asleepCell(asleep(s), 74, 9),
   ], { alignItems: 'center', height: 28, flexShrink: 0 })));
   return shell(data, 'SLEEP RHYTHM', `${days.length} recorded wake-up days · Asia/Taipei · ${days[0]!.day}`, [
-    row([text('Date / record', { width: 94, fontSize: 9, color: C.dim }), row(labels, { width, position: 'relative', height: 18 }), text('Asleep', { width: 74, fontSize: 9, color: C.dim, textAlign: 'right' })]),
+    row([text('Date / record', { width: 94, fontSize: 9, color: C.dim }), row(labels, { width, position: 'relative', height: 18 }), asleepCell('Asleep', 74, 9, C.dim)]),
     ...rows, legend(), note('8pm is the previous evening; axis extends for naps / late wakes.'),
     note('One compact row per session. Unknown stages are not counted as sleep.'),
   ], 210 + rows.length * 28);
@@ -113,12 +117,12 @@ export async function buildHealthSleepStagesCard(data: HealthConnectSnapshot): P
     return row([
       text(day.day.slice(5), { width: 50, fontSize: 10 }),
       row(STAGES.map(({ key, color }) => h('div', { style: { display: 'flex', height: 12, width: `${total > 0 ? totals[key] / total * 100 : 0}%`, backgroundColor: color } })), { width: 294, borderRadius: 3, overflow: 'hidden' }),
-      text(totals.unknown >= total ? '—' : `${totals.unknown ? '≥ ' : ''}${duration(knownAsleep)}`, { width: 76, textAlign: 'right', fontSize: 10 }),
-      text(efficiency, { width: 50, textAlign: 'right', fontSize: 10, color: C.accent }),
+      asleepCell(totals.unknown >= total ? '—' : `${totals.unknown ? '≥ ' : ''}${duration(knownAsleep)}`, 76, 10),
+      asleepCell(efficiency, 50, 10, C.accent),
     ], { alignItems: 'center', height: 26, flexShrink: 0 });
   });
   return shell(data, 'SLEEP STAGES', `${days.length} recorded days${days[0] ? ` · latest ${days[0].day}` : ''} · stage proportions`, [
-    ...(days.length ? [row([text('Date', { width: 50, color: C.dim, fontSize: 9 }), text('Share of recorded time', { width: 294, color: C.dim, fontSize: 9 }), text('Asleep', { width: 76, textAlign: 'right', color: C.dim, fontSize: 9 }), text('Eff.', { width: 50, textAlign: 'right', color: C.dim, fontSize: 9 })], { marginBottom: 5 }), ...rows, legend()] : [empty('No sleep records received yet.')]),
+    ...(days.length ? [row([text('Date', { width: 50, color: C.dim, fontSize: 9 }), text('Share of recorded time', { width: 294, color: C.dim, fontSize: 9 }), asleepCell('Asleep', 76, 9, C.dim), asleepCell('Eff.', 50, 9, C.dim)], { marginBottom: 5 }), ...rows, legend()] : [empty('No sleep records received yet.')]),
     note('Efficiency = asleep / recorded time, not a sleep score. Gaps stay unknown.'),
     note('Bars show proportions, not duration. Multiple sessions are summed per day.'),
   ], 210 + rows.length * 26);
