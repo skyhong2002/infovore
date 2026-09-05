@@ -237,7 +237,7 @@ function lastUpdatedLabel(): string | null {
 
 app.get('/', (c) => {
   const now = Date.now();
-  const healthSnapshot = config.healthConnect.token ? repository.healthConnectSnapshot(config.ownerName) : null;
+  const healthSnapshot = config.sourceEnabled('health') && config.healthConnect.token ? repository.healthConnectSnapshot(config.ownerName) : null;
   const latestHealth = healthSnapshot?.entries.find((entry) => entry.status === 'daily');
   const healthActivity = latestHealth
     ? activityFromEntry({ ...latestHealth, visibility: 'public' })
@@ -267,6 +267,7 @@ app.get('/', (c) => {
     timeSpent: repository.timeSpent(),
     publicActivityCount,
     connectedSources,
+    health: healthSnapshot,
   }));
 });
 

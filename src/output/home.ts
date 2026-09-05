@@ -1,6 +1,8 @@
 import type { TimeSpentSummary } from '../data/database.js';
 import type { Activity } from '../data/types.js';
+import type { HealthConnectSnapshot } from '../health/types.js';
 import { html, shell, sourceLabel, timeAmount } from './pages.js';
+import { sleepSection } from './sleep.js';
 
 export interface HomepageData {
   ownerName: string;
@@ -12,9 +14,11 @@ export interface HomepageData {
   timeSpent: TimeSpentSummary | null;
   publicActivityCount: number;
   connectedSources: number;
+  health?: HealthConnectSnapshot | null;
 }
 
 const homeStyles = `
+  .home-health{margin-top:24px;border:1px solid #344255;border-radius:16px;padding:14px;background:#15191f;min-width:0}.home-health-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.home-health-head img{background:#fff;border-radius:10px;padding:5px;width:36px;height:36px}.home-health-head h2{font-size:18px;margin:0;color:#dce7f9}.home-health-head>a{margin-left:auto;color:#a8c7fa;font-size:12px;white-space:nowrap;text-decoration:none}.home-health .sleep-stats .platform-stat{padding:8px 10px;border-radius:10px}.home-health .sleep-stats .platform-stat strong{font-size:22px;line-height:1.15}.home-health .sleep-latest-label{font-size:11px;margin-bottom:8px}.home-health .sleep-chart-heading{margin-top:12px}.home-health .sleep-chart-heading p,.home-health .sleep-chart-heading>span{font-size:11px}.home-health-notes{margin-top:8px;font-size:11px;color:#98a9bf}.home-health-notes summary{cursor:pointer}.home-health-notes .platform-note{margin-top:8px;font-size:12px}.home-health-movement{display:flex;flex-wrap:wrap;gap:6px 20px;border-top:1px solid #2b333e;padding-top:10px;margin-top:10px;font-size:12px;color:#b7c5d9}.home-health-movement strong{color:#dce7f9;font-weight:600}.home-health-movement small{font-size:10px;color:#98a9bf}.home-health-empty{font-size:12px;color:#98a9bf;margin:8px 0}.home-platform-tile img[src="/logos/healthconnect.png"]{background:#fff;object-fit:contain;padding:8px}
   .home-page{max-width:1120px;margin:0 auto}
   .home-profile{align-items:center;border-bottom:1px solid var(--line);display:flex;gap:26px;justify-content:space-between;padding:8px 0 30px}
   .home-profile-main{align-items:center;display:flex;gap:20px;min-width:0}
@@ -188,7 +192,7 @@ function sourceHighlight(activity: Activity, timeSpent: TimeSpentSummary | null)
     .filter(Boolean)
     .join(' · ');
   return `<a class="home-platform-tile" href="/platforms/${html(activity.source)}">
-    ${imageOrPlaceholder(activity.image, 'home-platform-art', activity.title)}
+    ${imageOrPlaceholder(activity.source === 'health' ? '/logos/healthconnect.png' : activity.image, 'home-platform-art', activity.title)}
     <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(activity.source))}</span><span class="home-platform-title">${html(activity.title)}</span><span class="home-platform-meta">${html(meta)}</span></span>
   </a>`;
 }
@@ -223,6 +227,23 @@ function timePanel(timeSpent: TimeSpentSummary | null): string {
   return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div></div>`;
 }
 
+function healthPanel(snapshot: HealthConnectSnapshot): string {
+  const count = (value: number) => new Intl.NumberFormat('en').format(value);
+  const hasSteps = (snapshot.extra.coverage.steps ?? 0) > 0;
+  const hasExercise = (snapshot.extra.coverage.exercise_session ?? 0) > 0;
+  const exerciseSeconds = snapshot.stats.totalExerciseSeconds ?? 0;
+  const recentSteps = snapshot.extra.daily.find((day) => day.steps > 0);
+  return `<section class="home-health health-platform" id="health" aria-labelledby="home-health-title">
+    <div class="home-health-head"><img src="/logos/healthconnect.png" alt="Health Connect logo" width="36" height="36"><h2 id="home-health-title">Health · 睡眠與活動</h2><a href="/platforms/health#sleep">完整 Health →</a></div>
+    ${sleepSection(snapshot.extra, { compact: true, dayLimit: 7 })}
+    <div class="home-health-movement">
+      <span>運動 <strong>${hasExercise ? `${count(snapshot.stats.workouts ?? 0)} 次 · ${exerciseSeconds ? timeAmount(exerciseSeconds) : '0m'}` : '未提供'}</strong> <small>${hasExercise ? '累計' : ''}</small></span>
+      <span>步數 <strong>${hasSteps ? count(snapshot.stats.totalSteps ?? 0) : '未提供'}</strong> <small>${hasSteps ? '累計' : ''}</small></span>
+      ${recentSteps ? `<span>最近步數 <strong>${count(recentSteps.steps)}</strong> <small>${html(recentSteps.day)}</small></span>` : ''}
+    </div>
+  </section>`;
+}
+
 function rhythmPanel(activities: Activity[]): string {
   const counts = exactHours(activities);
   const max = Math.max(1, ...counts);
@@ -253,6 +274,7 @@ export function homePage(data: HomepageData): string {
       ${metric('Public entries', String(data.publicActivityCount), 'in the archive')}
       ${metric('Active platforms', String(data.connectedSources), 'currently configured')}
     </section>
+    ${data.health ? healthPanel(data.health) : ''}
     <section class="home-section"><div class="home-section-head"><div><h2>Latest from your platforms</h2><p>One current signal from each connected source.</p></div><a href="/platforms">View all platforms →</a></div>${highlights}</section>
     <section class="home-section home-dashboard-grid">${rhythmPanel(data.allActivities)}${timePanel(data.timeSpent)}</section>
     <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Recent activity</h2><p>The latest public entries across every medium.</p></div><a href="/profile">Show all →</a></div>${recent}<p class="home-footnote">${data.lastUpdated ? `Last synced ${html(data.lastUpdated)}. ` : ''}High-frequency music and YouTube activity are sampled so every medium remains visible.</p></section>
