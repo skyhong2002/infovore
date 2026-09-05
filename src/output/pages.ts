@@ -105,7 +105,7 @@ export function shell(title: string, body: string, active: PageKey, extraStyles 
 }
 
 export function sourceLabel(source: string): string {
-  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', goodreads: 'Goodreads', youtube: 'YouTube', health: 'Health', events: 'Manual' } as Record<string, string>)[source] ?? source;
+  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', goodreads: 'Goodreads', youtube: 'YouTube', health: 'Health', dayflow: 'Dayflow', events: 'Manual' } as Record<string, string>)[source] ?? source;
 }
 
 function activityCard(activity: Activity): string {

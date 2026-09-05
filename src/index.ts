@@ -1,3 +1,6 @@
+import { buildDayflowCard } from './output/dayflow.js';
+import type { DayflowSnapshot } from './dayflow/types.js';
+import { activityFromEntry } from './data/activity.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
@@ -68,6 +71,7 @@ const cards: Record<string, CardDefinition> = {
   youtube: defineCard('youtube', buildYoutubeOverviewCard),
   'youtube-channels': defineCard('youtube', buildYoutubeChannelsCard),
   'youtube-topics': defineCard('youtube', buildYoutubeTopicsCard),
+  dayflow: defineCard('dayflow', buildDayflowCard),
   health: defineCard('health', buildHealthCard),
   'health-sleep': defineCard('health', buildHealthSleepCard),
   'health-sleep-stages': defineCard('health', buildHealthSleepStagesCard),
@@ -129,6 +133,33 @@ async function refreshAll(): Promise<void> {
 }
 
 const app = new Hono();
+const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
+let dayflowRevision = '';
+let dayflowRenderRevision = '';
+let dayflowRender: Promise<void> | null = null;
+app.use('*', async (c, next) => {
+  if (dayflowEnabled && c.req.method === 'GET') {
+    const status = repository.dayflow.status();
+    const revision = `${status.revision}:${Math.floor(Date.now() / 60000)}`;
+    if (revision !== dayflowRevision) {
+      const snapshot = repository.dayflow.snapshot(config.ownerName);
+      restoreCache('data:dayflow', snapshot, status.lastSyncedAt ? Date.parse(status.lastSyncedAt) : 0);
+      dayflowRevision = revision;
+    }
+    if (c.req.path === '/cards' || c.req.path === '/platforms/dayflow' || /^\/card\/dayflow\.(svg|png|webp)$/.test(c.req.path)) {
+      if (dayflowRender) await dayflowRender;
+      if (dayflowRenderRevision !== revision) {
+        const snapshot = getCache<DayflowSnapshot>('data:dayflow')!.data!;
+        dayflowRender = (async () => {
+          setCache('svg:dayflow', await buildDayflowCard(snapshot));
+          dayflowRenderRevision = revision;
+        })();
+        try { await dayflowRender; } finally { dayflowRender = null; }
+      }
+    }
+  }
+  await next();
+});
 
 // The ingest service writes the shared database independently of the hourly
 // source refresh. Regenerate Health's card when a new batch arrives.
@@ -194,6 +225,7 @@ app.get('/og.png', (c) => {
 // URLs derive from config so a self-hosted instance links to its own profiles;
 // only sections whose source is enabled are shown.
 const allSections: PlatformDefinition[] = [
+  { source: 'dayflow', title: 'Dayflow', description: 'Daily computer activity, category breakdowns and active time from Dayflow.', accent: '#b5adff', cards: ['dayflow'], jsonUrl: '/api/dayflow.json', logo: '/logos/dayflow.png' },
   { source: 'backloggd', title: 'Backloggd', description: 'Games played, backlog totals, platforms and recent sessions.', accent: '#8dd3a8', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'] },
   { source: 'kitsu', title: 'Kitsu', description: 'Anime and manga progress, ratings and library status.', accent: '#f779a1', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
   { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
@@ -211,7 +243,7 @@ const allSections: PlatformDefinition[] = [
 ];
 
 const sections = allSections.filter((s) =>
-  config.sourceEnabled(s.source) && (s.source !== 'health' || Boolean(config.healthConnect.token))
+  config.sourceEnabled(s.source) && (s.source !== 'dayflow' || dayflowEnabled) && (s.source !== 'health' || Boolean(config.healthConnect.token))
 );
 const manualPlatform: PlatformDefinition = {
   source: 'events', title: 'Manual events', description: 'Concerts, performances and real-world activities recorded by hand.',
@@ -252,13 +284,17 @@ function lastUpdatedLabel(): string | null {
     .filter((t): t is number => typeof t === 'number');
   const healthSyncedAt = config.healthConnect.token ? repository.healthConnectStatus().lastSyncedAt : null;
   if (healthSyncedAt) timestamps.push(Date.parse(healthSyncedAt));
+  const dayflowSyncedAt = dayflowEnabled ? repository.dayflow.status().lastSyncedAt : null;
+  if (dayflowSyncedAt) timestamps.push(Date.parse(dayflowSyncedAt));
   return timestamps.length ? formatGmt8(Math.max(...timestamps)) : null;
 }
 
 function dashboardView(now: Date) {
   const healthSnapshot = config.sourceEnabled('health') && config.healthConnect.token
     ? repository.healthConnectSnapshot(config.ownerName, now) : null;
-  return { healthSnapshot, activities: dashboardActivities(repository.listActivities(500), healthSnapshot, now) };
+  const dayflow = dayflowEnabled ? getCache<DayflowSnapshot>('data:dayflow')?.data : null;
+  const daily = dayflow?.entries.map((entry) => activityFromEntry(entry, `${entry.activityAt}T04:00:00+08:00`)) ?? [];
+  return { healthSnapshot, activities: dashboardActivities([...repository.listActivities(500), ...daily], healthSnapshot, now) };
 }
 
 app.get('/', (c) => {
@@ -408,6 +444,7 @@ app.get('/status', (c) => {
     const status = repository.healthConnectStatus();
     sources.push({ source: 'health', lastFetched: status.lastSyncedAt, error: null, json: '/api/health.json' });
   }
+  if (dayflowEnabled) sources.push({ source: 'dayflow', lastFetched: repository.dayflow.status().lastSyncedAt, error: null, json: '/api/dayflow.json' });
   return c.json({
     owner: config.ownerName,
     refresh: {
@@ -504,6 +541,12 @@ app.get('/stats', (c) => {
 });
 
 app.get('/api/time-spent.json', (c) => c.json(repository.timeSpent()));
+
+app.get('/api/dayflow.json', (c) => {
+  if (!dayflowEnabled) return c.json({ error: 'Dayflow is not configured' }, 404);
+  c.header('Cache-Control', 'no-cache');
+  return c.json({ fetchedAt: repository.dayflow.status().lastSyncedAt, data: getCache<DayflowSnapshot>('data:dayflow')?.data });
+});
 
 app.get('/api/health.json', (c) => {
   if (!config.healthConnect.token) return c.json({ error: 'Health Connect is not configured' }, 404);
@@ -606,6 +649,11 @@ app.get('/healthz', (c) => {
     const lastSyncedAt = repository.healthConnectStatus().lastSyncedAt;
     const ageMs = lastSyncedAt ? now - Date.parse(lastSyncedAt) : null;
     sources.push({ source: 'health', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+  }
+  if (dayflowEnabled) {
+    const synced = repository.dayflow.status().lastSyncedAt;
+    const ageMs = synced ? now - Date.parse(synced) : null;
+    sources.push({ source: 'dayflow', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
   }
   const freshCount = sources.filter((source) => source.fresh).length;
   const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';

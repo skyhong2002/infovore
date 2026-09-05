@@ -691,7 +691,7 @@ test('MCP Streamable HTTP exposes the managed lifelog tools', async () => {
   assert.equal(initialized.result.serverInfo.name, 'infovore');
   const listed = await call({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   assert.deepEqual(listed.result.tools.map((tool: { name: string }) => tool.name), [
-    'get_recent_activities', 'search_lifelog', 'get_current_media', 'get_upcoming_events', 'get_annual_summary', 'get_health_summary',
+    'get_recent_activities', 'search_lifelog', 'get_current_media', 'get_upcoming_events', 'get_annual_summary', 'get_health_summary', 'get_dayflow_summary',
   ]);
   const summary = await call({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_annual_summary', arguments: { year: 2099 } } });
   assert.equal(summary.result.structuredContent.totalActivities, 1);

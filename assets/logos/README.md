@@ -9,3 +9,5 @@ downloaded from Android Developers on 2026-09-05:
 
 Display it on a white background in the platform page, platform index, and
 shareable card. The page is an infovore mirror, not an official Google app.
+
+- `dayflow.png`: Dayflow macOS app icon, converted from the installed app’s `Contents/Resources/AppIcon.icns` at 256px for source identification.

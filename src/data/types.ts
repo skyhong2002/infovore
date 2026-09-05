@@ -3,7 +3,7 @@
 // the other exists. This is the actual asset: a persistent, cross-platform
 // media consumption log, of which cards are just the first rendering.
 
-export type MediaKind = 'game' | 'anime' | 'manga' | 'movie' | 'show' | 'book' | 'music' | 'video' | 'event' | 'fitness';
+export type MediaKind = 'game' | 'anime' | 'manga' | 'movie' | 'show' | 'book' | 'music' | 'video' | 'event' | 'fitness' | 'computer';
 
 export interface Rating {
   value: number;

@@ -105,6 +105,7 @@ function formatDate(activity: Activity): { date: string; time: string; datetime:
 
 function activityMeta(activity: Activity): string {
   if (activity.source === 'health') return html(healthActivityMeta(activity));
+  if (activity.source === 'dayflow') return html(`${timeAmount(Number(activity.extra.activeMinutes) * 60)} active · ${timeAmount(Number(activity.extra.idleMinutes) * 60)} idle`);
   const details: string[] = [];
   const add = (value: unknown) => details.push(html(value));
   if (activity.status) add(activity.status.replaceAll('_', ' '));

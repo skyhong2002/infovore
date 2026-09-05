@@ -116,7 +116,7 @@ test('version 1 databases migrate through schema version 9 without data loss', (
     const activitiesSql = migrated.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
     ).get() as { sql: string };
-    assert.equal(version.user_version, 9);
+    assert.equal(version.user_version, 10);
     assert.ok(watchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(searchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(channelColumns.some((column) => column.name === 'thumbnail_url'));

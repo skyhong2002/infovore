@@ -4,11 +4,13 @@ const sources = (process.env.SOURCES ?? '')
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
-const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'goodreads', 'youtube', 'health'] as const;
+const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'goodreads', 'youtube', 'health', 'dayflow'] as const;
 const port = Number(process.env.PORT ?? 3000);
 const maxSourceAgeHours = Number(process.env.MAX_SOURCE_AGE_HOURS ?? 36);
 const refreshIntervalMinutes = Number(process.env.REFRESH_INTERVAL_MINUTES ?? 60);
 const ingestToken = process.env.INGEST_TOKEN ?? '';
+const dayflowToken = process.env.DAYFLOW_TOKEN ?? '';
+if (dayflowToken && dayflowToken.length < 32) throw new Error('DAYFLOW_TOKEN must contain at least 32 characters');
 const healthConnectToken = process.env.HEALTH_CONNECT_TOKEN ?? ingestToken;
 const publicBaseUrl = (process.env.PUBLIC_BASE_URL ?? (process.env.DOMAIN ? `https://${process.env.DOMAIN}` : 'http://localhost:3000')).replace(/\/$/, '');
 const youtubePrivateDataKey = process.env.YOUTUBE_PRIVATE_DATA_KEY ?? '';
@@ -45,6 +47,7 @@ export const config = {
   publicBaseUrl,
   ingestToken,
   healthConnect: { token: healthConnectToken },
+  dayflow: { token: dayflowToken },
   maxSourceAgeHours,
   refreshIntervalMinutes,
   ownerName: process.env.OWNER_NAME ?? 'Sky Hong',

@@ -1,3 +1,5 @@
+import { bodyLimit } from 'hono/body-limit';
+import { dayflowBatchSchema } from './dayflow/types.js';
 import { timingSafeEqual } from 'node:crypto';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -24,6 +26,20 @@ export function createIngestApp(repository: Repository): Hono {
     { status: config.ingestToken ? 'healthy' : 'unhealthy', service: 'infovore-ingest' },
     config.ingestToken ? 200 : 503
   ));
+  app.use('/api/ingest/dayflow/*', async (c, next) => {
+    if (!config.dayflow.token) return c.json({ error: 'Dayflow ingestion is not configured' }, 503);
+    if (!authorized(c.req.header('authorization'), config.dayflow.token)) return c.json({ error: 'Unauthorized' }, 401);
+    await next();
+  });
+  app.get('/api/ingest/dayflow/status', (c) => c.json({ status: 'ready', ...repository.dayflow.status() }));
+  app.post('/api/ingest/dayflow/days', bodyLimit({ maxSize: 2 * 1024 * 1024 }), async (c) => {
+    try {
+      const batch = dayflowBatchSchema.parse(await c.req.json());
+      return c.json({ ok: true, ...repository.dayflow.ingest(batch) });
+    } catch {
+      return c.json({ error: 'Invalid Dayflow day batch' }, 400);
+    }
+  });
   app.post('/api/ingest/events', async (c) => {
     if (!config.ingestToken) return c.json({ error: 'Event ingestion is not configured' }, 503);
     if (!authorized(c.req.header('authorization'))) return c.json({ error: 'Unauthorized' }, 401);

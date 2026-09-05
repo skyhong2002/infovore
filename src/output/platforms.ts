@@ -1,3 +1,5 @@
+import { dayflowDetails } from './dayflow.js';
+import type { DayflowExtra } from '../dayflow/types.js';
 import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 import type { HealthConnectExtra, HealthDailySummary } from '../health/types.js';
@@ -35,6 +37,7 @@ const kindLabels: Record<string, string> = {
   video: 'Videos',
   event: 'Events',
   fitness: 'Daily health and workouts',
+  computer: 'Daily computer activity',
 };
 
 // Machine-facing snapshot stats (raw units for the time ledger and
@@ -198,6 +201,7 @@ function platformNav(active?: string): string {
     ['goodreads', 'Goodreads'],
     ['youtube', 'YouTube'],
     ['health', 'Health'],
+    ['dayflow', 'Dayflow'],
     ['events', 'Manual'],
   ];
   return `<nav class="platform-nav" aria-label="Platforms"><a href="/platforms"${active ? '' : ' aria-current="page"'}>All</a>${sources.map(([source, title]) =>
@@ -252,6 +256,7 @@ export function platformPage(
   }).join('');
   const extra = (snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {}) as Record<string, unknown>;
   const extras = [
+    definition.source === 'dayflow' ? dayflowDetails(extra as unknown as DayflowExtra) : '',
     definition.source === 'health' ? healthDetails(extra as unknown as HealthConnectExtra) : '',
     typeof extra.yearExtras === 'string' && extra.yearExtras
       ? `<div class="platform-note">${html(extra.yearExtras)}</div>`

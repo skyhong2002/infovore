@@ -69,6 +69,7 @@ change.
 
 | Service | Method |
 |---|---|
+| Dayflow | macOS companion reads bundled MCP and pushes daily snapshots |
 | [Backloggd](https://backloggd.com/u/skychopath/) | HTML scrape (no public API) |
 | [Kitsu](https://kitsu.app/users/skyhong2002) | Official JSON:API |
 | [stats.fm](https://stats.fm/skyhong2002) | Public API |
@@ -78,8 +79,8 @@ change.
 
 ## Cards
 
-Nineteen cards in total — combined and single-medium variants:
-`backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
+Twenty cards in total — combined and single-medium variants:
+`dayflow` (computer activity and category time), `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
 `simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
 `youtube` / `youtube-channels` / `youtube-topics`,
@@ -120,6 +121,15 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
 
 Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
+
+## macOS Dayflow sync
+
+Dayflow on macOS is an additional push source, using its bundled MCP helper.
+The companion refreshes recent days every 15 minutes and reconciles older dates
+in the background. `/platforms/dayflow`, `/card/dayflow.*`, Home, Now, and
+`/api/dayflow.json` show daily/category aggregates. Activity text and app names
+stay private. Computer time is separate from media totals to avoid overlap.
+Set a dedicated `DAYFLOW_TOKEN`; see [setup and sync semantics](scripts/DAYFLOW.md).
 
 ## Android Health Connect sync
 

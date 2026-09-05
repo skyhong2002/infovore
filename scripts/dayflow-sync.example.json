@@ -1,0 +1,7 @@
+{
+  "baseUrl": "https://infovore.example",
+  "token": "REPLACE_WITH_A_DEDICATED_RANDOM_DAYFLOW_TOKEN",
+  "deviceId": "my-mac",
+  "firstDay": "2025-09-25",
+  "dayflowCommand": "/Applications/Dayflow.app/Contents/Helpers/dayflow"
+}

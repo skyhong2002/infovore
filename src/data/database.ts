@@ -1,3 +1,4 @@
+import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -227,12 +228,14 @@ function ledgerLifetimeSeconds(snapshot: SourceSnapshot<unknown>): number | null
 
 export class Repository {
   private readonly db: DatabaseSync;
+  readonly dayflow: DayflowStore;
 
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.migrate();
+    this.dayflow = new DayflowStore(this.db);
   }
 
   close(): void { this.db.close(); }
@@ -302,6 +305,8 @@ export class Repository {
     if (afterTimeLedger.user_version < 8) this.migrateBackloggdDailyLedger();
     const afterBackloggdDailyLedger = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterBackloggdDailyLedger.user_version < 9) this.migrateHealthConnect();
+    const afterHealth = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterHealth.user_version < 10) migrateDayflow(this.db);
   }
 
   private migrateYoutube(): void {
