@@ -1,5 +1,5 @@
 import type { TimeSpentSummary, TimeWindows } from '../data/database.js';
-import type { DayflowSnapshot } from '../dayflow/types.js';
+import { dayflowDay, type DayflowSnapshot } from '../dayflow/types.js';
 import type { Activity } from '../data/types.js';
 import { html, shell, sourceLabel, timeAmount } from './pages.js';
 import { healthActivityMeta } from './health-activity.js';
@@ -20,18 +20,9 @@ export interface HomepageData {
 
 const homeStyles = `
   .home-platform-tile img[src="/logos/healthconnect.png"],.home-recent-art[src="/logos/healthconnect.png"]{background:#fff;object-fit:contain;padding:8px}.home-platform-tile[href="/platforms/health"] .home-platform-meta{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.home-recent-title{text-decoration:none}.home-rhythm-bar{display:flex;flex-direction:column;overflow:hidden}.home-rhythm-other{background:var(--blue)}.home-rhythm-sleep{background:#a8c7fa}.home-rhythm-exercise{background:#67d5c3}.home-rhythm-legend{display:flex;flex-wrap:wrap;gap:10px;font-size:10px;color:var(--muted);margin-top:10px}.home-rhythm-legend i{display:inline-block;width:8px;height:8px;margin-right:4px}.home-time-list .home-time-row{grid-template-columns:110px minmax(0,1fr) 58px}
-  .home-dayflow-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-  .home-dayflow-panel{background:#fbf7f2;color:#453c37;border:1px solid #dfd3ca;border-radius:14px;padding:20px;min-width:0}
-  .home-dayflow-panel:first-child{background:linear-gradient(135deg,#fae7d7,#efebfb)}
-  .home-dayflow-panel h3{font-family:Georgia,serif;font-size:23px;font-weight:400;margin:0 0 8px}
-  .home-dayflow-panel p{color:#75685f;font-size:12px;line-height:1.6;margin:8px 0 14px}
-  .home-dayflow-total{display:block;font-family:Georgia,serif;font-size:40px;font-weight:400}
-  .home-dayflow-tags{display:flex;flex-wrap:wrap;gap:7px}
-  .home-dayflow-tags span{background:#eee6dd;border-radius:8px;font-size:12px;padding:5px 8px;overflow-wrap:anywhere;max-width:100%}
-  .home-dayflow-distinctive .home-dayflow-tags span{background:#f7dfca;color:#8e4b25}
-  .home-dayflow-heading{display:flex;align-items:center;gap:10px}
-  .home-dayflow-heading img{width:32px;height:32px;border-radius:8px}
-  @media(max-width:780px){.home-dayflow-grid{grid-template-columns:1fr}}
+  .home-keywords{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;color:var(--muted);font-size:11px}
+  .home-keywords span{background:var(--surface-raised);border-radius:4px;padding:3px 6px;overflow-wrap:anywhere}
+  .home-platform-tile[href="/platforms/dayflow"] .home-platform-meta{white-space:normal}
   .home-page{max-width:1120px;margin:0 auto}
   .home-profile{align-items:center;border-bottom:1px solid var(--line);display:flex;gap:26px;justify-content:space-between;padding:8px 0 30px}
   .home-profile-main{align-items:center;display:flex;gap:20px;min-width:0}
@@ -200,30 +191,44 @@ function profileAvatar(data: HomepageData): string {
   return `<span class="home-avatar-placeholder" aria-hidden="true">${html(data.ownerName.slice(0, 1).toUpperCase())}</span>`;
 }
 
-function sourceHighlight(activity: Activity, timeSpent: TimeSpentSummary | null): string {
+function keywordSummary(dayflow?: DayflowSnapshot | null): string {
+  const pools = dayflow?.extra.keywordPools;
+  if (!pools) return '';
+  return [pools.distinctive.length ? `Distinctive: ${pools.distinctive.slice(0, 3).map(k => k.name).join(' · ')}` : '',
+    pools.all.length ? `Recent: ${pools.all.slice(0, 3).map(k => k.name).join(' · ')}` : '']
+    .filter(Boolean).map(line => `<span class="home-platform-meta">${html(line)}</span>`).join('');
+}
+
+function dailyKeywords(activity: Activity, dayflow?: DayflowSnapshot | null): string {
+  const day = dayflow?.extra.daily.find(day => `day:${day.day}` === activity.sourceItemId);
+  return day?.keywords?.length ? `<span class="home-keywords">${day.keywords.slice(0, 6).map(k => `<span>${html(k.name)}</span>`).join('')}</span>` : '';
+}
+
+function sourceHighlight(activity: Activity, timeSpent: TimeSpentSummary | null, dayflow?: DayflowSnapshot | null): string {
   const when = formatDate(activity);
   const window = homeTimeWindow(timeSpent);
   const sourceTime = timeSpent?.sources.find((entry) => entry.source === activity.source);
   const time = sourceTime && sourceTime.windows[window.key]
     ? `${sourceTime.method === 'estimated' ? '~' : ''}${timeAmount(sourceTime.windows[window.key])} ${window.label}`
     : '';
-  const meta = (activity.source === 'health' ? [healthActivityMeta(activity), when.date]
+  const meta = (activity.source === 'dayflow' ? [`${timeAmount(Number(activity.extra.activeMinutes) * 60)} active`, when.date]
+    : activity.source === 'health' ? [healthActivityMeta(activity), when.date]
     : [time, activity.status?.replaceAll('_', ' '), activity.extra.artist ?? activity.extra.author ?? activity.extra.channel, when.date])
     .filter(Boolean)
     .join(' · ');
   return `<a class="home-platform-tile" href="/platforms/${html(activity.source)}">
     ${imageOrPlaceholder(activity.source === 'health' ? '/logos/healthconnect.png' : activity.image, 'home-platform-art', activity.title)}
-    <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(activity.source))}</span><span class="home-platform-title">${html(activity.title)}</span><span class="home-platform-meta" title="${html(meta)}">${html(meta)}</span></span>
+    <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(activity.source))}</span><span class="home-platform-title">${html(activity.title)}</span><span class="home-platform-meta" title="${html(meta)}">${html(meta)}</span>${activity.source === 'dayflow' ? keywordSummary(dayflow) : ''}</span>
   </a>`;
 }
 
-function recentRow(activity: Activity): string {
+function recentRow(activity: Activity, dayflow?: DayflowSnapshot | null): string {
   const when = formatDate(activity);
   const meta = activityMeta(activity);
   const time = when.time ? `${when.date} · ${when.time}` : when.date;
   return `<li class="home-recent-item">
     ${imageOrPlaceholder(activity.image, 'home-recent-art', activity.title)}
-    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(activity.mediaKind)}</span></span>${activity.source === 'health' ? `<a class="home-recent-title" href="/platforms/health${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span></span>
+    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(activity.mediaKind)}</span></span>${activity.source === 'health' || activity.source === 'dayflow' ? `<a class="home-recent-title" href="/platforms/${html(activity.source)}${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span>${activity.source === 'dayflow' ? dailyKeywords(activity, dayflow) : ''}</span>
     <time class="home-recent-time"${when.datetime ? ` datetime="${html(when.datetime)}"` : ''}>${html(time)}${when.time ? ' GMT+8' : ''}</time>
   </li>`;
 }
@@ -232,9 +237,11 @@ function metric(label: string, value: string, note: string): string {
   return `<div class="home-metric"><span class="home-metric-label">${html(label)}</span><strong class="home-metric-value">${html(value)}</strong><span class="home-metric-note">${html(note)}</span></div>`;
 }
 
-function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null): string {
+function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null): string {
   const window = homeTimeWindow(timeSpent);
-  const entries = [...(timeSpent?.sources ?? []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : [])]
+  const today = dayflowDay();
+  const computerSeconds = dayflow?.extra.daily.filter(day => day.day <= today && (window.key === 'allTime' || day.day.slice(0, 7) === today.slice(0, 7))).reduce((sum, day) => sum + day.activeMinutes * 60, 0) ?? 0;
+  const entries = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { month: computerSeconds, allTime: computerSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : [])]
     .filter((entry) => entry.windows[window.key] > 0)
     .sort((a, b) => b.windows[window.key] - a.windows[window.key]);
   if (!entries.length) return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">No time records are available yet.</p><div class="home-empty">Time appears after the first platform sync.</div></div>`;
@@ -242,11 +249,11 @@ function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows |
   const rows = entries.map((entry) => {
     const seconds = entry.windows[window.key];
     const approx = entry.method === 'estimated' ? '~' : '';
-    const label = entry.source === 'health-sleep' ? 'Health · sleep' : entry.source === 'health' ? 'Health · exercise' : sourceLabel(entry.source);
+    const label = entry.source === 'dayflow' ? 'Dayflow · active' : entry.source === 'health-sleep' ? 'Health · sleep' : entry.source === 'health' ? 'Health · exercise' : sourceLabel(entry.source);
     const href = entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${html(entry.source)}`;
     return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${entry.source.startsWith('health') ? `;background:${entry.source === 'health-sleep' ? '#a8c7fa' : '#67d5c3'}` : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
   }).join('');
-  return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time; shown separately from exercise and excluded from the overview time total.</p>' : ''}</div>`;
+  return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${computerSeconds ? '<p class="home-footnote">Dayflow shows active computer time by recorded day. It can overlap other platforms and is excluded from the overview time total.</p>' : ''}${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time; shown separately from exercise and excluded from the overview time total.</p>' : ''}</div>`;
 }
 
 function rhythmPanel(activities: Activity[]): string {
@@ -264,30 +271,13 @@ function rhythmPanel(activities: Activity[]): string {
   return `<div class="home-panel"><h2>Activity rhythm</h2><p class="home-panel-intro">Exact timestamps, shown in Taipei time.</p>${hasData ? `<div class="home-rhythm" role="img" aria-label="Activity by hour">${bars}</div><div class="home-rhythm-labels">${labels}</div>${hasHealth ? '<div class="home-rhythm-legend"><span><i class="home-rhythm-other"></i>Other activity</span><span><i class="home-rhythm-sleep"></i>Sleep wake-up</span><span><i class="home-rhythm-exercise"></i>Exercise start</span></div><p class="home-footnote">Counts of events, not hours asleep. Daily step totals have no exact time and are excluded.</p>' : ''}` : '<div class="home-empty">No exact timestamps have been collected yet.</div>'}</div>`;
 }
 
-function dayflowPanel(snapshot?: DayflowSnapshot | null): string {
-  if (!snapshot) return '';
-  const { extra, stats } = snapshot;
-  const pools = extra.keywordPools;
-  const tags = (keywords: Array<{ name: string; mentions: number }>, limit: number) =>
-    `<div class="home-dayflow-tags">${keywords.slice(0, limit).map(k => `<span title="${k.mentions} activity mentions">${html(k.name)}</span>`).join('')}</div>`;
-  const latest = extra.daily.find(day => day.trackedMinutes > 0);
-  return `<section class="home-section" id="dayflow" aria-labelledby="home-dayflow-title">
-    <div class="home-section-head"><div><div class="home-dayflow-heading"><img src="/logos/dayflow.png" alt="" loading="lazy"><h2 id="home-dayflow-title">Dayflow</h2></div><p>Computer activity and the topics on your mind.</p></div><a href="/platforms/dayflow">Explore Dayflow →</a></div>
-    <div class="home-dayflow-grid">
-      <article class="home-dayflow-panel"><h3>Computer time</h3>${latest ? `<strong class="home-dayflow-total">${html(stats.weeklyHours)}h</strong><p>This week · ${html(stats.weeklyActiveHours)}h active<br>Latest recorded day: ${html(latest.day)}<br>${html(timeAmount(latest.activeMinutes * 60))} active · ${html(timeAmount(latest.idleMinutes * 60))} idle</p>${`<div class="home-dayflow-tags">${extra.categories.slice(0, 4).map(c => `<span>${html(c.name)} · ${html(timeAmount(c.minutes * 60))}</span>`).join('')}</div>`}` : '<p>Waiting for the first Dayflow sync.</p>'}</article>
-      <article class="home-dayflow-panel home-dayflow-distinctive"><h3>Distinctive lately</h3><p>Recent 7 days compared with the preceding 90 days${pools ? ` · ${pools.baselineDays} recorded baseline days` : ''}.</p>${pools?.distinctive.length ? tags(pools.distinctive, 16) : `<p>${pools?.status === 'ready' ? 'No unusually prominent topics in this window.' : 'More history is needed to identify distinctive topics.'}</p>`}</article>
-      <article class="home-dayflow-panel"><h3>All recent keywords</h3><p>${pools ? `${html(pools.recentFrom)} – ${html(pools.recentTo)}` : 'Recent 7 days'} · includes recurring topics.</p>${pools?.all.length ? tags(pools.all, 24) : '<p>No recent keywords yet.</p>'}</article>
-    </div>
-  </section>`;
-}
-
 export function homePage(data: HomepageData): string {
   const timeWindow = homeTimeWindow(data.timeSpent);
   const recent = data.recentActivities.length
-    ? `<ul class="home-recent-list">${data.recentActivities.map(recentRow).join('')}</ul>`
+    ? `<ul class="home-recent-list">${data.recentActivities.map(activity => recentRow(activity, data.dayflow)).join('')}</ul>`
     : '<div class="home-empty">No activity has been collected yet.</div>';
   const highlights = data.sourceHighlights.length
-    ? `<div class="home-platform-scroller">${data.sourceHighlights.map((activity) => sourceHighlight(activity, data.timeSpent)).join('')}</div>`
+    ? `<div class="home-platform-scroller">${data.sourceHighlights.map((activity) => sourceHighlight(activity, data.timeSpent, data.dayflow)).join('')}</div>`
     : '<div class="home-empty">No platform activity has been collected yet.</div>';
   const updated = data.lastUpdated ? `Updated ${data.lastUpdated}` : 'Waiting for the first sync';
   const body = `<div class="home-page">
@@ -303,8 +293,7 @@ export function homePage(data: HomepageData): string {
       ${metric('Active platforms', String(data.connectedSources), 'currently configured')}
     </section>
     <section class="home-section"><div class="home-section-head"><div><h2>Latest from your platforms</h2><p>One current signal from each connected source.</p></div><a href="/platforms">View all platforms →</a></div>${highlights}</section>
-    ${dayflowPanel(data.dayflow)}
-    <section class="home-section home-dashboard-grid">${rhythmPanel(data.allActivities)}${timePanel(data.timeSpent, data.healthSleepTime)}</section>
+    <section class="home-section home-dashboard-grid">${rhythmPanel(data.allActivities)}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow)}</section>
     <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Recent activity</h2><p>The latest public entries across every medium.</p></div><a href="/profile">Show all →</a></div>${recent}<p class="home-footnote">${data.lastUpdated ? `Last synced ${html(data.lastUpdated)}. ` : ''}High-frequency music and YouTube activity are sampled so every medium remains visible.</p></section>
   </div>`;
   return shell(`${data.ownerName} · overview`, body, 'home', homeStyles);
