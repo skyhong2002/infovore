@@ -10,3 +10,13 @@ These PNGs are concept proposals for selection, not final vector or favicon asse
 3. **匯流成 i** — `03-confluence-i.png`: 多股資訊匯聚成小寫 i，代表跨平台整合與個人身分。
 4. **生活年輪** — `04-life-rings.png`: 以層層環繞的軌跡呈現逐年累積的生活紀錄。
 5. **收藏生物** — `05-collector-creature.png`: 把收藏資訊的個性化成小生物，適合親切的品牌方向。
+
+## Personal blue/yellow palette
+
+The comparison page now displays the five `*-blue-yellow.png` variants, edited
+with the built-in `image_gen` tool from the original concepts. Full edit prompts
+are in `prompts-blue-yellow.json`. Requested brand colors: blue `#001483` and
+yellow `#fefe7e`; the gallery CSS uses those exact values. Generated raster fills
+can vary slightly; exact ink values should be enforced in the final vector art.
+
+Tailnet preview: https://skyhong-sm.tailf76d1d.ts.net/infovore-logos/
