@@ -130,9 +130,16 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   assert.equal(healthCardWebp.headers.get('content-type'), 'image/webp');
   const homeHtml = await (await app.request('/')).text();
   assert.match(homeHtml, /Health/);
-  assert.match(homeHtml, /4,321 steps/);
+  const homePage = load(homeHtml);
+  const recentRows = homePage('#recent .home-recent-item');
+  const sources = recentRows.find('.home-recent-source').map((_, el) => homePage(el).text()).get();
+  assert.equal(sources.length, new Set(sources).size, 'homepage shows each source only once');
+  const healthRow = recentRows.filter((_, el) => homePage(el).find('.home-recent-source').text() === 'Health');
+  assert.equal(healthRow.length, 1);
+  assert.match(healthRow.text(), /30 min exercise/);
+  assert.doesNotMatch(healthRow.text(), /4,321 steps|Sleep · 睡眠/);
   assert.doesNotMatch(homeHtml, /id="health"|home-health-head/);
-  assert.match(homeHtml, /href="\/platforms\/health#sleep"/);
+  assert.match(homeHtml, /href="\/platforms\/health"/);
   assert.match(homeHtml, /home-rhythm-sleep/);
   assert.match(homeHtml, /Health · sleep/);
   assert.match(homeHtml, /Health · exercise/);

@@ -294,7 +294,7 @@ export function homePage(data: HomepageData): string {
     </section>
     <section class="home-section"><div class="home-section-head"><div><h2>Latest from your platforms</h2><p>One current signal from each connected source.</p></div><a href="/platforms">View all platforms →</a></div>${highlights}</section>
     <section class="home-section home-dashboard-grid">${rhythmPanel(data.allActivities)}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow)}</section>
-    <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Recent activity</h2><p>The latest public entries across every medium.</p></div><a href="/profile">Show all →</a></div>${recent}<p class="home-footnote">${data.lastUpdated ? `Last synced ${html(data.lastUpdated)}. ` : ''}High-frequency music and YouTube activity are sampled so every medium remains visible.</p></section>
+    <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Recent activity</h2><p>The latest public activity from each source.</p></div><a href="/profile">Show all →</a></div>${recent}<p class="home-footnote">${data.lastUpdated ? `Last synced ${html(data.lastUpdated)}. ` : ''}Each source appears once, with its latest activity.</p></section>
   </div>`;
   return shell(`${data.ownerName} · overview`, body, 'home', homeStyles);
 }

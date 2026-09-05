@@ -304,7 +304,7 @@ function dashboardView(now: Date) {
 app.get('/', (c) => {
   const now = new Date();
   const { healthSnapshot, activities: combined } = dashboardView(now);
-  const recent = selectHomepageActivities(combined, 24);
+  const recent = latestSourceActivities(combined);
   const highlights = latestSourceActivities(combined);
   const latestSleep = combined.find((activity) => activity.source === 'health' && activity.status === 'sleep');
   const healthHighlight = highlights.findIndex((activity) => activity.source === 'health');
