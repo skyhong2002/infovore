@@ -2023,6 +2023,12 @@ export class Repository {
 
   healthConnectSnapshot(ownerName: string, now = new Date()): HealthConnectSnapshot {
     const status = this.healthConnectStatus();
+    const sleepDays = this.db.prepare(`
+      SELECT date(end_at, '+8 hours') day, COUNT(*) sessions,
+        ROUND(SUM(MAX(0, (julianday(end_at)-julianday(start_at))*86400.0))) session_seconds
+      FROM health_connect_records WHERE data_type='sleep_session'
+      GROUP BY day ORDER BY day DESC LIMIT 30
+    `).all() as Array<{ day: string; sessions: number; session_seconds: number }>;
     const cutoff = new Date(taipeiWindowStarts(now).day.getTime() - 29 * 86_400_000).toISOString();
     const totals = this.db.prepare(`
       SELECT
@@ -2137,6 +2143,12 @@ export class Repository {
       entries,
       extra: {
         daily,
+        sleep: {
+          days: sleepDays.map((row) => ({
+            day: row.day, sessions: Number(row.sessions), sessionSeconds: Number(row.session_seconds),
+          })),
+          totalSessions: status.recordsByType.sleep_session ?? 0,
+        },
         latest: {
           weightKilograms: weight ? Math.round(Number(weight.value) * 10) / 10 : null,
           weightAt: weight?.start_at ?? null,

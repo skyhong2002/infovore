@@ -13,6 +13,7 @@ const ingestApp = createIngestApp(repository);
 const YOUTUBE_SECRET = 'test-private-data-key-with-at-least-32-characters';
 
 test('Health Connect ingestion is authenticated, bounded, private, and idempotent', async () => {
+  const beforeSleepCard = await (await app.request('/card/health.svg')).text();
   const payload = {
     syncId: 'app-health-sync-0001',
     deviceId: 'app-health-device-01',
@@ -97,6 +98,9 @@ test('Health Connect ingestion is authenticated, bounded, private, and idempoten
   assert.doesNotMatch(JSON.stringify(healthJson), /app-health-record-1|app-health-workout-1|com\.garmin|beatsPerMinute/);
   const healthCard = await app.request('/card/health.svg');
   assert.equal(healthCard.status, 200);
+  assert.notEqual(await healthCard.text(), beforeSleepCard, 'card refreshes after ingestion without waiting for the hourly job');
+  assert.match(healthHtml, /id="sleep"/);
+  assert.ok(healthHtml.indexOf('id="sleep"') < healthHtml.indexOf('<h2>Exercise time</h2>'));
   const healthCardWebp = await app.request('/card/health.webp?scale=1');
   assert.equal(healthCardWebp.status, 200);
   assert.equal(healthCardWebp.headers.get('content-type'), 'image/webp');

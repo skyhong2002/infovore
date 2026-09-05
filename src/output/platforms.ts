@@ -188,6 +188,27 @@ function healthDetails(extra: HealthConnectExtra): string {
     <div class="platform-note">This page exposes daily aggregates and recent workout summaries only. Raw heart-rate samples, record identifiers, device identifiers, notes, and data-origin package names remain private.</div></section>`;
 }
 
+function sleepSection(extra: HealthConnectExtra): string {
+  const days = extra.sleep?.days ?? [];
+  const latest = days[0];
+  const average = days.length ? days.reduce((sum, day) => sum + day.sessionSeconds, 0) / days.length : 0;
+  const maxSeconds = Math.max(1, ...days.map((day) => day.sessionSeconds));
+  const content = latest ? `<div class="platform-stats">
+    <div class="platform-stat"><span>Latest sleep session duration</span><strong>${timeAmount(latest.sessionSeconds)}</strong><small>${html(date(latest.day))}</small></div>
+    <div class="platform-stat"><span>Average · ${days.length} recorded days</span><strong>${timeAmount(average)}</strong></div>
+    <div class="platform-stat"><span>Sleep sessions received</span><strong>${number(extra.sleep?.totalSessions ?? 0)}</strong></div>
+    </div><div class="health-days" style="margin-top:14px">${days.slice(0, 14).map((day) => `<article class="health-day">
+      <time datetime="${html(day.day)}">${html(date(day.day))}</time>
+      <div class="health-step-track"><span style="background:#c084fc;width:${Math.max(2, Math.round(day.sessionSeconds / maxSeconds * 100))}%"></span></div>
+      <strong>${timeAmount(day.sessionSeconds)}</strong><p>${day.sessions} sleep session${day.sessions === 1 ? '' : 's'}</p>
+    </article>`).join('')}</div>
+    <p class="platform-note">Grouped by wake-up date in Taipei. Session duration includes awake periods; it is not a sleep score or time asleep. Dates are the latest recorded days, which may be historical.</p>`
+    : `<div class="empty"><strong>尚未收到睡眠紀錄 · No sleep records received</strong>
+      <p>已收到步數或運動，不代表睡眠已同步。請在 Infovore Health App 按「只同步睡眠」，查看睡眠筆數或錯誤。</p>
+      <p>若顯示 0 筆，請到 Health Connect 的睡眠資料確認是否有紀錄，並檢查 Garmin Connect 的睡眠寫入權限與 Infovore 的睡眠讀取權限。</p></div>`;
+  return `<section id="sleep"><div class="platform-section-heading"><h2>Sleep · 睡眠</h2><span>latest recorded wake-up days</span></div>${content}</section>`;
+}
+
 function platformNav(active?: string): string {
   const sources = [
     ['backloggd', 'Backloggd'],
@@ -279,7 +300,7 @@ export function platformPage(
       <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">${definition.via ? `Open on ${html(definition.via.name)}` : 'View original'} ↗</a>` : ''}
       <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : 'Stored manually'}</div>
-    </section>${cards}${timeSpent ? timeSection(timeSpent) : ''}
+    </section>${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${cards}${timeSpent ? timeSection(timeSpent) : ''}
     <section><div class="platform-section-heading"><h2>Overview</h2><span>${snapshot.entries.length} synced entries</span></div>
     <div class="platform-stats">${stats}</div></section>${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, body, 'platforms');

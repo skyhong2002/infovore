@@ -27,6 +27,42 @@ class HealthConnectSync(private val context: Context) {
     private val client = HealthConnectClient.getOrCreate(context)
     private val api = InfovoreApi(settings)
 
+    // Independent of the all-types change token: works after upgrades and
+    // when a large historical step import has never finished.
+    suspend fun runSleep(onProgress: (String) -> Unit = {}): SyncSummary {
+        settings.lastSleepStatus = "正在讀取睡眠…"
+        onProgress(settings.lastSleepStatus)
+        try {
+            require(settings.endpoint.isNotBlank() && settings.token.length >= 32) {
+                "請先儲存 endpoint 與 token"
+            }
+            val granted = client.permissionController.getGrantedPermissions()
+            require(HealthPermission.getReadPermission(SleepSessionRecord::class) in granted) {
+                "尚未授權讀取睡眠，請按「授權 Health Connect」"
+            }
+            val days = if (HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted) 3650L else 30L
+            val end = Instant.now()
+            val result = uploadHistoryType<SleepSessionRecord>(
+                "睡眠", end.minus(days, ChronoUnit.DAYS), end, { progress ->
+                    settings.lastSleepStatus = progress
+                    onProgress(progress)
+                }, newestFirst = true,
+            )
+            val count = result.inserted + result.updated
+            settings.lastSleepStatus = if (count == 0) {
+                "${Instant.now()}：睡眠 0 筆（查詢 $days 天）。請確認 Health Connect 內有睡眠紀錄、Garmin 已獲准寫入睡眠，並完成手錶同步。"
+            } else {
+                "${Instant.now()}：睡眠已上傳 $count 筆（新增 ${result.inserted}、更新 ${result.updated}）"
+            }
+            onProgress(settings.lastSleepStatus)
+            return result
+        } catch (error: Exception) {
+            settings.lastSleepStatus = "${Instant.now()}：睡眠未完成：${error.message ?: error.javaClass.simpleName}"
+            onProgress(settings.lastSleepStatus)
+            throw error
+        }
+    }
+
     suspend fun run(onProgress: (String) -> Unit = {}): SyncSummary {
         onProgress("檢查連線設定與 Health Connect 權限…")
         require(settings.endpoint.isNotBlank() && settings.token.length >= 32) {
@@ -36,19 +72,21 @@ class HealthConnectSync(private val context: Context) {
         val missing = readPermissions - granted
         require(missing.isEmpty()) { "請先授權 Health Connect（尚缺 ${missing.size} 項權限）" }
 
-        var summary = SyncSummary()
         var token = settings.changesToken
+        val needsHistory = token == null
         if (token == null) {
             // Capture the token before the historical scan so changes made while
             // the scan runs are included in the following incremental pass.
             onProgress("建立增量同步游標…")
             token = client.getChangesToken(ChangesTokenRequest(recordTypes))
+        }
+        // Refresh sleep on every run, even with an existing change token.
+        var summary = runSleep(onProgress)
+        if (needsHistory) {
             val historyDays = if (HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted) 3650L else 30L
             val start = Instant.now().minus(historyDays, ChronoUnit.DAYS)
             val end = Instant.now()
-            // Sleep is the highest-value wellness signal for this companion,
-            // so publish it before the much larger granular step history.
-            summary += uploadHistoryType<SleepSessionRecord>("睡眠", start, end, onProgress)
+            // Sleep has already been uploaded before the larger histories.
             summary += uploadHistoryType<ExerciseSessionRecord>("運動", start, end, onProgress)
             summary += uploadHistoryType<StepsRecord>("步數", start, end, onProgress)
             summary += uploadHistoryType<DistanceRecord>("距離", start, end, onProgress)
@@ -94,6 +132,7 @@ class HealthConnectSync(private val context: Context) {
         start: Instant,
         end: Instant,
         noinline onProgress: (String) -> Unit,
+        newestFirst: Boolean = false,
     ): SyncSummary {
         var summary = SyncSummary()
         var processed = 0
@@ -106,6 +145,7 @@ class HealthConnectSync(private val context: Context) {
                     timeRangeFilter = TimeRangeFilter.between(start, end),
                     pageSize = 500,
                     pageToken = pageToken,
+                    ascendingOrder = !newestFirst,
                 )
             )
             for (chunk in response.records.chunked(50)) {

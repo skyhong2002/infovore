@@ -28,6 +28,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permissionStatus: TextView
     private lateinit var syncStatus: TextView
     private lateinit var syncButton: Button
+    private lateinit var sleepButton: Button
+    private lateinit var sleepStatus: TextView
+    private var syncing = false
 
     private val permissionLauncher = registerForActivityResult(HealthConnectSync.permissionContract()) {
         lifecycleScope.launch { refreshPermissionStatus() }
@@ -51,7 +54,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(24), dp(32), dp(24), dp(32))
         }
         root.addView(TextView(this).apply {
-            text = "Infovore Health"
+            text = "Infovore Health 0.1.4"
             textSize = 28f
         })
         root.addView(TextView(this).apply {
@@ -100,6 +103,17 @@ class MainActivity : AppCompatActivity() {
             }
         }, matchWrap())
 
+        sleepButton = Button(this).apply {
+            text = "只同步睡眠（優先）"
+            setOnClickListener { runManualSync(sleepOnly = true) }
+        }
+        root.addView(sleepButton, matchWrap(dp(12)))
+        sleepStatus = TextView(this).apply {
+            text = settings.lastSleepStatus
+            setPadding(0, dp(12), 0, dp(12))
+            setTextIsSelectable(true)
+        }
+        root.addView(sleepStatus)
         syncButton = Button(this).apply {
             text = "立即同步"
             setOnClickListener { runManualSync() }
@@ -120,20 +134,28 @@ class MainActivity : AppCompatActivity() {
         return ScrollView(this).apply { addView(root) }
     }
 
-    private fun runManualSync() {
+    private fun runManualSync(sleepOnly: Boolean = false) {
+        if (syncing) return
+        syncing = true
         settings.endpoint = endpointInput.text.toString()
         settings.token = tokenInput.text.toString()
         syncButton.isEnabled = false
+        sleepButton.isEnabled = false
         syncStatus.text = "同步中…第一次同步可能需要幾分鐘。"
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         lifecycleScope.launch {
             try {
                 val outcome = runCatching {
                     withContext(Dispatchers.IO) {
-                        HealthConnectSync(this@MainActivity).run { progress ->
+                        val progress: (String) -> Unit = { progress ->
                             settings.lastStatus = progress
-                            runOnUiThread { syncStatus.text = progress }
+                            runOnUiThread {
+                                syncStatus.text = progress
+                                sleepStatus.text = settings.lastSleepStatus
+                            }
                         }
+                        val sync = HealthConnectSync(this@MainActivity)
+                        if (sleepOnly) sync.runSleep(progress) else sync.run(progress)
                     }
                 }
                 outcome.onSuccess {
@@ -142,9 +164,11 @@ class MainActivity : AppCompatActivity() {
                     settings.lastStatus = "${Instant.now()}：${it.message ?: it.javaClass.simpleName}"
                 }
                 syncStatus.text = settings.lastStatus
+                sleepStatus.text = settings.lastSleepStatus
             } finally {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                syncButton.isEnabled = true
+                syncing = false
+                refreshPermissionStatus()
             }
         }
     }
@@ -154,6 +178,7 @@ class MainActivity : AppCompatActivity() {
         if (sdkStatus != HealthConnectClient.SDK_AVAILABLE) {
             permissionStatus.text = "此裝置目前無法使用 Health Connect（狀態 $sdkStatus）。"
             syncButton.isEnabled = false
+            sleepButton.isEnabled = false
             return
         }
         val client = HealthConnectClient.getOrCreate(this)
@@ -166,7 +191,9 @@ class MainActivity : AppCompatActivity() {
         } else {
             "Health Connect 尚缺 ${missing.size} 項資料讀取權限。"
         }
-        syncButton.isEnabled = missing.isEmpty()
+        syncButton.isEnabled = !syncing && missing.isEmpty()
+        sleepButton.isEnabled = !syncing
+        sleepStatus.text = settings.lastSleepStatus
     }
 
     private fun permissionsToRequest(client: HealthConnectClient): Set<String> = buildSet {

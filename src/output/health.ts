@@ -29,6 +29,9 @@ function duration(seconds: number): string {
 }
 
 export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>): Promise<string> {
+  const sleepDays = data.extra.sleep?.days ?? [];
+  const latestSleep = sleepDays[0];
+  const averageSleep = sleepDays.length ? sleepDays.reduce((sum, day) => sum + day.sessionSeconds, 0) / sleepDays.length : 0;
   const daily = data.extra.daily.slice(0, 7);
   const stepDays = daily.filter((day) => day.steps > 0);
   const maxSteps = Math.max(1, ...stepDays.map((day) => day.steps));
@@ -91,6 +94,16 @@ export async function buildHealthCard(data: SourceSnapshot<HealthConnectExtra>):
         h('span', { style: { color: C.dim, fontSize: 10, marginTop: 2 } }, `${amount(data.stats.records ?? 0)} records · ${amount(data.stats.trackedDays ?? 0)} tracked days`),
       ),
       h('span', { style: { color: C.text, fontSize: 13, fontWeight: 700, marginLeft: 'auto' } }, data.profile.name),
+    ),
+    h('div', { style: { display: 'flex', flexDirection: 'column', marginTop: 18 } },
+      h('span', { style: { color: '#c084fc', fontSize: 12, fontWeight: 700, marginBottom: 8 } }, 'Sleep · session duration'),
+      latestSleep ? h('div', { style: { display: 'flex', gap: 10 } },
+        metric('Latest sleep', duration(latestSleep.sessionSeconds), '#c084fc'),
+        metric('Wake-up day', latestSleep.day.slice(5), '#c084fc'),
+        metric('Avg / day', duration(averageSleep), '#c084fc'),
+        metric('Sleep records', amount(data.extra.sleep?.totalSessions ?? 0), '#c084fc'),
+      ) : h('span', { style: { color: C.dim, fontSize: 12 } }, 'No sleep records received. Use the sleep-only sync in the app.'),
+      latestSleep ? h('span', { style: { color: C.dim, fontSize: 10, marginTop: 6 } }, `${latestSleep.day} · average over ${sleepDays.length} recorded days · includes awake time`) : null,
     ),
     h('div', { style: { display: 'flex', gap: 10, marginTop: 18 } },
       metric('Total steps', compact(data.stats.totalSteps ?? 0)),

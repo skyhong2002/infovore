@@ -76,6 +76,11 @@ export interface HealthLatestMeasurements {
 
 export interface HealthConnectExtra {
   daily: HealthDailySummary[];
+  sleep?: {
+    // Most recent 30 recorded wake-up days, independent of other record types.
+    days: Array<{ day: string; sessionSeconds: number; sessions: number }>;
+    totalSessions: number;
+  };
   latest: HealthLatestMeasurements;
   coverage: Record<string, number>;
 }

@@ -40,6 +40,10 @@ class SecureSettings(context: Context) {
         get() = preferences.getString(KEY_LAST_STATUS, "尚未同步") ?: "尚未同步"
         set(value) { preferences.edit { putString(KEY_LAST_STATUS, value) } }
 
+    var lastSleepStatus: String
+        get() = preferences.getString("last_sleep_status", "睡眠尚未檢查") ?: "睡眠尚未檢查"
+        set(value) { preferences.edit { putString("last_sleep_status", value) } }
+
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }

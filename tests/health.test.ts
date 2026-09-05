@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Repository } from '../src/data/database.js';
 import type { HealthConnectBatchInput } from '../src/health/types.js';
 import { buildHealthCard } from '../src/output/health.js';
+import { platformPage } from '../src/output/platforms.js';
 
 const NOW = new Date('2026-09-05T10:00:00.000Z');
 
@@ -79,5 +80,35 @@ test('Health Connect builds a safe, complete platform projection and measured ex
   assert.deepEqual(healthTime?.windows, {
     last24h: 1800, day: 1800, week: 1800, month: 1800, year: 1800, allTime: 1800,
   });
+  repository.close();
+});
+
+test('sleep stays visible outside the recent activity window and uses Taipei wake-up days', async () => {
+  const repository = new Repository(':memory:');
+  const definition = { source: 'health', title: 'Health Connect', description: '', accent: '#4ade80' };
+  const empty = repository.healthConnectSnapshot('Sky', NOW);
+  assert.deepEqual(empty.extra.sleep, { days: [], totalSessions: 0 });
+  assert.match(platformPage('Sky', definition, empty, null), /No sleep records received/);
+  await buildHealthCard(empty);
+  const batch: HealthConnectBatchInput = {
+    syncId: 'sleep-historical-test', deviceId: 'test-device-sleep', observedAt: NOW.toISOString(), deletedRecordIds: [],
+    records: [
+      record('private-sleep', 'sleep_session', '2026-07-01T15:00:00Z', '2026-07-01T23:00:00Z', { notes: 'private-note', stages: [] }),
+      record('private-nap', 'sleep_session', '2026-07-02T05:00:00Z', '2026-07-02T06:00:00Z', {}),
+      record('recent-steps', 'steps', '2026-09-05T00:00:00Z', '2026-09-05T01:00:00Z', { count: 9000 }),
+    ],
+  };
+  repository.ingestHealthConnect(batch);
+  const snapshot = repository.healthConnectSnapshot('Sky', NOW);
+  assert.deepEqual(snapshot.extra.sleep, {
+    days: [{ day: '2026-07-02', sessionSeconds: 32400, sessions: 2 }], totalSessions: 2,
+  });
+  assert.equal(snapshot.extra.daily[0].sleepSeconds, 0);
+  const page = platformPage('Sky', definition, snapshot, null);
+  assert.match(page, /Sleep · 睡眠/);
+  assert.match(page, /9h/);
+  assert.doesNotMatch(page, /No sleep records received|private-note|private-sleep/);
+  assert.doesNotMatch(JSON.stringify(snapshot.extra.sleep), /T15:|T23:|private-note|com\.garmin/);
+  await buildHealthCard(snapshot);
   repository.close();
 });

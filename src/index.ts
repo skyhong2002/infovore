@@ -124,6 +124,29 @@ async function refreshAll(): Promise<void> {
 }
 
 const app = new Hono();
+
+// The ingest service writes the shared database independently of the hourly
+// source refresh. Regenerate Health's card when a new batch arrives.
+let healthCardRevision = '';
+let healthCardRefresh: Promise<void> | null = null;
+app.use('*', async (c, next) => {
+  if (config.healthConnect.token && (
+    c.req.path === '/platforms/health' || c.req.path === '/cards' ||
+    /^\/card\/health\.(svg|png|webp)$/.test(c.req.path)
+  )) {
+    if (healthCardRefresh) await healthCardRefresh;
+    const revision = `${repository.healthConnectStatus().lastSyncedAt}:${new Date().toISOString().slice(0, 10)}`;
+    if (revision !== healthCardRevision) {
+      healthCardRefresh = (async () => {
+        const svg = await buildHealthCard(repository.healthConnectSnapshot(config.ownerName));
+        setCache('svg:health', svg);
+        healthCardRevision = revision;
+      })();
+      try { await healthCardRefresh; } finally { healthCardRefresh = null; }
+    }
+  }
+  await next();
+});
 const ogImage = readFileSync(new URL('../assets/og.png', import.meta.url));
 
 // Platform brand marks shipped in-repo (assets/logos); the pattern keeps
