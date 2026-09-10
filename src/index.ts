@@ -1,4 +1,5 @@
 import { buildRhythmCard } from './output/rhythm.js';
+import { buildNowCard } from './output/now.js';
 import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import type { DayflowSnapshot } from './dayflow/types.js';
@@ -184,6 +185,31 @@ app.use('*', async (c, next) => {
         rhythmKey = key;
       })();
       try { await rhythmRender; } finally { rhythmRender = null; }
+    }
+  }
+  await next();
+});
+
+// The present-view card combines every source, so it re-renders whenever the
+// set of in-progress, upcoming or latest-per-source items changes (or the day
+// rolls over and the relative timestamps move), not on any one sync.
+let nowCardKey = '';
+let nowCardRender: Promise<void> | null = null;
+app.use('*', async (c, next) => {
+  if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/now\.(svg|png|webp)$/.test(c.req.path))) {
+    if (nowCardRender) await nowCardRender;
+    const now = new Date(Math.floor(Date.now() / 60000) * 60000);
+    const { activities } = dashboardView(now);
+    const current = currentActivities(activities, 4);
+    const upcoming = upcomingActivities(now.toISOString(), 3);
+    const recent = latestSourceActivities(activities).slice(0, 5);
+    const key = JSON.stringify([now.toISOString().slice(0, 10), ...[current, upcoming, recent].map((list) => list.map((a) => `${a.id}:${a.status}`))]);
+    if (key !== nowCardKey) {
+      nowCardRender = (async () => {
+        setCache('svg:now', await buildNowCard(config.ownerName, { current, upcoming, recent, updated: lastUpdatedLabel() }));
+        nowCardKey = key;
+      })();
+      try { await nowCardRender; } finally { nowCardRender = null; }
     }
   }
   await next();
@@ -436,7 +462,8 @@ app.get('/platforms/:source', (c) => {
 
 app.get('/cards', (c) => {
   const rhythm = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/">Activity rhythm</a></h2><span>Daily recording coverage across platforms</span></div><div class="card-gallery-row"><a href="/card/activity-rhythm.svg?v=${version('activity-rhythm')}"><img src="/card/activity-rhythm.webp?v=${version('activity-rhythm')}" alt="Activity rhythm · seven daily 24-hour timelines" width="520" loading="lazy"></a></div><p><a href="/card/activity-rhythm.svg">SVG</a> · <a href="/card/activity-rhythm.png">PNG</a> · <a href="/card/activity-rhythm.webp">WebP</a></p></section>`;
-  const body = rhythm + sections
+  const nowCard = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/now">Right now</a></h2><span>In progress, up next, and the latest item from each platform</span></div><div class="card-gallery-row"><a href="/card/now.svg?v=${version('now')}"><img src="/card/now.webp?v=${version('now')}" alt="Right now · in-progress media, upcoming events and latest activity" width="520" loading="lazy"></a></div><p><a href="/card/now.svg">SVG</a> · <a href="/card/now.png">PNG</a> · <a href="/card/now.webp">WebP</a></p></section>`;
+  const body = nowCard + rhythm + sections
     .map((s) => {
       const externalUrl = s.url ?? '#';
       // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,

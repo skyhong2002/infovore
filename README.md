@@ -79,7 +79,8 @@ change.
 
 ## Cards
 
-Twenty-two cards in total — combined and single-medium variants:
+Twenty-four cards in total — cross-source, combined and single-medium variants:
+`now` (in-progress media, upcoming events and the latest item from each platform — the one to embed in a profile README), `activity-rhythm` (seven days of recording coverage),
 `dayflow` / `dayflow-keywords` / `dayflow-categories` (computer time, keywords and categories), `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
 `simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
