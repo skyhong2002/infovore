@@ -154,6 +154,32 @@ const YOUTUBE_ESTIMATED_EVENTS_CTE = `
 const EVENT_DEFAULT_SECONDS = 2 * 3600; // attended event with no scheduled end time
 const SECONDS_PER_PAGE = 120;           // ~30 pages/hour reading pace
 
+// Health Connect keeps a copy of every app that writes the same activity, so a
+// day recorded by Garmin, Fitbit and the phone pedometer would count its steps
+// three times. Aggregations therefore read a single data origin per data type
+// and Taipei day, preferring Garmin and falling back to the other writers only
+// for days Garmin did not record.
+const HEALTH_ORIGIN_RANK = `CASE
+  WHEN data_origin LIKE 'com.garmin.%' THEN 0
+  WHEN data_origin LIKE 'com.fitbit.%' THEN 1
+  WHEN data_origin LIKE 'com.google.android.apps.fitness%' THEN 2
+  ELSE 3 END`;
+const PREFERRED_HEALTH_RECORDS = `
+  SELECT r.* FROM health_connect_records r
+  JOIN (
+    SELECT data_type, day, data_origin FROM (
+      SELECT data_type, date(start_at, '+8 hours') day, data_origin,
+        ROW_NUMBER() OVER (
+          PARTITION BY data_type, date(start_at, '+8 hours')
+          ORDER BY ${HEALTH_ORIGIN_RANK}, data_origin
+        ) origin_rank
+      FROM health_connect_records
+      GROUP BY data_type, day, data_origin
+    ) WHERE origin_rank = 1
+  ) preferred ON preferred.data_type = r.data_type
+    AND preferred.day = date(r.start_at, '+8 hours')
+    AND preferred.data_origin = r.data_origin`;
+
 const EXERCISE_NAMES: Record<number, string> = {
   0: 'Workout', 2: 'Badminton', 4: 'Baseball', 5: 'Basketball', 8: 'Cycling',
   9: 'Stationary cycling', 10: 'Boot camp', 11: 'Boxing', 13: 'Calisthenics',
@@ -308,6 +334,18 @@ export class Repository {
     if (afterBackloggdDailyLedger.user_version < 9) this.migrateHealthConnect();
     const afterHealth = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterHealth.user_version < 10) migrateDayflow(this.db);
+    const afterDayflow = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterDayflow.user_version < 11) this.migrateHealthOriginIndex();
+  }
+
+  private migrateHealthOriginIndex(): void {
+    this.db.exec(`
+      BEGIN;
+      CREATE INDEX IF NOT EXISTS health_connect_records_origin_day_idx
+        ON health_connect_records(data_type, date(start_at, '+8 hours'), data_origin);
+      PRAGMA user_version = 11;
+      COMMIT;
+    `);
   }
 
   private migrateYoutube(): void {
@@ -681,7 +719,7 @@ export class Repository {
     const intervals: RecordedInterval[] = [];
     if (enabled.dayflow) intervals.push(...this.dayflow.recordedIntervals(taipeiDay(new Date(Date.parse(since) - 86400000)), now));
     if (enabled.health) {
-      const rows = this.db.prepare(`SELECT data_type, start_at, end_at FROM health_connect_records
+      const rows = this.db.prepare(`SELECT data_type, start_at, end_at FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
         WHERE data_type IN ('sleep_session', 'exercise_session') AND end_at >= ? AND start_at <= ?`)
         .all(since, now.toISOString()) as Array<{ data_type: string; start_at: string; end_at: string }>;
       intervals.push(...rows.map(row => ({ source: row.data_type === 'sleep_session' ? 'health-sleep' : 'health',
@@ -1913,7 +1951,7 @@ export class Repository {
     const health = activityWindows(`
       SELECT start_at occurred_at,
         MAX(0, (julianday(end_at)-julianday(start_at)) * 86400.0) seconds
-      FROM health_connect_records
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
       WHERE data_type='exercise_session' AND end_at>=start_at
     `);
     if (health.allTime > 0) sources.push({ source: 'health', method: 'measured', windows: health });
@@ -2074,9 +2112,9 @@ export class Repository {
     const sleepRows = this.db.prepare(`
       SELECT date(end_at, '+8 hours') day, start_at, end_at,
         json_extract(payload_json, '$.stages') stages_json
-      FROM health_connect_records WHERE data_type='sleep_session'
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records WHERE data_type='sleep_session'
         AND date(end_at, '+8 hours') IN (
-          SELECT date(end_at, '+8 hours') FROM health_connect_records
+          SELECT date(end_at, '+8 hours') FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
           WHERE data_type='sleep_session'
           GROUP BY date(end_at, '+8 hours') ORDER BY date(end_at, '+8 hours') DESC LIMIT 30
         )
@@ -2092,7 +2130,7 @@ export class Repository {
         COALESCE(SUM(CASE WHEN data_type='distance' THEN json_extract(payload_json, '$.meters') ELSE 0 END), 0) meters,
         COALESCE(SUM(CASE WHEN data_type='exercise_session'
           THEN MAX(0, (julianday(end_at)-julianday(start_at))*86400.0) ELSE 0 END), 0) exercise_seconds
-      FROM health_connect_records
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
     `).get() as Record<string, number>;
     const dailyRows = this.db.prepare(`
       SELECT date(start_at, '+8 hours') day,
@@ -2101,7 +2139,7 @@ export class Repository {
         COALESCE(SUM(CASE WHEN data_type='total_calories_burned' THEN json_extract(payload_json, '$.kilocalories') ELSE 0 END), 0) kilocalories,
         COALESCE(SUM(CASE WHEN data_type='exercise_session' THEN MAX(0, (julianday(end_at)-julianday(start_at))*86400.0) ELSE 0 END), 0) exercise_seconds,
         COALESCE(SUM(CASE WHEN data_type='sleep_session' THEN MAX(0, (julianday(end_at)-julianday(start_at))*86400.0) ELSE 0 END), 0) sleep_seconds
-      FROM health_connect_records
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
       WHERE start_at>=?
       GROUP BY day ORDER BY day DESC LIMIT 30
     `).all(cutoff) as Array<Record<string, string | number>>;
@@ -2110,7 +2148,7 @@ export class Repository {
         ROUND(AVG(json_extract(sample.value, '$.beatsPerMinute'))) average_bpm,
         MIN(json_extract(sample.value, '$.beatsPerMinute')) minimum_bpm,
         MAX(json_extract(sample.value, '$.beatsPerMinute')) maximum_bpm
-      FROM health_connect_records records, json_each(records.payload_json, '$.samples') sample
+      FROM (${PREFERRED_HEALTH_RECORDS}) records, json_each(records.payload_json, '$.samples') sample
       WHERE records.data_type='heart_rate' AND records.start_at>=?
       GROUP BY day
     `).all(cutoff) as Array<Record<string, string | number>>;
@@ -2131,14 +2169,14 @@ export class Repository {
     });
     const latestMeasurement = (dataType: 'weight' | 'body_fat', path: string) => this.db.prepare(`
       SELECT start_at, json_extract(payload_json, ?) value
-      FROM health_connect_records WHERE data_type=?
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records WHERE data_type=?
       ORDER BY start_at DESC LIMIT 1
     `).get(path, dataType) as { start_at: string; value: number } | undefined;
     const weight = latestMeasurement('weight', '$.kilograms');
     const bodyFat = latestMeasurement('body_fat', '$.percentage');
     const exerciseRows = this.db.prepare(`
       SELECT record_id, start_at, end_at, payload_json
-      FROM health_connect_records WHERE data_type='exercise_session'
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records WHERE data_type='exercise_session'
       ORDER BY start_at DESC LIMIT 20
     `).all() as Array<{ record_id: string; start_at: string; end_at: string; payload_json: string }>;
     const exerciseEntries = exerciseRows.map((row) => {
@@ -2184,13 +2222,13 @@ export class Repository {
     const recentStepDays = this.db.prepare(`
       SELECT date(start_at, '+8 hours') day,
         ROUND(SUM(COALESCE(json_extract(payload_json, '$.count'), 0))) steps
-      FROM health_connect_records WHERE data_type='steps'
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records WHERE data_type='steps'
       GROUP BY day HAVING steps > 0 ORDER BY day DESC LIMIT 14
     `).all() as Array<{ day: string; steps: number }>;
     const recentExerciseDays = this.db.prepare(`
       SELECT date(start_at, '+8 hours') day, COUNT(*) sessions,
         ROUND(SUM(MAX(0, (julianday(end_at)-julianday(start_at))*86400.0))) seconds
-      FROM health_connect_records WHERE data_type='exercise_session'
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records WHERE data_type='exercise_session'
       GROUP BY day ORDER BY day DESC LIMIT 3
     `).all() as Array<{ day: string; seconds: number; sessions: number }>;
     return {
@@ -2226,7 +2264,7 @@ export class Repository {
   }
 
   healthConnectSleepTime(now = new Date()): TimeWindows {
-    const rows = this.db.prepare(`SELECT start_at, end_at FROM health_connect_records
+    const rows = this.db.prepare(`SELECT start_at, end_at FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
       WHERE data_type='sleep_session'`).all() as Array<{ start_at: string; end_at: string }>;
     return recordedSleepWindows(rows, now);
   }

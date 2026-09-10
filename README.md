@@ -138,7 +138,10 @@ Set a dedicated `DAYFLOW_TOKEN`; see [setup and sync semantics](scripts/DAYFLOW.
 The [`android/`](android/) companion app provides automatic read-only sync from
 Android Health Connect, including data Garmin Connect writes there on Android
 14+. Raw records remain in dedicated private SQLite tables and are never
-included in the public timeline or feeds. `/platforms/health`,
+included in the public timeline or feeds. Health Connect stores a copy from
+every app that writes the same activity (Garmin, Fitbit, the phone pedometer),
+so public aggregates read one data origin per data type and day, preferring
+Garmin and falling back to other writers only for days Garmin did not record. `/platforms/health`,
 `/card/health.*`, the homepage, time statistics, and `/api/health.json` expose
 daily aggregates, recent workout summaries, and latest measurements. The health
 page and JSON/MCP projection also publish sleep start/end times and normalized

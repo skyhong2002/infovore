@@ -116,7 +116,7 @@ test('version 1 databases migrate through schema version 9 without data loss', (
     const activitiesSql = migrated.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
     ).get() as { sql: string };
-    assert.equal(version.user_version, 10);
+    assert.equal(version.user_version, 11);
     assert.ok(watchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(searchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(channelColumns.some((column) => column.name === 'thumbnail_url'));
@@ -186,6 +186,42 @@ test('Health Connect batches upsert records, apply deletions, and are idempotent
   }, '2026-09-04T04:00:00.000Z'), {
     inserted: 0, updated: 0, deleted: 1, totalStored: 0,
   });
+  repository.close();
+});
+
+test('Health Connect aggregates use one origin per day, preferring Garmin', () => {
+  const repository = new Repository(':memory:');
+  const steps = (id: string, dataOrigin: string, day: string, count: number) => ({
+    id, dataType: 'steps' as const, dataOrigin,
+    startTime: `${day}T01:00:00.000Z`, endTime: `${day}T02:00:00.000Z`, lastModifiedTime: `${day}T02:01:00.000Z`,
+    payload: { count },
+  });
+  repository.ingestHealthConnect({
+    syncId: 'health-sync-origins', deviceId: 'health-device-02', observedAt: '2026-09-07T00:00:00.000Z',
+    deletedRecordIds: [],
+    records: [
+      // 2026-09-04: three writers recorded the same walk; only Garmin counts.
+      steps('garmin-1', 'com.garmin.android.apps.connectmobile', '2026-09-04', 7148),
+      steps('fitbit-1', 'com.fitbit.FitbitMobile', '2026-09-04', 7119),
+      steps('phone-1', 'com.android.healthconnect.phone.j7e69ba632e1d3261aff981024c997e44', '2026-09-04', 7182),
+      // 2026-09-05: Garmin absent, so Fitbit is used instead of the phone pedometer.
+      steps('fitbit-2', 'com.fitbit.FitbitMobile', '2026-09-05', 928),
+      steps('phone-2', 'com.android.healthconnect.phone.j7e69ba632e1d3261aff981024c997e44', '2026-09-05', 930),
+      // 2026-09-06: a single unknown writer still counts.
+      steps('other-3', 'android', '2026-09-06', 500),
+    ],
+  }, '2026-09-07T00:00:01.000Z');
+  const snapshot = repository.healthConnectSnapshot('Sky', new Date('2026-09-07T00:00:00+08:00'));
+  assert.deepEqual(snapshot.extra.steps?.days, [
+    { day: '2026-09-06', steps: 500 },
+    { day: '2026-09-05', steps: 928 },
+    { day: '2026-09-04', steps: 7148 },
+  ]);
+  assert.equal(snapshot.stats.totalSteps, 7148 + 928 + 500);
+  assert.equal(snapshot.stats.averageDailySteps, Math.round((7148 + 928 + 500) / 3));
+  assert.equal(snapshot.extra.daily.find((d) => d.day === '2026-09-04')?.steps, 7148);
+  // Raw storage keeps every record; only the public aggregates prefer one origin.
+  assert.equal(repository.healthConnectStatus().totalStored, 6);
   repository.close();
 });
 
