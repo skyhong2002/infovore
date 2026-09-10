@@ -78,10 +78,17 @@ test('Dayflow HTTP ingestion enforces its dedicated token and refreshes public c
   assert.equal((await send(batch, 'test-token-with-at-least-32-characters')).status, 401);
   assert.equal((await ingest.request('/api/ingest/dayflow/status')).status, 401);
   assert.equal((await send({ ...batch, day: 'bad' })).status, 400);
+  // The categories card aggregates the current ISO week and summaries clip
+  // activity at the current time, so ingest today's Dayflow day with activity
+  // from the day boundary up to now instead of the fixed fixture date.
+  const liveNow = new Date();
+  const liveDay = dayflowDay(liveNow);
+  const liveBatch: DayflowBatch = { ...batch, day: liveDay, observedAt: liveNow.toISOString(),
+    cards: [{ ...batch.cards[0], start: `${liveDay}T04:00:00+08:00`, end: liveNow.toISOString() }] };
   const variants = ['dayflow', 'dayflow-keywords', 'dayflow-categories'];
   const before = await Promise.all(variants.map(async (name) => (await app.request(`/card/${name}.svg`)).text()));
   assert.equal((await send({ padding: 'x'.repeat(2 * 1024 * 1024) })).status, 413);
-  assert.equal((await send(batch)).status, 200);
+  assert.equal((await send(liveBatch)).status, 200);
   const after = await Promise.all(variants.map(async (name) => (await app.request(`/card/${name}.svg`)).text()));
   for (let i = 0; i < variants.length; i++) assert.notEqual(before[i], after[i], variants[i]);
   const gallery = await (await app.request('/cards')).text();
@@ -102,6 +109,6 @@ test('Dayflow HTTP ingestion enforces its dedicated token and refreshes public c
   const status = await (await app.request('/status')).json() as { sources: Array<{ source: string }> };
   assert.ok(status.sources.some((s: {source: string}) => s.source === 'dayflow'));
   assert.equal((await app.request('/card/dayflow.webp')).status, 200);
-  assert.equal((await send({ ...batch, cards: [], observedAt: '2026-09-05T16:01:00Z' })).status, 200);
+  assert.equal((await send({ ...liveBatch, cards: [], observedAt: new Date(+liveNow + 1000).toISOString() })).status, 200);
   for (let i = 0; i < variants.length; i++) assert.notEqual(await (await app.request(`/card/${variants[i]}.svg`)).text(), after[i], variants[i]);
 });
