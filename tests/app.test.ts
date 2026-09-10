@@ -1,17 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { strToU8, zipSync } from 'fflate';
 import { load } from 'cheerio';
 import { app, repository } from '../src/index.js';
 import { createIngestApp } from '../src/ingest.js';
 import { setCache } from '../src/data/cache.js';
 import { normalizeYoutube } from '../src/sources/youtube.js';
 import type { SourceSnapshot } from '../src/data/types.js';
-import { encryptPrivateValue } from '../src/youtube/crypto.js';
-import type { YoutubeParsedArchive } from '../src/youtube/types.js';
 
 const ingestApp = createIngestApp(repository);
-const YOUTUBE_SECRET = 'test-private-data-key-with-at-least-32-characters';
 
 test('Health Connect ingestion is authenticated, bounded, private, and idempotent', async () => {
   const beforeSleepCard = await (await app.request('/card/health.svg')).text();
@@ -299,57 +295,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(status.refresh.nextScheduledAt, /^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/);
 });
 
-test('YouTube exposes projections while raw watch and search history stay private', async () => {
-  const youtubeArchive: YoutubeParsedArchive = {
-    archiveHash: 'app-privacy-fixture',
-    source: 'takeout',
-    watches: [
-      {
-        eventId: 'youtube-private-watch-1',
-        videoId: 'public-projection-video',
-        title: 'Projected Recent Video',
-        url: 'https://www.youtube.com/watch?v=public-projection-video',
-        channelId: 'projection-channel',
-        channelTitle: 'Projection Channel',
-        channelUrl: 'https://www.youtube.com/channel/projection-channel',
-        watchedAt: new Date().toISOString(),
-        actualWatchedSeconds: null,
-        activityType: 'video',
-      },
-      {
-        eventId: 'youtube-private-post-1',
-        videoId: null,
-        title: 'Private Community Post',
-        url: 'https://www.youtube.com/post/private-post',
-        channelId: null,
-        channelTitle: null,
-        channelUrl: null,
-        watchedAt: new Date(Date.now() - 1_000).toISOString(),
-        actualWatchedSeconds: null,
-        activityType: 'post',
-      },
-    ],
-    searches: [{
-      eventId: 'youtube-private-search-1',
-      searchedAt: new Date().toISOString(),
-      queryCiphertext: encryptPrivateValue('never expose this search', YOUTUBE_SECRET),
-      activityType: 'search',
-    }],
-  };
-  repository.ingestYoutubeArchive(youtubeArchive);
-
-  const timeline = await (await app.request('/api/activities.json?source=youtube')).json() as { total: number };
-  assert.equal(timeline.total, 0);
-  const jsonFeed = await (await app.request('/feed.json')).text();
-  const rssFeed = await (await app.request('/feed.xml')).text();
-  for (const body of [jsonFeed, rssFeed]) {
-    assert.doesNotMatch(body, /Projected Recent Video/);
-    assert.doesNotMatch(body, /Private Community Post/);
-    assert.doesNotMatch(body, /never expose this search/);
-  }
-
-  // The public YouTube mirror is urtube's per-handle summary, never the local
-  // archive above.
+test('YouTube platform pages render only the urtube mirror', async () => {
   const mirror = normalizeYoutube(urtubeSummary('28d'), urtubeSummary('all'), { baseUrl: 'https://urtube.test', handle: 'sky', ownerName: 'Sky' });
   setCache('data:youtube', mirror);
   const platformIndex = await (await app.request('/platforms')).text();
@@ -371,10 +317,8 @@ test('YouTube exposes projections while raw watch and search history stay privat
   assert.match(dashboardHtml, /Music Performance · 79/);
   assert.match(dashboardHtml, /Mirrored Top Video/);
   assert.match(dashboardHtml, /1 plays · 1\.6h/);
-  assert.doesNotMatch(dashboardHtml, /Projected Recent Video|Private Community Post|never expose this search/);
   const mirrorJson = await (await app.request('/api/youtube.json')).text();
   assert.match(mirrorJson, /"lifetimeWatches":40652/);
-  assert.doesNotMatch(mirrorJson, /Projected Recent Video|never expose this search/);
   const health = await app.request('/healthz');
   assert.equal(health.status, 200);
   assert.match(await health.text(), /"source":"youtube","fresh":true/);
@@ -394,244 +338,6 @@ test('YouTube exposes projections while raw watch and search history stay privat
     }),
   });
   assert.equal(mcpResponse.status, 200);
-  const mcpBody = await mcpResponse.text();
-  assert.doesNotMatch(mcpBody, /Projected Recent Video|Private Community Post|never expose this search/);
-});
-
-test('YouTube Takeout upload requires auth and accepts only ZIP payloads', async () => {
-  const archive = zipSync({
-    'Takeout/YouTube and YouTube Music/history/watch-history.json': strToU8(JSON.stringify([{
-      header: 'YouTube',
-      title: 'Watched Uploaded Video',
-      titleUrl: 'https://www.youtube.com/watch?v=uploaded-video',
-      time: '2026-07-27T00:00:00Z',
-      activityControls: ['YouTube watch history'],
-    }])),
-  });
-  const unauthorized = await ingestApp.request('/api/ingest/youtube/takeout', {
-    method: 'POST',
-    headers: { 'content-type': 'application/zip' },
-    body: Buffer.from(archive),
-  });
-  assert.equal(unauthorized.status, 401);
-  const wrongType = await ingestApp.request('/api/ingest/youtube/takeout', {
-    method: 'POST',
-    headers: {
-      authorization: 'Bearer test-token-with-at-least-32-characters',
-      'content-type': 'application/json',
-    },
-    body: '{}',
-  });
-  assert.equal(wrongType.status, 415);
-  const accepted = await ingestApp.request('/api/ingest/youtube/takeout', {
-    method: 'POST',
-    headers: {
-      authorization: 'Bearer test-token-with-at-least-32-characters',
-      'content-type': 'application/zip',
-    },
-    body: Buffer.from(archive),
-  });
-  assert.equal(accepted.status, 201);
-  const result = await accepted.json() as { watchesInserted: number; totals: { videoWatches: number } };
-  assert.equal(result.watchesInserted, 1);
-  assert.ok(result.totals.videoWatches >= 2);
-});
-
-test('YouTube Chrome capture uses a dedicated token and idempotently updates a session', async () => {
-  const payload = {
-    sessionId: '87654321-4321-4321-8321-cba987654321',
-    videoId: 'M7lc1UVf-VE',
-    title: 'YouTube API Demo',
-    url: 'https://www.youtube.com/watch?v=M7lc1UVf-VE',
-    channelTitle: 'Google for Developers',
-    watchedAt: new Date().toISOString(),
-    actualWatchedSeconds: 8,
-    durationSeconds: 215,
-  };
-  const unauthorized = await ingestApp.request('/api/ingest/youtube/capture', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  assert.equal(unauthorized.status, 401);
-  const broadToken = await ingestApp.request('/api/ingest/youtube/capture/status', {
-    headers: { authorization: 'Bearer test-token-with-at-least-32-characters' },
-  });
-  assert.equal(broadToken.status, 401);
-  const headers = {
-    'content-type': 'application/json',
-    authorization: 'Bearer test-youtube-capture-token-with-at-least-32-characters',
-  };
-  const status = await ingestApp.request('/api/ingest/youtube/capture/status', { headers });
-  assert.equal(status.status, 200);
-
-  const inserted = await ingestApp.request('/api/ingest/youtube/capture', {
-    method: 'POST', headers, body: JSON.stringify(payload),
-  });
-  assert.equal(inserted.status, 201);
-  assert.equal((await inserted.json() as { inserted: boolean }).inserted, true);
-  const updated = await ingestApp.request('/api/ingest/youtube/capture', {
-    method: 'POST', headers, body: JSON.stringify({ ...payload, actualWatchedSeconds: 38 }),
-  });
-  assert.equal(updated.status, 200);
-  const result = await updated.json() as {
-    ok: boolean;
-    eventId: string;
-    inserted: boolean;
-    updated: boolean;
-    actualWatchedSeconds: number;
-  };
-  assert.equal(result.ok, true);
-  assert.match(result.eventId, /^[a-f0-9]{64}$/);
-  assert.equal(result.inserted, false);
-  assert.equal(result.updated, true);
-  assert.equal(result.actualWatchedSeconds, 38);
-  const timeline = await (await app.request('/api/activities.json?source=youtube')).json() as {
-    total: number;
-  };
-  assert.equal(timeline.total, 0);
-});
-
-test('YouTube progress import is private, authenticated, bounded, and aggregate-only', async () => {
-  const observedAt = new Date().toISOString();
-  const payload = {
-    scanId: 'api-progress-123456789',
-    observedAt,
-    complete: true,
-    items: [{
-      videoId: 'PROGRESS001',
-      progressPercent: 37.5,
-      resumeSeconds: 321,
-      durationSeconds: 1_802_839,
-    }],
-  };
-  const unauthorized = await ingestApp.request('/api/ingest/youtube/progress', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  assert.equal(unauthorized.status, 401);
-  const broadToken = await ingestApp.request('/api/ingest/youtube/progress', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer test-token-with-at-least-32-characters',
-    },
-    body: JSON.stringify(payload),
-  });
-  assert.equal(broadToken.status, 401);
-  const headers = {
-    'content-type': 'application/json',
-    authorization: 'Bearer test-youtube-capture-token-with-at-least-32-characters',
-  };
-  const oversized = await ingestApp.request('/api/ingest/youtube/progress', {
-    method: 'POST',
-    headers,
-    body: 'x'.repeat(97 * 1024),
-  });
-  assert.equal(oversized.status, 413);
-  const accepted = await ingestApp.request('/api/ingest/youtube/progress', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
-  assert.equal(accepted.status, 200);
-  const result = await accepted.json() as {
-    completed: boolean;
-    accepted: number;
-    totalStored: number;
-  };
-  assert.equal(result.completed, true);
-  assert.equal(result.accepted, 1);
-  assert.equal(result.totalStored, 1);
-
-  const publicBodies = [
-    await (await app.request('/api/youtube.json')).text(),
-    await (await app.request('/api/activities.json?source=youtube')).text(),
-    await (await app.request('/feed.json')).text(),
-    await (await app.request('/feed.xml')).text(),
-  ].join('\n');
-  assert.doesNotMatch(publicBodies, /api-progress-123456789|resumeSeconds|PROGRESS001/);
-});
-
-test('YouTube account history sync uses the capture token and stays idempotent and private', async () => {
-  const occurredAt = new Date(Date.now() - 60_000).toISOString();
-  const payload = {
-    syncId: 'account-sync-123456789',
-    observedAt: new Date().toISOString(),
-    events: [
-      {
-        kind: 'watch',
-        occurredAt,
-        videoId: 'ACCOUNT0001',
-        title: 'Cross-device watch',
-        url: 'https://www.youtube.com/watch?v=ACCOUNT0001',
-        channelId: 'account-channel',
-        channelTitle: 'Account Channel',
-        durationSeconds: 321,
-        activityType: 'video',
-      },
-      {
-        kind: 'search',
-        occurredAt,
-        query: 'private cross-device search',
-        activityType: 'search',
-      },
-    ],
-  };
-  const unauthorized = await ingestApp.request('/api/ingest/youtube/history', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  assert.equal(unauthorized.status, 401);
-  const broadToken = await ingestApp.request('/api/ingest/youtube/history/status', {
-    headers: { authorization: 'Bearer test-token-with-at-least-32-characters' },
-  });
-  assert.equal(broadToken.status, 401);
-  const headers = {
-    'content-type': 'application/json',
-    authorization: 'Bearer test-youtube-capture-token-with-at-least-32-characters',
-  };
-  const accepted = await ingestApp.request('/api/ingest/youtube/history', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
-  assert.equal(accepted.status, 200);
-  const result = await accepted.json() as {
-    watchesInserted: number;
-    searchesInserted: number;
-    history: { latestEventAt: string | null };
-  };
-  assert.equal(result.watchesInserted, 1);
-  assert.equal(result.searchesInserted, 1);
-  assert.ok(
-    result.history.latestEventAt
-    && result.history.latestEventAt >= occurredAt,
-  );
-
-  const repeated = await ingestApp.request('/api/ingest/youtube/history', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
-  const repeatedResult = await repeated.json() as {
-    watchesInserted: number;
-    searchesInserted: number;
-  };
-  assert.equal(repeatedResult.watchesInserted, 0);
-  assert.equal(repeatedResult.searchesInserted, 0);
-
-  const status = await ingestApp.request('/api/ingest/youtube/history/status', { headers });
-  assert.equal(status.status, 200);
-  const publicBodies = [
-    await (await app.request('/api/youtube.json')).text(),
-    await (await app.request('/api/activities.json?source=youtube')).text(),
-    await (await app.request('/feed.json')).text(),
-    await (await app.request('/feed.xml')).text(),
-  ].join('\n');
-  assert.doesNotMatch(publicBodies, /private cross-device search/);
 });
 
 test('platform index and dedicated mirrors render source-native content', async () => {

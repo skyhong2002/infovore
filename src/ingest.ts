@@ -6,11 +6,6 @@ import { Hono } from 'hono';
 import { config } from './config.js';
 import { Repository } from './data/database.js';
 import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
-import { completeYoutubeOAuth, youtubeOAuthAuthorizationUrl } from './youtube/portability.js';
-import { parseYoutubeArchive } from './youtube/takeout.js';
-import { normalizeYoutubeCapture } from './youtube/capture.js';
-import { normalizeYoutubeHistoryBatch } from './youtube/history-sync.js';
-import { normalizeYoutubeProgressBatch } from './youtube/progress.js';
 import { healthConnectBatchSchema } from './health/types.js';
 
 function authorized(auth: string | undefined, expectedToken = config.ingestToken): boolean {
@@ -83,127 +78,6 @@ export function createIngestApp(repository: Repository): Hono {
       return c.json({ ok: true, ...result }, result.inserted > 0 ? 201 : 200);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
-    }
-  });
-  app.post('/api/ingest/youtube/takeout', async (c) => {
-    if (!config.ingestToken) return c.json({ error: 'YouTube ingestion is not configured' }, 503);
-    if (!authorized(c.req.header('authorization'))) return c.json({ error: 'Unauthorized' }, 401);
-    if (!config.youtube.privateDataKey) return c.json({ error: 'YOUTUBE_PRIVATE_DATA_KEY is not configured' }, 503);
-    const contentType = c.req.header('content-type')?.split(';')[0]?.trim();
-    if (!['application/zip', 'application/octet-stream'].includes(contentType ?? '')) {
-      return c.json({ error: 'Upload the Takeout ZIP as application/zip' }, 415);
-    }
-    try {
-      const archive = new Uint8Array(await c.req.arrayBuffer());
-      const parsed = parseYoutubeArchive(archive, config.youtube.privateDataKey, 'takeout');
-      const result = repository.ingestYoutubeArchive(parsed);
-      return c.json({ ok: true, ...result, totals: repository.youtubeCounts() }, 201);
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
-    }
-  });
-  app.get('/api/ingest/youtube/capture/status', (c) => {
-    if (!config.youtube.captureToken) {
-      return c.json({ error: 'YouTube capture is not configured' }, 503);
-    }
-    if (!authorized(c.req.header('authorization'), config.youtube.captureToken)) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-    return c.json({ status: 'ready', service: 'infovore-youtube-capture' });
-  });
-  app.post('/api/ingest/youtube/capture', async (c) => {
-    if (!config.youtube.captureToken) {
-      return c.json({ error: 'YouTube capture is not configured' }, 503);
-    }
-    if (!authorized(c.req.header('authorization'), config.youtube.captureToken)) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-    try {
-      const body = await c.req.text();
-      if (Buffer.byteLength(body) > 16 * 1024) {
-        return c.json({ error: 'Capture payload exceeds 16 KiB' }, 413);
-      }
-      const input = normalizeYoutubeCapture(JSON.parse(body));
-      const result = repository.upsertYoutubeCapture(input);
-      return c.json({ ok: true, ...result }, result.inserted ? 201 : 200);
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
-    }
-  });
-  app.post('/api/ingest/youtube/progress', async (c) => {
-    if (!config.youtube.captureToken) {
-      return c.json({ error: 'YouTube capture is not configured' }, 503);
-    }
-    if (!authorized(c.req.header('authorization'), config.youtube.captureToken)) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-    try {
-      const body = await c.req.text();
-      if (Buffer.byteLength(body) > 96 * 1024) {
-        return c.json({ error: 'Progress payload exceeds 96 KiB' }, 413);
-      }
-      const input = normalizeYoutubeProgressBatch(JSON.parse(body));
-      const result = repository.ingestYoutubeProgress(input);
-      return c.json({ ok: true, ...result }, result.completed ? 200 : 202);
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
-    }
-  });
-  app.get('/api/ingest/youtube/history/status', (c) => {
-    if (!config.youtube.captureToken) {
-      return c.json({ error: 'YouTube capture is not configured' }, 503);
-    }
-    if (!authorized(c.req.header('authorization'), config.youtube.captureToken)) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-    return c.json({ status: 'ready', ...repository.youtubeHistoryStatus() });
-  });
-  app.post('/api/ingest/youtube/history', async (c) => {
-    if (!config.youtube.captureToken) {
-      return c.json({ error: 'YouTube capture is not configured' }, 503);
-    }
-    if (!authorized(c.req.header('authorization'), config.youtube.captureToken)) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-    if (!config.youtube.privateDataKey) {
-      return c.json({ error: 'YOUTUBE_PRIVATE_DATA_KEY is not configured' }, 503);
-    }
-    try {
-      const body = await c.req.text();
-      if (Buffer.byteLength(body) > 256 * 1024) {
-        return c.json({ error: 'History payload exceeds 256 KiB' }, 413);
-      }
-      const input = normalizeYoutubeHistoryBatch(
-        JSON.parse(body),
-        config.youtube.privateDataKey,
-      );
-      const result = repository.ingestYoutubeArchive(input);
-      return c.json({
-        ok: true,
-        ...result,
-        history: repository.youtubeHistoryStatus(),
-      }, 200);
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
-    }
-  });
-  app.post('/api/ingest/youtube/oauth/start', (c) => {
-    if (!authorized(c.req.header('authorization'))) return c.json({ error: 'Unauthorized' }, 401);
-    try {
-      return c.json({ authorizationUrl: youtubeOAuthAuthorizationUrl(repository) });
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 503);
-    }
-  });
-  app.get('/api/ingest/youtube/oauth/callback', async (c) => {
-    const code = c.req.query('code');
-    const state = c.req.query('state');
-    if (!code || !state) return c.text('Missing OAuth code or state', 400);
-    try {
-      await completeYoutubeOAuth(repository, code, state);
-      return c.redirect('/platforms/youtube?oauth=connected');
-    } catch (error) {
-      return c.text(error instanceof Error ? error.message : String(error), 400);
     }
   });
   return app;

@@ -114,10 +114,6 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `POST /api/ingest/events` — authenticated private-ingest service (JSON)
 - `GET /api/ingest/health-connect/status` — authenticated Android sync status
 - `POST /api/ingest/health-connect` — authenticated private Health Connect batches
-- `POST /api/ingest/youtube/capture` — dedicated-token Chrome viewing capture
-- `GET /api/ingest/youtube/history/status` — private cross-device sync checkpoint
-- `POST /api/ingest/youtube/history` — private Google My Activity event batches
-- `POST /api/ingest/youtube/progress` — explicit history progress import
 - `POST /mcp` — stateless MCP Streamable HTTP endpoint
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
 
@@ -182,77 +178,8 @@ in `.env.example`, including how to get a Simkl client id + OAuth token.
 YouTube tracking itself lives in [urtube](https://urtube.observe.tw): the
 `youtube` source mirrors the public `/u/<handle>/summary.json` of
 `URTUBE_HANDLE` (on `URTUBE_BASE_URL`) for the platform page, the cards and
-the per-day time ledger. The urtube dashboard must be public. The legacy
-import/capture endpoints below still exist but are no longer what the site
-displays.
-
-### Import YouTube history
-
-Set `YOUTUBE_PRIVATE_DATA_KEY`, then import a Google Takeout archive locally:
-
-```sh
-npm run youtube:import -- /path/to/takeout.zip
-```
-
-The same parser is available through authenticated ingestion:
-
-```sh
-curl -X POST https://infovore.example/api/ingest/youtube/takeout \
-  -H "Authorization: Bearer $INGEST_TOKEN" \
-  -H "Content-Type: application/zip" \
-  --data-binary @/path/to/takeout.zip
-```
-
-Imports are idempotent. Full watch events use aggregate-only visibility and
-search queries are encrypted at rest; neither is exposed by the generic
-timeline, feeds, or MCP tools. Configure the Google Data Portability OAuth
-values for daily `myactivity.youtube` archive sync. Testing OAuth applications
-require reauthorization every seven days. For local Compose, the OAuth callback
-uses the ingest service at `http://localhost:3001`; production reverse proxies
-route the same `/api/ingest/*` path on the public domain.
-
-AI topic classification is disabled by default, even when AI credentials are
-present. Set `AI_CLASSIFICATION_ENABLED=true` only for an intentional bootstrap
-or classification run, then disable it again. Existing taxonomy and topic
-assignments remain available while classification is disabled.
-
-### Capture new YouTube viewing
-
-Google Data Portability is not available for every account country. The
-Manifest V3 extension in [`chrome-extension/`](chrome-extension/) is the
-incremental fallback:
-
-1. Generate a separate `YOUTUBE_CAPTURE_TOKEN` with at least 32 random
-   characters. Do not reuse `INGEST_TOKEN`.
-2. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**,
-   and select this repository's `chrome-extension` directory.
-3. Enter the capture token in the extension settings and test the connection.
-
-The extension has three separate private inputs:
-
-- Chrome playback capture starts after five non-ad playback seconds and sends
-  cumulative measured watch time every 30 seconds.
-- Daily account sync reads the signed-in Google My Activity YouTube page. This
-  covers watches and searches performed on phones, TVs, and other devices using
-  the same Google account. It runs when Chrome starts if the last successful
-  sync is over 20 hours old, and checks hourly while Chrome remains open.
-- YouTube History supplies recent resume positions and playback progress after
-  each daily account sync. A manual full progress scan remains available.
-
-Failed measured captures remain in `chrome.storage.local`, retry with bounded
-exponential backoff, and survive browser restarts. Account sync overlaps its
-checkpoint by two hours and the server deduplicates retries. Search terms are
-sent only to the private ingest service over HTTPS and encrypted before storage.
-The dedicated token can access only the capture, history, and progress
-endpoints; cookies and unrelated browsing data are never collected.
-
-The popup's **Sync now** action runs the same two-stage account-history and
-recent-progress workflow immediately. **Full progress scan** opens the signed-in
-YouTube History page and scans the entire available history for video ids,
-resume/progress, and duration. Progress rows remain private and contribute only
-aggregate content-coverage statistics. Automatic viewing capture does not
-collect playback position, and non-Chrome playback time remains estimated
-rather than measured.
+the per-day time ledger. The urtube dashboard must be public. History import
+and the Chrome capture extension live in urtube as well.
 
 ### Behind a reverse proxy
 

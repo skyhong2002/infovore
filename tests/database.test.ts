@@ -96,14 +96,6 @@ test('version 1 databases migrate through schema version 9 without data loss', (
 
     const repository = new Repository(path);
     assert.equal(repository.listActivities()[0].title, 'Legacy Anime');
-    assert.deepEqual(repository.youtubeCounts(), {
-      watches: 0,
-      videoWatches: 0,
-      videos: 0,
-      searches: 0,
-      searchQueries: 0,
-      channels: 0,
-    });
     repository.close();
 
     const migrated = new DatabaseSync(path);
