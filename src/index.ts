@@ -202,7 +202,8 @@ app.use('*', async (c, next) => {
     const { activities } = dashboardView(now);
     const current = currentActivities(activities, 4);
     const upcoming = upcomingActivities(now.toISOString(), 3);
-    const recent = latestSourceActivities(activities).slice(0, 5);
+    // Health and Dayflow have dedicated cards; keep this one to media and events.
+    const recent = latestSourceActivities(activities.filter((a) => a.source !== 'health' && a.source !== 'dayflow')).slice(0, 5);
     const key = JSON.stringify([now.toISOString().slice(0, 10), ...[current, upcoming, recent].map((list) => list.map((a) => `${a.id}:${a.status}`))]);
     if (key !== nowCardKey) {
       nowCardRender = (async () => {

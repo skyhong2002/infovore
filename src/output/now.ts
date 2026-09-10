@@ -19,8 +19,10 @@ const text = (value: string, style: Record<string, unknown> = {}) => h('span', {
 const taipeiDate = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Taipei', month: 'short', day: 'numeric' });
 const taipeiClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
+// Kitsu reports both anime and manga as `current`; say what the medium implies.
 function statusLabel(activity: Activity): string {
-  return ({ current: 'watching', reading: 'reading', watching: 'watching', playing: 'playing' } as Record<string, string>)[activity.status ?? ''] ?? activity.status ?? '';
+  if (activity.status !== 'current') return activity.status ?? '';
+  return ({ manga: 'reading', book: 'reading', game: 'playing' } as Record<string, string>)[activity.mediaKind] ?? 'watching';
 }
 
 function eventWhen(activity: Activity): string {
