@@ -13,12 +13,6 @@ const dayflowToken = process.env.DAYFLOW_TOKEN ?? '';
 if (dayflowToken && dayflowToken.length < 32) throw new Error('DAYFLOW_TOKEN must contain at least 32 characters');
 const healthConnectToken = process.env.HEALTH_CONNECT_TOKEN ?? ingestToken;
 const publicBaseUrl = (process.env.PUBLIC_BASE_URL ?? (process.env.DOMAIN ? `https://${process.env.DOMAIN}` : 'http://localhost:3000')).replace(/\/$/, '');
-const youtubePrivateDataKey = process.env.YOUTUBE_PRIVATE_DATA_KEY ?? '';
-const youtubeCaptureToken = process.env.YOUTUBE_CAPTURE_TOKEN ?? '';
-const youtubeSyncHour = Number(process.env.YOUTUBE_SYNC_HOUR ?? 4);
-const aiClassificationEnabled = /^(1|true|yes)$/i.test(
-  process.env.AI_CLASSIFICATION_ENABLED ?? ''
-);
 
 const invalidSources = sources.filter((source) => !knownSources.includes(source as typeof knownSources[number]));
 if (invalidSources.length) throw new Error(`Unknown SOURCES: ${invalidSources.join(', ')}`);
@@ -30,15 +24,6 @@ if (!Number.isInteger(refreshIntervalMinutes) || refreshIntervalMinutes < 5 || r
 if (ingestToken && ingestToken.length < 32) throw new Error('INGEST_TOKEN must contain at least 32 characters');
 if (healthConnectToken && healthConnectToken.length < 32) {
   throw new Error('HEALTH_CONNECT_TOKEN must contain at least 32 characters');
-}
-if (youtubePrivateDataKey && youtubePrivateDataKey.length < 32) {
-  throw new Error('YOUTUBE_PRIVATE_DATA_KEY must contain at least 32 characters');
-}
-if (youtubeCaptureToken && youtubeCaptureToken.length < 32) {
-  throw new Error('YOUTUBE_CAPTURE_TOKEN must contain at least 32 characters');
-}
-if (!Number.isInteger(youtubeSyncHour) || youtubeSyncHour < 0 || youtubeSyncHour > 23) {
-  throw new Error('YOUTUBE_SYNC_HOUR must be an integer from 0 to 23');
 }
 
 export const config = {
@@ -65,27 +50,11 @@ export const config = {
     accessToken: process.env.SIMKL_ACCESS_TOKEN ?? '',
   },
   goodreads: { userId: process.env.GOODREADS_USER_ID ?? '160195773-skychopath' },
-  youtube: {
-    apiKey: process.env.YOUTUBE_API_KEY ?? '',
-    privateDataKey: youtubePrivateDataKey,
-    captureToken: youtubeCaptureToken,
-    googleClientId: process.env.GOOGLE_DATA_PORTABILITY_CLIENT_ID ?? '',
-    googleClientSecret: process.env.GOOGLE_DATA_PORTABILITY_CLIENT_SECRET ?? '',
-    googleRedirectUri: process.env.GOOGLE_DATA_PORTABILITY_REDIRECT_URI
-      ?? `${publicBaseUrl}/api/ingest/youtube/oauth/callback`,
-    syncHour: youtubeSyncHour,
-  },
   // YouTube tracking lives in urtube; infovore mirrors its public per-handle
   // aggregates.
   urtube: {
     baseUrl: (process.env.URTUBE_BASE_URL ?? 'https://urtube.observe.tw').replace(/\/$/, ''),
     handle: process.env.URTUBE_HANDLE ?? 'skyhong.tw',
-  },
-  ai: {
-    enabled: aiClassificationEnabled,
-    baseUrl: (process.env.AI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, ''),
-    apiKey: process.env.AI_API_KEY ?? '',
-    model: process.env.AI_MODEL ?? '',
   },
   userAgent:
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
