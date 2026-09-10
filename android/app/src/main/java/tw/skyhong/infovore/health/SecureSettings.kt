@@ -36,6 +36,11 @@ class SecureSettings(context: Context) {
         get() = preferences.getString(KEY_CHANGES_TOKEN, null)
         set(value) { preferences.edit { putString(KEY_CHANGES_TOKEN, value) } }
 
+    /** Days of history read during the initial scan and each sleep refresh. */
+    var historyDays: Int
+        get() = preferences.getInt(KEY_HISTORY_DAYS, DEFAULT_HISTORY_DAYS).coerceIn(1, MAX_HISTORY_DAYS)
+        set(value) { preferences.edit { putInt(KEY_HISTORY_DAYS, value.coerceIn(1, MAX_HISTORY_DAYS)) } }
+
     var lastStatus: String
         get() = preferences.getString(KEY_LAST_STATUS, "尚未同步") ?: "尚未同步"
         set(value) { preferences.edit { putString(KEY_LAST_STATUS, value) } }
@@ -85,6 +90,9 @@ class SecureSettings(context: Context) {
 
     companion object {
         const val DEFAULT_ENDPOINT = "https://infovore.skyhong.tw"
+        const val DEFAULT_HISTORY_DAYS = 7
+        const val MAX_HISTORY_DAYS = 3650
+        private const val KEY_HISTORY_DAYS = "history_days"
         private const val KEY_ENDPOINT = "endpoint"
         private const val KEY_TOKEN = "token"
         private const val KEY_DEVICE_ID = "device_id"

@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settings: SecureSettings
     private lateinit var endpointInput: EditText
     private lateinit var tokenInput: EditText
+    private lateinit var historyDaysInput: EditText
     private lateinit var permissionStatus: TextView
     private lateinit var syncStatus: TextView
     private lateinit var syncButton: Button
@@ -59,7 +60,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "infovore"
         }, LinearLayout.LayoutParams(dp(64), dp(64)))
         root.addView(TextView(this).apply {
-            text = "Infovore Health 0.1.6"
+            text = "Infovore Health 0.1.7"
             textSize = 28f
         })
         root.addView(TextView(this).apply {
@@ -84,12 +85,19 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(tokenInput, matchWrap())
 
+        root.addView(label("初始同步範圍（最近幾天，1–${SecureSettings.MAX_HISTORY_DAYS}）"))
+        historyDaysInput = EditText(this).apply {
+            setText(settings.historyDays.toString())
+            inputType = InputType.TYPE_CLASS_NUMBER
+            isSingleLine = true
+        }
+        root.addView(historyDaysInput, matchWrap())
+
         root.addView(Button(this).apply {
             text = "儲存連線設定"
             setOnClickListener {
-                settings.endpoint = endpointInput.text.toString()
-                settings.token = tokenInput.text.toString()
-                syncStatus.text = "設定已安全儲存；token 由 Android Keystore 加密。"
+                saveInputs()
+                syncStatus.text = "設定已安全儲存；token 由 Android Keystore 加密。初始同步將讀取最近 ${settings.historyDays} 天。"
             }
         }, matchWrap(dp(12)))
 
@@ -132,7 +140,7 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(syncStatus)
         root.addView(TextView(this).apply {
-            text = "背景同步每 6 小時執行一次。請保持 Tailscale 連線，並在 Garmin Connect → 設定 → Health Connect 開啟資料分享。第一次同步預設讀取 30 天；授權歷史資料後最多回溯 10 年。"
+            text = "背景同步每 6 小時執行一次。請保持 Tailscale 連線，並在 Garmin Connect → 設定 → Health Connect 開啟資料分享。第一次同步與睡眠同步只讀取上方設定的天數（預設 ${SecureSettings.DEFAULT_HISTORY_DAYS} 天）；未授權歷史資料時最多 30 天。之後的同步只處理增量變更。"
             textSize = 14f
         })
 
@@ -142,8 +150,7 @@ class MainActivity : AppCompatActivity() {
     private fun runManualSync(sleepOnly: Boolean = false) {
         if (syncing) return
         syncing = true
-        settings.endpoint = endpointInput.text.toString()
-        settings.token = tokenInput.text.toString()
+        saveInputs()
         syncButton.isEnabled = false
         sleepButton.isEnabled = false
         syncStatus.text = "同步中…第一次同步可能需要幾分鐘。"
@@ -176,6 +183,13 @@ class MainActivity : AppCompatActivity() {
                 refreshPermissionStatus()
             }
         }
+    }
+
+    private fun saveInputs() {
+        settings.endpoint = endpointInput.text.toString()
+        settings.token = tokenInput.text.toString()
+        settings.historyDays = historyDaysInput.text.toString().toIntOrNull() ?: SecureSettings.DEFAULT_HISTORY_DAYS
+        historyDaysInput.setText(settings.historyDays.toString())
     }
 
     private suspend fun refreshPermissionStatus() {

@@ -40,7 +40,7 @@ class HealthConnectSync(private val context: Context) {
             require(HealthPermission.getReadPermission(SleepSessionRecord::class) in granted) {
                 "尚未授權讀取睡眠，請按「授權 Health Connect」"
             }
-            val days = if (HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted) 3650L else 30L
+            val days = historyDays(granted)
             val end = Instant.now()
             val result = uploadHistoryType<SleepSessionRecord>(
                 "睡眠", end.minus(days, ChronoUnit.DAYS), end, { progress ->
@@ -83,7 +83,8 @@ class HealthConnectSync(private val context: Context) {
         // Refresh sleep on every run, even with an existing change token.
         var summary = runSleep(onProgress)
         if (needsHistory) {
-            val historyDays = if (HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted) 3650L else 30L
+            val historyDays = historyDays(granted)
+            onProgress("初始掃描最近 $historyDays 天…")
             val start = Instant.now().minus(historyDays, ChronoUnit.DAYS)
             val end = Instant.now()
             // Sleep has already been uploaded before the larger histories.
@@ -125,6 +126,13 @@ class HealthConnectSync(private val context: Context) {
 
         onProgress("同步完成：新增 ${summary.inserted}、更新 ${summary.updated}、刪除 ${summary.deleted}")
         return summary
+    }
+
+    // The configured window is capped by what Health Connect lets us read:
+    // 30 days unless the history permission was granted.
+    private fun historyDays(granted: Set<String>): Long {
+        val allowed = if (HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted) 3650L else 30L
+        return settings.historyDays.toLong().coerceAtMost(allowed)
     }
 
     private suspend inline fun <reified T : Record> uploadHistoryType(
