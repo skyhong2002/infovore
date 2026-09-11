@@ -28,6 +28,9 @@ const fonts = [
   { name: 'Noto Sans JP', data: font('NotoSansJP-Bold.otf'), weight: 700 as const, style: 'normal' as const },
   { name: 'Noto Sans TC', data: font('NotoSansTC-Regular.otf'), weight: 400 as const, style: 'normal' as const },
   { name: 'Noto Sans TC', data: font('NotoSansTC-Bold.otf'), weight: 700 as const, style: 'normal' as const },
+  // Hangul: streaming services localize some artist names (막스 리히터).
+  { name: 'Noto Sans KR', data: font('NotoSansKR-Regular.otf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Noto Sans KR', data: font('NotoSansKR-Bold.otf'), weight: 700 as const, style: 'normal' as const },
 ];
 
 // Platform logos shipped in-repo, inlined as data URIs.
@@ -108,6 +111,8 @@ export function truncate(s: string, max: number): string {
 }
 
 const CJK = /[⺀-鿿豈-﫿＀-￯　-〿]/;
+// Hangul syllables and jamo, which the JP/TC fonts do not cover.
+const HANGUL = /[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]/;
 
 // Max lines a wrapped tile title may occupy before it's clamped with an
 // ellipsis. Pair with `display: 'block'` + `lineClamp: MAX_TITLE_LINES` on the
@@ -138,6 +143,7 @@ export function titleFontSize(text: string, base = 11, min = 8): number {
 // put the Noto CJK fonts first — Noto also covers Latin, so the whole run
 // renders. Pure-Latin strings keep the brand font.
 export function textFont(text: string, brand: string): string {
+  if (HANGUL.test(text)) return `"Noto Sans KR", "Noto Sans JP", "Noto Sans TC", ${brand}`;
   return CJK.test(text) ? `"Noto Sans JP", "Noto Sans TC", ${brand}` : brand;
 }
 
