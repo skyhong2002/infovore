@@ -650,6 +650,18 @@ export class Repository {
     return this.queryActivities({ limit }).data;
   }
 
+  // Every dated public activity since `since`, newest first. Unlike
+  // queryActivities this is uncapped by the API page size, so aggregate
+  // views (the word cloud) see the whole window.
+  activitiesSince(since: string, limit = 5000): Activity[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM activities
+      WHERE visibility='public' AND occurred_precision IN ('exact', 'day') AND occurred_at>=?
+      ORDER BY occurred_at DESC, first_seen_at DESC LIMIT ?
+    `).all(since, limit) as Record<string, unknown>[];
+    return rows.map((row) => this.rowToActivity(row));
+  }
+
   activityCoverage(now = new Date(), enabled = { dayflow: true, health: true }) {
     const since = new Date(+taipeiWindowStarts(now).day - 6 * 86400000).toISOString();
     const intervals: RecordedInterval[] = [];

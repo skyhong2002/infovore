@@ -273,6 +273,12 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.equal(cards.status, 200);
   const cardsHtml = await cards.text();
   assert.match(cardsHtml, /Shareable view/);
+  assert.match(cardsHtml, /id="word-cloud"/);
+  assert.match(cardsHtml, /src="\/card\/word-cloud\.webp\?v=/);
+  const cloudCard = await app.request('/card/word-cloud.svg');
+  assert.equal(cloudCard.status, 200);
+  assert.match(cloudCard.headers.get('content-type') ?? '', /image\/svg\+xml/);
+  assert.match(await cloudCard.text(), /^<svg width="520"/);
   assert.match(cardsHtml, /href="\/cards" aria-current="page">Cards/);
   assert.match(cardsHtml, /\.card-gallery-row\{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px\}/);
   assert.match(cardsHtml, /\.card-gallery-row img\{display:block;height:auto;max-width:100%;width:520px\}/);
