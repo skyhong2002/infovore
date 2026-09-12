@@ -46,9 +46,9 @@ export function dashboardActivities(media: Activity[], health: HealthConnectSnap
 // Recorded session time (including awake), not time asleep. Merge overlapping
 // sessions and clip at calendar boundaries/now rather than counting them twice.
 export function recordedSleepWindows(rows: Array<{ start_at: string; end_at: string }>, now: Date): TimeWindows {
-  const windows: TimeWindows = { last24h: 0, day: 0, week: 0, month: 0, year: 0, allTime: 0 };
+  const windows: TimeWindows = { last24h: 0, last28d: 0, day: 0, week: 0, month: 0, year: 0, allTime: 0 };
   const starts = taipeiWindowStarts(now);
-  const cutoffs = { last24h: now.getTime() - 86_400_000, day: +starts.day, week: +starts.week,
+  const cutoffs = { last24h: now.getTime() - 86_400_000, last28d: +starts.day - 27 * 86_400_000, day: +starts.day, week: +starts.week,
     month: +starts.month, year: +starts.year, allTime: -Infinity };
   const intervals = rows.map((row) => [Date.parse(row.start_at), Math.min(Date.parse(row.end_at), +now)] as const)
     .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && end > start)

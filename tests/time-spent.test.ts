@@ -56,7 +56,7 @@ test('stats.fm windows sum local stream durations into rolling and calendar buck
   ]);
   const statsfm = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'statsfm');
   assert.equal(statsfm?.method, 'measured');
-  assert.deepEqual(statsfm?.windows, { last24h: 600, day: 600, week: 1800, month: 600, year: 3600, allTime: 3600 });
+  assert.deepEqual(statsfm?.windows, { last24h: 600, last28d: 1800, day: 600, week: 1800, month: 600, year: 3600, allTime: 3600 });
   repository.close();
 });
 
@@ -76,7 +76,7 @@ test('stats.fm calendar windows prefer fresh remote totals and ignore stale ones
   repository.finishSync(repository.startSync('statsfm'), snapshot, '2026-08-02T10:00:00.000Z');
   const fresh = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'statsfm');
   assert.deepEqual(fresh?.windows, {
-    last24h: 600, day: 600, week: 7200, month: 18000, year: 60000, allTime: 300000,
+    last24h: 600, last28d: 600, day: 600, week: 7200, month: 18000, year: 60000, allTime: 300000,
   });
 
   // A fetch from before the current week/month began cannot describe them;
@@ -84,7 +84,7 @@ test('stats.fm calendar windows prefer fresh remote totals and ignore stale ones
   repository.finishSync(repository.startSync('statsfm'), snapshot, '2026-07-20T00:00:00.000Z');
   const stale = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'statsfm');
   assert.deepEqual(stale?.windows, {
-    last24h: 600, day: 600, week: 600, month: 600, year: 60000, allTime: 300000,
+    last24h: 600, last28d: 600, day: 600, week: 600, month: 600, year: 60000, allTime: 300000,
   });
   repository.close();
 });
@@ -102,11 +102,11 @@ test('YouTube time mirrors urtube\'s per-day series and replaces it on every syn
     { day: '2026-07-24', watches: 1, estimatedWatchSeconds: 0 },
   ]), NOW);
   assert.equal(youtube()?.method, 'estimated');
-  assert.deepEqual(youtube()?.windows, { last24h: 1200, day: 1200, week: 1200, month: 1200, year: 2100, allTime: 2100 });
+  assert.deepEqual(youtube()?.windows, { last24h: 1200, last28d: 2100, day: 1200, week: 1200, month: 1200, year: 2100, allTime: 2100 });
   // An upstream revision (a shorter estimate today, the July day gone) is
   // mirrored rather than accrued on top of the old series.
   repository.recordTimeLedger(snapshot([{ day: '2026-08-02', watches: 3, estimatedWatchSeconds: 600 }]), NOW);
-  assert.deepEqual(youtube()?.windows, { last24h: 600, day: 600, week: 600, month: 600, year: 600, allTime: 600 });
+  assert.deepEqual(youtube()?.windows, { last24h: 600, last28d: 600, day: 600, week: 600, month: 600, year: 600, allTime: 600 });
   // An empty series (upstream outage, private dashboard) keeps the last good ledger.
   repository.recordTimeLedger(snapshot([]), NOW);
   assert.equal(youtube()?.windows.allTime, 600);
@@ -124,7 +124,7 @@ test('lifetime-delta ledger seeds first, accumulates growth, and clamps recounts
   repository.recordTimeLedger(simklSnapshot(130), new Date('2026-08-02T09:00:00Z'));
   let simkl = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'simkl');
   assert.equal(simkl?.method, 'estimated');
-  assert.deepEqual(simkl?.windows, { last24h: 1800, day: 1800, week: 1800, month: 1800, year: 1800, allTime: 1800 });
+  assert.deepEqual(simkl?.windows, { last24h: 1800, last28d: 1800, day: 1800, week: 1800, month: 1800, year: 1800, allTime: 1800 });
 
   // A platform-side recount shrinking the total records nothing.
   repository.recordTimeLedger(simklSnapshot(120), new Date('2026-08-02T09:30:00Z'));
@@ -145,7 +145,7 @@ test('ledger deltas attribute to the newest entry activity since the watermark',
   assert.deepEqual({ ...row }, { day: '2026-08-01', seconds: 1800, method: 'estimated' });
   const simkl = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'simkl');
   // Yesterday's ledger day sits inside week/month/year but not today.
-  assert.deepEqual(simkl?.windows, { last24h: 0, day: 0, week: 1800, month: 1800, year: 1800, allTime: 1800 });
+  assert.deepEqual(simkl?.windows, { last24h: 0, last28d: 1800, day: 0, week: 1800, month: 1800, year: 1800, allTime: 1800 });
   repository.close();
 });
 
@@ -188,7 +188,7 @@ test('attended events count their scheduled span with a 2 h default, excluding p
   const events = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'events');
   assert.equal(events?.method, 'estimated');
   assert.deepEqual(events?.windows, {
-    last24h: 5400, day: 5400, week: 12600, month: 5400, year: 12600, allTime: 12600,
+    last24h: 5400, last28d: 12600, day: 5400, week: 12600, month: 5400, year: 12600, allTime: 12600,
   });
   repository.close();
 });
@@ -207,7 +207,7 @@ test('finished books estimate reading time from page counts', () => {
   const goodreads = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'goodreads');
   assert.equal(goodreads?.method, 'estimated');
   assert.deepEqual(goodreads?.windows, {
-    last24h: 36000, day: 36000, week: 36000, month: 36000, year: 36000, allTime: 36000,
+    last24h: 36000, last28d: 36000, day: 36000, week: 36000, month: 36000, year: 36000, allTime: 36000,
   });
   repository.close();
 });
@@ -232,7 +232,7 @@ test('Backloggd daily playtime logs backfill history and accrue idempotently', (
   repository.recordTimeLedger(snapshot(history), new Date('2026-08-02T08:00:00Z'));
   let backloggd = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'backloggd');
   assert.equal(backloggd?.method, 'measured');
-  assert.deepEqual(backloggd?.windows, { last24h: 300, day: 300, week: 2100, month: 300, year: 5700, allTime: 5700 });
+  assert.deepEqual(backloggd?.windows, { last24h: 300, last28d: 2100, day: 300, week: 2100, month: 300, year: 5700, allTime: 5700 });
 
   // Re-scraping the same history adds nothing.
   repository.recordTimeLedger(snapshot(history), new Date('2026-08-02T09:00:00Z'));

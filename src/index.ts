@@ -6,6 +6,7 @@ import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import { dayflowDay, type DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
+import { recordedShare } from './data/coverage.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
@@ -398,9 +399,13 @@ function dashboardView(now: Date) {
   return { healthSnapshot, activities: dashboardActivities([...repository.listActivities(500), ...repository.latestPublicActivitiesBySource(now), ...daily], healthSnapshot, now) };
 }
 
+// The overview metric is the share of the last 28 days with any recording; the
+// rhythm panel shows the first week of the same coverage.
+const HOME_COVERAGE_DAYS = 28;
 app.get('/', (c) => {
   const now = new Date();
   const { healthSnapshot, activities: combined } = dashboardView(now);
+  const coverage = repository.activityCoverage(now, { dayflow: dayflowEnabled, health: Boolean(healthSnapshot) }, HOME_COVERAGE_DAYS);
   const recent = latestSourceActivities(combined);
   const profileSnapshot = getCache<SourceSnapshot>('data:statsfm')?.data;
   const sourceCounts = repository.countBySource();
@@ -422,7 +427,8 @@ app.get('/', (c) => {
     publicActivityCount,
     connectedSources,
     dayflow: dayflowEnabled ? getCache<DayflowSnapshot>('data:dayflow')?.data : null,
-    coverage: repository.activityCoverage(now, { dayflow: dayflowEnabled, health: Boolean(healthSnapshot) }),
+    coverage,
+    recordedShare: recordedShare(coverage, now),
     healthSleepTime: healthSnapshot ? repository.healthConnectSleepTime(now) : null,
   }));
 });

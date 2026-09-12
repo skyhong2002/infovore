@@ -39,7 +39,7 @@ test('Dayflow joins platform highlights, time rows and recent activity without a
     assert.equal(page('#recent .home-recent-title').attr('href'), '/platforms/dayflow');
     assert.match(page('#recent .home-keywords').text(), /<Garmin>/);
     assert.equal(page('[data-hour]').length, 0, 'daily summaries must not invent hourly events');
-    assert.equal(page('.home-metric-value').first().text(), '—', 'computer time must not double-count media time');
+    assert.equal(page('.home-metric-value').first().text(), '—', 'the recorded share comes from coverage, not from summing platforms');
   } finally { repository.close(); }
 });
 

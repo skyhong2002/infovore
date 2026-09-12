@@ -62,9 +62,11 @@ export interface WrappedSummary {
 
 export type TimeMethod = 'measured' | 'estimated' | 'unavailable';
 
-// Seconds per window. `last24h` rolls; the rest are Taipei calendar windows.
+// Seconds per window. `last24h` rolls; `last28d` is the 28 Taipei calendar
+// days ending today; the rest are Taipei calendar windows.
 export interface TimeWindows {
   last24h: number;
+  last28d: number;
   day: number;
   week: number;
   month: number;
@@ -683,8 +685,8 @@ export class Repository {
     return rows.map((row) => this.rowToActivity(row));
   }
 
-  activityCoverage(now = new Date(), enabled = { dayflow: true, health: true }) {
-    const since = new Date(+taipeiWindowStarts(now).day - 6 * 86400000).toISOString();
+  activityCoverage(now = new Date(), enabled = { dayflow: true, health: true }, days = 7) {
+    const since = new Date(+taipeiWindowStarts(now).day - (days - 1) * 86400000).toISOString();
     const intervals: RecordedInterval[] = [];
     if (enabled.dayflow) intervals.push(...this.dayflow.recordedIntervals(taipeiDay(new Date(Date.parse(since) - 86400000)), now));
     if (enabled.health) {
@@ -702,7 +704,7 @@ export class Repository {
       .all(now.toISOString(), since) as Array<{ occurred_at: string; duration: number }>;
     intervals.push(...music.map(row => ({ source: 'statsfm', start: Date.parse(row.occurred_at) - Number(row.duration),
       end: Date.parse(row.occurred_at) })));
-    return recordedCoverage(intervals, now);
+    return recordedCoverage(intervals, now, days);
   }
 
   latestPublicActivitiesBySource(now = new Date()): Activity[] {
@@ -990,6 +992,7 @@ export class Repository {
     const starts = taipeiWindowStarts(now);
     const cutoffs = {
       last24h: new Date(now.getTime() - 86_400_000).toISOString(),
+      last28d: new Date(+starts.day - 27 * 86_400_000).toISOString(),
       day: starts.day.toISOString(),
       week: starts.week.toISOString(),
       month: starts.month.toISOString(),
@@ -998,6 +1001,7 @@ export class Repository {
     const sources: SourceTimeSpent[] = [];
     const windowsFrom = (row: Record<string, number | null>): TimeWindows => ({
       last24h: Math.round(Number(row.last24h ?? 0)),
+      last28d: Math.round(Number(row.last28d ?? 0)),
       day: Math.round(Number(row.day ?? 0)),
       week: Math.round(Number(row.week ?? 0)),
       month: Math.round(Number(row.month ?? 0)),
@@ -1005,11 +1009,12 @@ export class Repository {
       allTime: Math.round(Number(row.all_time ?? 0)),
     });
 
-    // Bucket a (occurred_at, seconds) subquery into all six windows at once.
+    // Bucket a (occurred_at, seconds) subquery into all seven windows at once.
     const activityWindows = (innerSql: string, ...innerParams: string[]): TimeWindows =>
       windowsFrom(this.db.prepare(`
         SELECT
           COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) last24h,
+          COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) last28d,
           COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) day,
           COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) week,
           COALESCE(SUM(CASE WHEN occurred_at>=? THEN seconds ELSE 0 END), 0) month,
@@ -1017,7 +1022,7 @@ export class Repository {
           COALESCE(SUM(seconds), 0) all_time
         FROM (${innerSql})
       `).get(
-        cutoffs.last24h, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year, ...innerParams
+        cutoffs.last24h, cutoffs.last28d, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year, ...innerParams
       ) as Record<string, number>);
 
     const local = activityWindows(`
@@ -1037,6 +1042,7 @@ export class Repository {
     };
     const statsfm: TimeWindows = {
       last24h: local.last24h,
+      last28d: local.last28d,
       day: local.day,
       week: remoteSeconds('weekMinutes', cutoffs.week) ?? local.week,
       month: remoteSeconds('monthMinutes', cutoffs.month) ?? local.month,
@@ -1079,6 +1085,7 @@ export class Repository {
 
     const ledgerQuery = this.db.prepare(`
       SELECT
+        COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) last28d,
         COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) day,
         COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) week,
         COALESCE(SUM(CASE WHEN day>=? THEN seconds ELSE 0 END), 0) month,
@@ -1097,7 +1104,7 @@ export class Repository {
     ];
     for (const { source, method } of ledgerSources) {
       const row = ledgerQuery.get(
-        taipeiDay(starts.day), taipeiDay(starts.week), taipeiDay(starts.month), taipeiDay(starts.year), source
+        taipeiDay(cutoffs.last28d), taipeiDay(starts.day), taipeiDay(starts.week), taipeiDay(starts.month), taipeiDay(starts.year), source
       ) as Record<string, number>;
       // Ledger data is day-granular, so "last 24 h" honestly approximates to
       // today's Taipei day.
@@ -1107,7 +1114,7 @@ export class Repository {
 
     sources.sort((a, b) => b.windows.allTime - a.windows.allTime);
     const sum = (included: SourceTimeSpent[]): TimeWindows => {
-      const total: TimeWindows = { last24h: 0, day: 0, week: 0, month: 0, year: 0, allTime: 0 };
+      const total: TimeWindows = { last24h: 0, last28d: 0, day: 0, week: 0, month: 0, year: 0, allTime: 0 };
       for (const entry of included) {
         for (const key of Object.keys(total) as Array<keyof TimeWindows>) total[key] += entry.windows[key];
       }

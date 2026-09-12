@@ -18,9 +18,9 @@ function merge(intervals: Array<[number, number]>): Array<[number, number]> {
 }
 
 // Calendar days, always 00:00–24:00 Taipei; overlap counts only once in coverage.
-export function recordedCoverage(intervals: RecordedInterval[], now = new Date()): CoverageDay[] {
+export function recordedCoverage(intervals: RecordedInterval[], now = new Date(), days = 7): CoverageDay[] {
   const today = +taipeiWindowStarts(now).day;
-  return Array.from({ length: 7 }, (_, index) => {
+  return Array.from({ length: days }, (_, index) => {
     const start = today - index * 86400000;
     const end = Math.min(start + 86400000, +now);
     const bySource = new Map<string, Array<[number, number]>>();
@@ -38,4 +38,17 @@ export function recordedCoverage(intervals: RecordedInterval[], now = new Date()
       })),
     };
   });
+}
+
+// Share of the elapsed time in these days that has any recording, with the
+// current day counted only up to now. Null until there is a day to measure.
+export function recordedShare(days: CoverageDay[], now = new Date()): number | null {
+  if (!days.length) return null;
+  const today = +taipeiWindowStarts(now).day;
+  const elapsed = days.reduce((sum, day) => {
+    const start = Date.parse(`${day.day}T00:00:00+08:00`);
+    return sum + Math.max(0, Math.min(86400000, +now - start, start >= today ? +now - start : 86400000)) / 1000;
+  }, 0);
+  if (elapsed <= 0) return null;
+  return Math.min(1, days.reduce((sum, day) => sum + day.recordedSeconds, 0) / elapsed);
 }

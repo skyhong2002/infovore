@@ -82,7 +82,7 @@ test('Health Connect builds a safe, complete platform projection and measured ex
   const healthTime = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'health');
   assert.equal(healthTime?.method, 'measured');
   assert.deepEqual(healthTime?.windows, {
-    last24h: 1800, day: 1800, week: 1800, month: 1800, year: 1800, allTime: 1800,
+    last24h: 1800, last28d: 1800, day: 1800, week: 1800, month: 1800, year: 1800, allTime: 1800,
   });
   repository.close();
 });

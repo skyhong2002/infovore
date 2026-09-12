@@ -3,6 +3,7 @@ import { html, shell, sourceLabel, timeAmount } from './pages.js';
 
 const WINDOW_COLUMNS: Array<{ key: keyof TimeWindows; title: string }> = [
   { key: 'last24h', title: 'Last 24h' },
+  { key: 'last28d', title: 'Last 28 days' },
   { key: 'day', title: 'Today' },
   { key: 'week', title: 'This week' },
   { key: 'month', title: 'This month' },

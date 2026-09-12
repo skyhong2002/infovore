@@ -71,7 +71,7 @@ test('sleep time includes all history, clips Taipei windows and future time, and
     { start_at: '2026-09-06T01:00:00Z', end_at: '2026-09-06T04:00:00Z' },
   ];
   const windows = recordedSleepWindows(rows, new Date('2026-09-05T02:00:00Z'));
-  assert.deepEqual(windows, { last24h: 9 * 3600, day: 8 * 3600, week: 9 * 3600,
+  assert.deepEqual(windows, { last24h: 9 * 3600, last28d: 9 * 3600, day: 8 * 3600, week: 9 * 3600,
     month: 9 * 3600, year: 17 * 3600, allTime: 17 * 3600 });
 });
 

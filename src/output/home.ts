@@ -18,6 +18,8 @@ export interface HomepageData {
   publicActivityCount: number;
   connectedSources: number;
   coverage?: CoverageDay[];
+  // Fraction of the last 28 days with any recording, overlaps counted once.
+  recordedShare?: number | null;
   dayflow?: DayflowSnapshot | null;
   healthSleepTime?: TimeWindows | null;
 }
@@ -150,15 +152,19 @@ function imageOrPlaceholder(image: string, className: string, label: string): st
   return `<span class="${placeholder}" aria-hidden="true">${html(label.slice(0, 1).toUpperCase())}</span>`;
 }
 
-function durationLabel(timeSpent: TimeSpentSummary | null, window: keyof TimeSpentSummary['total']): string {
-  if (!timeSpent || !timeSpent.total[window]) return '—';
-  const approximate = timeSpent.sources.some((entry) => entry.method === 'estimated' && entry.windows[window] > 0);
-  return `${approximate ? '~' : ''}${timeAmount(timeSpent.total[window])}`;
+function shareLabel(share: number | null | undefined): string {
+  return share ? `${Math.round(share * 100)}%` : '—';
 }
 
-function homeTimeWindow(timeSpent: TimeSpentSummary | null): { key: 'month' | 'allTime'; label: string } {
-  const monthlySources = timeSpent?.sources.filter((entry) => entry.windows.month > 0).length ?? 0;
-  return monthlySources >= 2 ? { key: 'month', label: 'this month' } : { key: 'allTime', label: 'all time' };
+// The platform list follows the same 28 days as the recorded-time share and
+// falls back to lifetime totals until two platforms have recent time.
+function homeTimeWindow(timeSpent: TimeSpentSummary | null): { key: 'last28d' | 'allTime'; label: string } {
+  const recentSources = timeSpent?.sources.filter((entry) => entry.windows.last28d > 0).length ?? 0;
+  return recentSources >= 2 ? { key: 'last28d', label: 'in the last 28 days' } : { key: 'allTime', label: 'all time' };
+}
+
+function last28Days(): string {
+  return new Date(Date.parse(`${dayflowDay()}T00:00:00Z`) - 27 * 86_400_000).toISOString().slice(0, 10);
 }
 
 function activeDays(activities: Activity[]): number {
@@ -212,8 +218,8 @@ function metric(label: string, value: string, note: string): string {
 function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null): string {
   const window = homeTimeWindow(timeSpent);
   const today = dayflowDay();
-  const computerSeconds = dayflow?.extra.daily.filter(day => day.day <= today && (window.key === 'allTime' || day.day.slice(0, 7) === today.slice(0, 7))).reduce((sum, day) => sum + day.activeMinutes * 60, 0) ?? 0;
-  const entries = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { month: computerSeconds, allTime: computerSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : [])]
+  const computerSeconds = dayflow?.extra.daily.filter(day => day.day <= today && (window.key === 'allTime' || day.day >= last28Days())).reduce((sum, day) => sum + day.activeMinutes * 60, 0) ?? 0;
+  const entries = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { last28d: computerSeconds, allTime: computerSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : [])]
     .filter((entry) => entry.windows[window.key] > 0)
     .sort((a, b) => b.windows[window.key] - a.windows[window.key]);
   if (!entries.length) return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">No time records are available yet.</p><div class="home-empty">Time appears after the first platform sync.</div></div>`;
@@ -225,10 +231,11 @@ function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows |
     const href = entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${html(entry.source)}`;
     return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${entry.source.startsWith('health') ? `;background:${entry.source === 'health-sleep' ? '#a8c7fa' : '#67d5c3'}` : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
   }).join('');
-  return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${computerSeconds ? '<p class="home-footnote">Dayflow shows active computer time by recorded day. It can overlap other platforms and is excluded from the overview time total.</p>' : ''}${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time; shown separately from exercise and excluded from the overview time total.</p>' : ''}</div>`;
+  return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${computerSeconds ? '<p class="home-footnote">Dayflow shows active computer time by recorded day. It can overlap other platforms; the recorded-time share above counts overlaps once.</p>' : ''}${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time, shown separately from exercise.</p>' : ''}</div>`;
 }
 
-function rhythmPanel(days: CoverageDay[]): string {
+function rhythmPanel(coverage: CoverageDay[]): string {
+  const days = coverage.slice(0, 7);
   const sources = coverageSources;
   const clock = (hour: number) => `${String(Math.floor(hour)).padStart(2, '0')}:${String(Math.min(59, Math.floor((hour % 1) * 60 + 0.00001))).padStart(2, '0')}`;
   const rows = days.map(day => `<div class="home-coverage-day" data-day="${day.day}" data-recorded-seconds="${day.recordedSeconds}">
@@ -243,7 +250,6 @@ function rhythmPanel(days: CoverageDay[]): string {
 }
 
 export function homePage(data: HomepageData): string {
-  const timeWindow = homeTimeWindow(data.timeSpent);
   const recent = data.recentActivities.length
     ? `<ul class="home-recent-list">${data.recentActivities.map(activity => recentRow(activity, data.dayflow)).join('')}</ul>`
     : '<div class="home-empty">No activity has been collected yet.</div>';
@@ -258,7 +264,7 @@ export function homePage(data: HomepageData): string {
     </section>
     <nav class="home-view-nav" aria-label="Dashboard views"><a href="/" aria-current="page">Overview</a><a href="/stats">Time</a><a href="/now">Now</a><a href="/profile">Archive</a><a href="/platforms">Platforms</a></nav>
     <section class="home-metric-grid" aria-label="Overview metrics">
-      ${metric(`Time ${timeWindow.label}`, durationLabel(data.timeSpent, timeWindow.key), 'all connected media')}
+      ${metric('Time recorded', shareLabel(data.recordedShare), 'of the last 28 days')}
       ${metric('Active days', String(activeDays(data.allActivities)), 'available timeline')}
       ${metric('Public entries', String(data.publicActivityCount), 'in the archive')}
       ${metric('Active platforms', String(data.connectedSources), 'currently configured')}

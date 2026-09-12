@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { recordedCoverage } from '../src/data/coverage.js';
+import { recordedCoverage, recordedShare } from '../src/data/coverage.js';
 import { Repository } from '../src/data/database.js';
 
 const now = new Date('2026-09-06T12:00:00+08:00');
@@ -54,4 +54,16 @@ test('listening coverage ends at the stream timestamp and never invents time for
     assert.equal(days[1].recordedSeconds, 3600);
     assert.deepEqual(days[0].lanes[0].spans, [{ startHour: 0, endHour: 1 }]);
   } finally { repository.close(); }
+});
+
+test('recorded share divides by elapsed time, counting today only up to now', () => {
+  const days = recordedCoverage([
+    { source: 'health-sleep', start: at('06T00:00:00'), end: at('06T06:00:00') },
+    { source: 'dayflow', start: at('05T00:00:00'), end: at('05T12:00:00') },
+  ], now, 28);
+  assert.equal(days.length, 28);
+  // 18 h recorded out of 27 full days plus 12 h of today.
+  assert.equal(recordedShare(days, now), 18 / (27 * 24 + 12));
+  assert.equal(recordedShare([], now), null);
+  assert.equal(recordedShare(recordedCoverage([], now, 28), now), 0);
 });
