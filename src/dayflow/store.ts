@@ -48,15 +48,47 @@ export class DayflowStore {
         }));
     });
   }
+  // The snapshot is rebuilt every minute so today's in-progress totals tick,
+  // but only today depends on the clock: past days are a pure function of
+  // their stored batches. Parsed batches keep their identity across rebuilds
+  // (keyed on the row revision) so past-day summaries and the keyword
+  // tokenisation in pools.ts can be reused instead of recomputed each minute.
+  private parsed = new Map<string, { revision: number; batch: DayflowBatch }>();
+  private summaries = new Map<string, { batches: DayflowBatch[]; summary: DayflowDay }>();
+
+  private loadBatches(): DayflowBatch[] {
+    const rows = this.db.prepare('SELECT device_id, day, revision FROM dayflow_days ORDER BY day DESC, device_id')
+      .all() as Array<{ device_id: string; day: string; revision: number }>;
+    const payload = this.db.prepare('SELECT payload_json FROM dayflow_days WHERE device_id = ? AND day = ?');
+    const live = new Set<string>();
+    const batches = rows.map((row) => {
+      const key = `${row.device_id}\u001f${row.day}`;
+      live.add(key);
+      const cached = this.parsed.get(key);
+      if (cached && cached.revision === Number(row.revision)) return cached.batch;
+      const batch = JSON.parse((payload.get(row.device_id, row.day) as { payload_json: string }).payload_json) as DayflowBatch;
+      this.parsed.set(key, { revision: Number(row.revision), batch });
+      return batch;
+    });
+    for (const key of this.parsed.keys()) if (!live.has(key)) this.parsed.delete(key);
+    return batches;
+  }
+
+  private summarize(day: string, batches: DayflowBatch[], now: Date): DayflowDay {
+    const cached = this.summaries.get(day);
+    if (cached && cached.batches.length === batches.length && cached.batches.every((batch, i) => batch === batches[i])) return cached.summary;
+    const summary = summarizeDay(day, batches, now);
+    if (day < dayflowDay(now)) this.summaries.set(day, { batches, summary });
+    return summary;
+  }
+
   snapshot(owner: string, now = new Date()): DayflowSnapshot {
-    const rows = this.db.prepare('SELECT payload_json FROM dayflow_days ORDER BY day DESC, device_id').all() as Array<{ payload_json: string }>;
     const byDay = new Map<string, DayflowBatch[]>();
-    for (const row of rows) {
-      const batch = JSON.parse(row.payload_json) as DayflowBatch;
+    for (const batch of this.loadBatches()) {
       if (batch.day > dayflowDay(now)) continue;
       const group = byDay.get(batch.day) ?? []; group.push(batch); byDay.set(batch.day, group);
     }
-    const daily = [...byDay].map(([day, batches]) => summarizeDay(day, batches, now));
+    const daily = [...byDay].map(([day, batches]) => this.summarize(day, batches, now));
     const today = dayflowDay(now);
     const weekStart = new Date(`${today}T00:00:00Z`);
     weekStart.setUTCDate(weekStart.getUTCDate() - (weekStart.getUTCDay() + 6) % 7);

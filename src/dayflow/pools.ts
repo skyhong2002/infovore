@@ -70,16 +70,32 @@ function terms(value: string, phrases: boolean): Set<string> {
 
 interface Document { day: string; terms: Set<string>; titleTerms: Set<string> }
 interface Count { mentions: number; days: Set<string>; titles: number }
-function documents(batches: DayflowBatch[], now: Date): Document[] {
-  const result: Document[] = [], seen = new Set<string>();
-  for (const batch of [...batches].sort((a, b) => b.observedAt.localeCompare(a.observedAt))) for (const card of batch.cards) {
-    const id = batch.deviceId + ':' + card.record_id, start = Date.parse(batch.day + 'T04:00:00+08:00');
+// Tokenising every card is the expensive step and, for a day that has ended,
+// depends only on the batch itself. The store hands back the same batch object
+// while its stored revision is unchanged, so the tokens are kept per batch.
+const batchDocuments = new WeakMap<DayflowBatch, Array<{ id: string; doc: Document }>>();
+function documentsOf(batch: DayflowBatch, now: Date): Array<{ id: string; doc: Document }> {
+  const settled = batch.day < dayflowDay(now);
+  const cached = settled ? batchDocuments.get(batch) : undefined;
+  if (cached) return cached;
+  const result: Array<{ id: string; doc: Document }> = [], start = Date.parse(batch.day + 'T04:00:00+08:00');
+  for (const card of batch.cards) {
     if (Math.min(+now, start + 86400000, Date.parse(card.end)) <= Math.max(start, Date.parse(card.start))) continue;
     if (card.category.toLowerCase() === 'idle' || card.category.toLowerCase() === 'system'
-      || card.subcategory?.toLowerCase() === 'error' || batch.categories.find((c) => c.name === card.category)?.is_idle || seen.has(id)) continue;
-    seen.add(id);
+      || card.subcategory?.toLowerCase() === 'error' || batch.categories.find((c) => c.name === card.category)?.is_idle) continue;
     const titleTerms = terms(card.title, true);
-    result.push({ day: batch.day, titleTerms, terms: new Set([...titleTerms, ...terms(card.summary ?? '', false)]) });
+    result.push({ id: batch.deviceId + ':' + card.record_id,
+      doc: { day: batch.day, titleTerms, terms: new Set([...titleTerms, ...terms(card.summary ?? '', false)]) } });
+  }
+  if (settled) batchDocuments.set(batch, result);
+  return result;
+}
+function documents(batches: DayflowBatch[], now: Date): Document[] {
+  const result: Document[] = [], seen = new Set<string>();
+  for (const batch of [...batches].sort((a, b) => b.observedAt.localeCompare(a.observedAt))) for (const { id, doc } of documentsOf(batch, now)) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push(doc);
   }
   return result;
 }
