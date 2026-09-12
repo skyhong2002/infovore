@@ -10,45 +10,50 @@ import type { SourceSnapshot } from '../src/data/types.js';
 const ingestApp = createIngestApp(repository);
 
 test('Health Connect ingestion is authenticated, bounded, private, and idempotent', async () => {
+  // Dashboard views window on the real clock, so the fixture lives on the two
+  // days before today (UTC) rather than fixed dates that would age out.
+  const day = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+  const yesterday = day(1);
+  const dayBefore = day(2);
   const beforeSleepCard = await (await app.request('/card/health.svg')).text();
   const beforeVariants = await Promise.all(['health-sleep', 'health-sleep-stages', 'health-exercise', 'health-steps']
     .map(async (name) => [name, await (await app.request(`/card/${name}.svg`)).text()] as const));
   const payload = {
     syncId: 'app-health-sync-0001',
     deviceId: 'app-health-device-01',
-    observedAt: '2026-09-05T01:00:00.000Z',
+    observedAt: `${yesterday}T01:00:00.000Z`,
     records: [
       {
         id: 'app-health-record-1', dataType: 'heart_rate',
         dataOrigin: 'com.garmin.android.apps.connectmobile',
-        startTime: '2026-09-05T00:00:00.000Z', endTime: '2026-09-05T00:05:00.000Z',
-        lastModifiedTime: '2026-09-05T00:06:00.000Z',
-        payload: { samples: [{ time: '2026-09-05T00:01:00.000Z', beatsPerMinute: 72 }] },
+        startTime: `${yesterday}T00:00:00.000Z`, endTime: `${yesterday}T00:05:00.000Z`,
+        lastModifiedTime: `${yesterday}T00:06:00.000Z`,
+        payload: { samples: [{ time: `${yesterday}T00:01:00.000Z`, beatsPerMinute: 72 }] },
       },
       {
         id: 'app-health-steps-1', dataType: 'steps',
         dataOrigin: 'com.garmin.android.apps.connectmobile',
-        startTime: '2026-09-05T00:00:00.000Z', endTime: '2026-09-05T01:00:00.000Z',
-        lastModifiedTime: '2026-09-05T01:01:00.000Z', payload: { count: 4321 },
+        startTime: `${yesterday}T00:00:00.000Z`, endTime: `${yesterday}T01:00:00.000Z`,
+        lastModifiedTime: `${yesterday}T01:01:00.000Z`, payload: { count: 4321 },
       },
       {
         id: 'app-health-workout-1', dataType: 'exercise_session',
         dataOrigin: 'com.garmin.android.apps.connectmobile',
-        startTime: '2026-09-05T00:10:00.000Z', endTime: '2026-09-05T00:40:00.000Z',
-        lastModifiedTime: '2026-09-05T00:41:00.000Z',
+        startTime: `${yesterday}T00:10:00.000Z`, endTime: `${yesterday}T00:40:00.000Z`,
+        lastModifiedTime: `${yesterday}T00:41:00.000Z`,
         payload: { exerciseType: 79, title: null, notes: null, segments: [] },
       },
       {
         id: 'app-health-sleep-1', dataType: 'sleep_session',
         dataOrigin: 'com.garmin.android.apps.connectmobile',
-        startTime: '2026-09-04T16:00:00.000Z', endTime: '2026-09-05T00:00:00.000Z',
-        lastModifiedTime: '2026-09-05T00:01:00.000Z', payload: { title: null, notes: null, stages: [] },
+        startTime: `${dayBefore}T16:00:00.000Z`, endTime: `${yesterday}T00:00:00.000Z`,
+        lastModifiedTime: `${yesterday}T00:01:00.000Z`, payload: { title: null, notes: null, stages: [] },
       },
       {
         id: 'app-health-weight-1', dataType: 'weight',
         dataOrigin: 'com.garmin.android.apps.connectmobile',
-        startTime: '2026-09-05T00:00:00.000Z', endTime: '2026-09-05T00:00:00.000Z',
-        lastModifiedTime: '2026-09-05T00:01:00.000Z', payload: { kilograms: 70.2 },
+        startTime: `${yesterday}T00:00:00.000Z`, endTime: `${yesterday}T00:00:00.000Z`,
+        lastModifiedTime: `${yesterday}T00:01:00.000Z`, payload: { kilograms: 70.2 },
       },
     ],
     deletedRecordIds: [],

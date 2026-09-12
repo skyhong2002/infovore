@@ -100,9 +100,13 @@ const HEALTH_ORIGIN_RANK = `CASE
   WHEN data_origin LIKE 'com.fitbit.%' THEN 1
   WHEN data_origin LIKE 'com.google.android.apps.fitness%' THEN 2
   ELSE 3 END`;
+// CROSS JOIN pins the join order: scan the records (using whatever filter the
+// caller adds) and look each one up in the small preferred-origin set. Left to
+// itself SQLite drives from the preferred set and rescans the records table per
+// origin-day, which took seconds on a few hundred thousand step records.
 const PREFERRED_HEALTH_RECORDS = `
   SELECT r.* FROM health_connect_records r
-  JOIN (
+  CROSS JOIN (
     SELECT data_type, day, data_origin FROM (
       SELECT data_type, date(start_at, '+8 hours') day, data_origin,
         ROW_NUMBER() OVER (
@@ -1214,7 +1218,26 @@ export class Repository {
     };
   }
 
+  // The snapshot aggregates every health record, so it is memoised until the
+  // ingest service (a separate process on the same database) records a new
+  // batch or the Taipei day rolls over, which are the only inputs it depends on.
+  private healthSnapshotMemo: { key: string; snapshot: HealthConnectSnapshot } | null = null;
+
   healthConnectSnapshot(ownerName: string, now = new Date()): HealthConnectSnapshot {
+    const key = `${ownerName}\u001f${this.healthConnectLastSyncedAt()}\u001f${taipeiDay(now)}`;
+    if (this.healthSnapshotMemo?.key === key) return this.healthSnapshotMemo.snapshot;
+    const snapshot = this.buildHealthConnectSnapshot(ownerName, now);
+    this.healthSnapshotMemo = { key, snapshot };
+    return snapshot;
+  }
+
+  private healthConnectLastSyncedAt(): string | null {
+    const row = this.db.prepare('SELECT received_at FROM health_connect_syncs ORDER BY received_at DESC LIMIT 1')
+      .get() as { received_at: string } | undefined;
+    return row?.received_at ?? null;
+  }
+
+  private buildHealthConnectSnapshot(ownerName: string, now: Date): HealthConnectSnapshot {
     const status = this.healthConnectStatus();
     const sleepRows = this.db.prepare(`
       SELECT date(end_at, '+8 hours') day, start_at, end_at,
