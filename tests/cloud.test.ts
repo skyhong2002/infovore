@@ -47,7 +47,8 @@ test('cloud terms take Dayflow keywords and Health workouts through pre-aggregat
   const terms = buildCloudTerms([
     activity({ source: 'backloggd', mediaKind: 'game', title: 'Theatrhythm', extra: { playtime: '10h 0m' } }),
   ], [], [
-    { source: 'dayflow', kind: 'computer', label: 'Documentation', count: 12, seconds: 5 * 3600 },
+    // Dayflow time is scaled to a quarter before it competes: 20 h → 5 h.
+    { source: 'dayflow', kind: 'computer', label: 'Documentation', count: 12, seconds: 20 * 3600 },
     { source: 'dayflow', kind: 'computer', label: '  ', count: 3, seconds: 3600 },
     { source: 'health', kind: 'fitness', label: 'Walking', count: 78, seconds: 45 * 3600 },
     { source: 'health', kind: 'fitness', label: 'Cycling', count: 0, seconds: 0 },

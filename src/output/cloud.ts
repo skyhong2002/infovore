@@ -14,9 +14,14 @@ export interface CloudTerm {
   weight: number;
 }
 
-const SOURCE_LIMITS: Record<string, number> = { statsfm: 14, backloggd: 10, youtube: 10, dayflow: 12, health: 6 };
+const SOURCE_LIMITS: Record<string, number> = { statsfm: 14, backloggd: 10, youtube: 10, dayflow: 20, health: 6 };
 const DEFAULT_SOURCE_LIMIT = 8;
-const TOTAL_LIMIT = 48;
+const TOTAL_LIMIT = 64;
+
+// Computer time dwarfs every other kind of attention, and one Dayflow
+// activity credits its whole span to each term in its title, so Dayflow
+// terms are scaled down before they compete with the rest of the cloud.
+const SOURCE_SCALE: Record<string, number> = { dayflow: 0.25 };
 
 // Attention seconds assumed per event when the source does not measure time.
 const DEFAULT_SECONDS: Record<MediaKind, number> = {
@@ -97,7 +102,7 @@ export function buildCloudTerms(activities: Activity[], channels: CloudChannel[]
   }
 
   // Measured time when the source records it, otherwise a per-kind estimate.
-  const value = (item: Accumulator) => item.seconds > 0 ? item.seconds : item.count * DEFAULT_SECONDS[item.kind];
+  const value = (item: Accumulator) => (item.seconds > 0 ? item.seconds : item.count * DEFAULT_SECONDS[item.kind]) * (SOURCE_SCALE[item.source] ?? 1);
   const bySource = new Map<string, Accumulator[]>();
   for (const bucket of buckets.values()) {
     bySource.set(bucket.source, [...(bySource.get(bucket.source) ?? []), bucket]);
@@ -148,8 +153,8 @@ export function textWidth(label: string, fontSize: number): number {
   return units * fontSize * 1.04 + 2;
 }
 
-export const MIN_FONT = 11;
-export const MAX_FONT = 34;
+export const MIN_FONT = 10;
+export const MAX_FONT = 30;
 
 // Square-root scaling keeps the long tail legible without letting the top
 // term swallow the card.
