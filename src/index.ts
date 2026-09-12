@@ -9,6 +9,7 @@ import { activityFromEntry } from './data/activity.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
+import { compress } from 'hono/compress';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
@@ -140,6 +141,13 @@ async function refreshAll(): Promise<void> {
 }
 
 const app = new Hono();
+// HTML and SVG cards are large and highly compressible; Traefik does not compress.
+app.use('*', compress());
+// Cards that clip "in progress" spans at the current time are keyed on a
+// coarse clock so a visit every minute does not re-render them every minute.
+const QUARTER_HOUR = 15 * 60_000;
+const HOUR = 60 * 60_000;
+const roundedNow = (step: number) => new Date(Math.floor(Date.now() / step) * step);
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
 let dayflowRevision = '';
 let dayflowRenderRevision = '';
@@ -148,6 +156,7 @@ app.use('*', async (c, next) => {
   if (dayflowEnabled && c.req.method === 'GET') {
     const status = repository.dayflow.status();
     const revision = `${status.revision}:${Math.floor(Date.now() / 60000)}`;
+    const renderRevision = `${status.revision}:${Math.floor(Date.now() / QUARTER_HOUR)}`;
     if (revision !== dayflowRevision) {
       const snapshot = repository.dayflow.snapshot(config.ownerName);
       restoreCache('data:dayflow', snapshot, status.lastSyncedAt ? Date.parse(status.lastSyncedAt) : 0);
@@ -155,13 +164,13 @@ app.use('*', async (c, next) => {
     }
     if (c.req.path === '/cards' || c.req.path === '/platforms/dayflow' || /^\/card\/dayflow(?:-keywords|-categories)?\.(svg|png|webp)$/.test(c.req.path)) {
       if (dayflowRender) await dayflowRender;
-      if (dayflowRenderRevision !== revision) {
+      if (dayflowRenderRevision !== renderRevision) {
         const snapshot = getCache<DayflowSnapshot>('data:dayflow')!.data!;
         dayflowRender = (async () => {
           const rendered = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === 'dayflow')
             .map(async ([name, card]) => [name, await card.build(snapshot)] as const));
           for (const [name, svg] of rendered) setCache(`svg:${name}`, svg);
-          dayflowRenderRevision = revision;
+          dayflowRenderRevision = renderRevision;
         })();
         try { await dayflowRender; } finally { dayflowRender = null; }
       }
@@ -177,7 +186,7 @@ let rhythmRender: Promise<void> | null = null;
 app.use('*', async (c, next) => {
   if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/activity-rhythm\.(svg|png|webp)$/.test(c.req.path))) {
     if (rhythmRender) await rhythmRender;
-    const now = new Date(Math.floor(Date.now() / 60000) * 60000);
+    const now = roundedNow(QUARTER_HOUR);
     const days = repository.activityCoverage(now, { dayflow: dayflowEnabled,
       health: Boolean(config.healthConnect.token) && config.sourceEnabled('health') });
     const key = JSON.stringify(days);
@@ -227,7 +236,7 @@ let wordCloudRender: Promise<void> | null = null;
 app.use('*', async (c, next) => {
   if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/word-cloud(?:-plain)?\.(svg|png|webp)$/.test(c.req.path))) {
     if (wordCloudRender) await wordCloudRender;
-    const now = new Date(Math.floor(Date.now() / 60000) * 60000);
+    const now = roundedNow(HOUR);
     const since = new Date(now.getTime() - WORD_CLOUD_DAYS * 86_400_000).toISOString();
     const youtube = getCache<SourceSnapshot<YoutubeExtra>>('data:youtube')?.data;
     const extras: CloudEntry[] = [];

@@ -481,3 +481,13 @@ test('time spent surfaces on the homepage, platform pages, /stats, and the JSON 
 });
 
 test.after(() => repository.close());
+
+test('responses are compressed when the client accepts it', async () => {
+  const plain = await app.request('/');
+  assert.equal(plain.headers.get('content-encoding'), null);
+  const gzipped = await app.request('/', { headers: { 'accept-encoding': 'gzip' } });
+  assert.equal(gzipped.headers.get('content-encoding'), 'gzip');
+  assert.ok((await gzipped.arrayBuffer()).byteLength < (await plain.text()).length / 3);
+  const png = await app.request('/favicon.png', { headers: { 'accept-encoding': 'gzip' } });
+  assert.equal(png.headers.get('content-encoding'), null, 'already-compressed images are left alone');
+});
