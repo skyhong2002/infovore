@@ -650,6 +650,23 @@ export class Repository {
     return this.queryActivities({ limit }).data;
   }
 
+  // Exercise sessions since `since`, grouped by type, with their measured
+  // duration. Feeds the cross-source word cloud; titles are the Health Connect
+  // exercise type names, never free text from the device.
+  healthExerciseSince(since: string): Array<{ title: string; sessions: number; seconds: number }> {
+    const rows = this.db.prepare(`
+      SELECT json_extract(payload_json, '$.exerciseType') exercise_type, COUNT(*) sessions,
+        COALESCE(SUM(MAX(0, (julianday(end_at) - julianday(start_at)) * 86400)), 0) seconds
+      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
+      WHERE data_type='exercise_session' AND start_at>=?
+      GROUP BY exercise_type ORDER BY seconds DESC
+    `).all(since) as Array<{ exercise_type: number | null; sessions: number; seconds: number }>;
+    return rows.map((row) => ({
+      title: EXERCISE_NAMES[Number(row.exercise_type ?? 0)] ?? 'Workout',
+      sessions: Number(row.sessions), seconds: Math.round(Number(row.seconds)),
+    }));
+  }
+
   // Every dated public activity since `since`, newest first. Unlike
   // queryActivities this is uncapped by the API page size, so aggregate
   // views (the word cloud) see the whole window.

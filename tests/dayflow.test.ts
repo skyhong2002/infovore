@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Repository } from '../src/data/database.js';
 import { dayflowBatchSchema, dayflowDay, type DayflowBatch } from '../src/dayflow/types.js';
 import { summarizeDay } from '../src/dayflow/store.js';
+import { dayflowKeywordTime } from '../src/dayflow/keywords.js';
 import { buildDayflowCard } from '../src/output/dayflow.js';
 import { platformPage } from '../src/output/platforms.js';
 
@@ -33,6 +34,22 @@ test('Dayflow merges overlap, separates idle/errors and clips at day boundaries'
   assert.equal(summary.activeMinutes, 120);
   assert.equal(summary.idleMinutes, 30);
   assert.equal(summary.errorMinutes, 15);
+});
+
+test('Dayflow keyword time credits clipped activity spans to vocabulary keywords only', () => {
+  const cards = [
+    { ...batch.cards[0], record_id: 1, title: 'Writing the README', summary: 'documentation for the repo' },
+    // Second device reports the same record: counted once.
+    { ...batch.cards[0], record_id: 2, title: 'Meeting notes', summary: 'weekly meeting', start: '2026-09-05T03:30:00+08:00', end: '2026-09-05T04:30:00+08:00' },
+    { ...batch.cards[0], record_id: 3, category: 'Idle', title: 'documentation while idle' },
+  ];
+  const keywords = dayflowKeywordTime([{ ...batch, cards }, { ...batch, cards: [cards[0]] }], now);
+  assert.deepEqual(keywords, [
+    { name: 'Documentation', mentions: 1, seconds: 3600 },
+    { name: 'Writing', mentions: 1, seconds: 3600 },
+    { name: 'Meetings', mentions: 1, seconds: 1800 },
+  ]);
+  assert.ok(!JSON.stringify(keywords).includes('README'));
 });
 
 test('Dayflow replacement is idempotent, rejects stale writes, and clears deleted records', async () => {

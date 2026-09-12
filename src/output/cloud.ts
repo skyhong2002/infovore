@@ -1,5 +1,5 @@
 import type { Activity, MediaKind } from '../data/types.js';
-import { h, renderCard, textFont } from './render.js';
+import { h, logo, renderCard, textFont } from './render.js';
 import { sourceLabel } from './pages.js';
 
 // One thing the owner spent attention on inside the window: an artist, a
@@ -14,7 +14,7 @@ export interface CloudTerm {
   weight: number;
 }
 
-const SOURCE_LIMITS: Record<string, number> = { statsfm: 14, backloggd: 10, youtube: 10 };
+const SOURCE_LIMITS: Record<string, number> = { statsfm: 14, backloggd: 10, youtube: 10, dayflow: 10, health: 6 };
 const DEFAULT_SOURCE_LIMIT = 8;
 const TOTAL_LIMIT = 48;
 
@@ -24,8 +24,10 @@ const DEFAULT_SECONDS: Record<MediaKind, number> = {
   show: 45 * 60, book: 3600, video: 10 * 60, event: 2 * 3600, fitness: 0, computer: 0,
 };
 
-// Health and Dayflow describe the body and the desk rather than media; they
-// have dedicated cards and would only add "Sleep" and "Coding" to the cloud.
+// Health and Dayflow activities in the timeline are daily roll-ups ("12,345
+// steps", a day's computer time). The cloud takes those sources through
+// `extras` instead: exercise types with measured duration, and Dayflow
+// keywords with the time of the activities that mention them.
 const EXCLUDED_KINDS = new Set<MediaKind>(['fitness', 'computer']);
 
 // The shape urtube's summary exposes for a channel (see sources/youtube.ts).
@@ -33,6 +35,16 @@ export interface CloudChannel {
   name: string;
   watches: number;
   estimatedWatchSeconds: number;
+}
+
+// A pre-aggregated thing from a source that does not flow through the
+// activity timeline. `seconds` is measured attention time.
+export interface CloudEntry {
+  source: string;
+  kind: MediaKind;
+  label: string;
+  count: number;
+  seconds: number;
 }
 
 function playtimeSeconds(value: unknown): number {
@@ -44,7 +56,7 @@ function playtimeSeconds(value: unknown): number {
 
 interface Accumulator { label: string; source: string; kind: MediaKind; count: number; seconds: number }
 
-export function buildCloudTerms(activities: Activity[], channels: CloudChannel[] = []): CloudTerm[] {
+export function buildCloudTerms(activities: Activity[], channels: CloudChannel[] = [], extras: CloudEntry[] = []): CloudTerm[] {
   const buckets = new Map<string, Accumulator>();
   const bump = (source: string, kind: MediaKind, label: string, seconds: number) => {
     const clean = label.trim();
@@ -74,6 +86,13 @@ export function buildCloudTerms(activities: Activity[], channels: CloudChannel[]
     buckets.set(key, {
       label: channel.name.trim(), source: 'youtube', kind: 'video',
       count: channel.watches, seconds: channel.estimatedWatchSeconds,
+    });
+  }
+  for (const entry of extras) {
+    const label = entry.label.trim();
+    if (!label || entry.count <= 0) continue;
+    buckets.set(`${entry.source} ${label.toLocaleLowerCase('en-US')}`, {
+      label, source: entry.source, kind: entry.kind, count: entry.count, seconds: Math.max(0, entry.seconds),
     });
   }
 
@@ -201,6 +220,8 @@ const SOURCE_COLORS: Record<string, string> = {
   kitsu: '#f779a1',
   goodreads: '#d6b98c',
   events: '#c39bff',
+  dayflow: '#b5adff',
+  health: '#5fd4c4',
 };
 
 export function sourceColor(source: string): string {
@@ -250,15 +271,14 @@ export function wordCloudNode(terms: CloudTerm[], options: WordCloudCardOptions 
     },
   },
   h('div', { style: { alignItems: 'center', display: 'flex', marginBottom: 18 } },
-    h('div', { style: { alignItems: 'center', backgroundColor: '#e2e5ea', borderRadius: 5, display: 'flex', height: 24, justifyContent: 'center', marginRight: 9, width: 34 } },
-      h('span', { style: { color: C.bg, fontSize: 15, fontWeight: 700 } }, 'i')),
+    h('img', { src: logo('infovore'), width: 32, height: 32, style: { marginRight: 9 } }),
     h('span', { style: { fontSize: 18, fontWeight: 700 } }, 'Word cloud'),
     h('span', { style: { color: C.dim, fontSize: 11, marginLeft: 'auto' } }, `last ${days} days`)),
   h('span', { style: { color: C.dim, fontSize: 11, marginBottom: 4, textTransform: 'uppercase' } }, options.ownerName ? `What ${options.ownerName} has been into` : 'What I have been into'),
   h('span', { style: { color: C.text, fontSize: 22, fontWeight: 700, marginBottom: 16 } }, subtitle),
   cloud,
   legend,
-  h('span', { style: { color: C.quiet, fontSize: 9, marginTop: 8 } }, 'Sized by attention time: measured where the platform records it, estimated per play otherwise.'));
+  h('span', { style: { color: C.quiet, fontSize: 9, marginTop: 8 } }, 'Sized by attention time: measured where the platform records it, estimated per play otherwise. Dayflow shows topic keywords, Health shows workout types.'));
 }
 
 export async function buildWordCloudCard(terms: CloudTerm[], options: WordCloudCardOptions = {}): Promise<string> {

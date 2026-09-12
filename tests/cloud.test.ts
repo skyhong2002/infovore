@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildCloudTerms, buildWordCloudCard, layoutCloud, wordCloudNode, type CloudTerm } from '../src/output/cloud.js';
+import { logo } from '../src/output/render.js';
 import type { Activity } from '../src/data/types.js';
 
 function activity(overrides: Partial<Activity>): Activity {
@@ -42,6 +43,20 @@ test('cloud terms merge artists, measured playtime, and channels into attention 
   assert.ok(!('Sleep' in byLabel) && !('Coding' in byLabel));
 });
 
+test('cloud terms take Dayflow keywords and Health workouts through pre-aggregated extras', () => {
+  const terms = buildCloudTerms([
+    activity({ source: 'backloggd', mediaKind: 'game', title: 'Theatrhythm', extra: { playtime: '10h 0m' } }),
+  ], [], [
+    { source: 'dayflow', kind: 'computer', label: 'Documentation', count: 12, seconds: 5 * 3600 },
+    { source: 'dayflow', kind: 'computer', label: '  ', count: 3, seconds: 3600 },
+    { source: 'health', kind: 'fitness', label: 'Walking', count: 78, seconds: 45 * 3600 },
+    { source: 'health', kind: 'fitness', label: 'Cycling', count: 0, seconds: 0 },
+  ]);
+  assert.deepEqual(terms.map((term) => [term.label, term.source, term.weight]), [
+    ['Walking', 'health', 1], ['Theatrhythm', 'backloggd', 0.222], ['Documentation', 'dayflow', 0.111],
+  ]);
+});
+
 test('cloud layout keeps every placed term inside the box without overlaps', () => {
   const terms: CloudTerm[] = Array.from({ length: 40 }, (_, index) => ({
     label: index % 3 === 0 ? `頻道${index}` : `Term number ${index}`, source: 'statsfm', kind: 'music',
@@ -74,6 +89,7 @@ test('word cloud card renders terms and an empty state', async () => {
   assert.match(tree, /3 things across 2 platforms/);
   assert.match(tree, /What Sky has been into/);
   assert.match(tree, /last 28 days/);
+  assert.ok(tree.includes(JSON.stringify(logo('infovore'))), 'header carries the infovore mark');
   assert.match(tree, /Noto Sans JP.*"position":"absolute","top":\d+,"whiteSpace":"nowrap"\},"children":"ヨルシカ"/);
   const svg = await buildWordCloudCard(terms, { days: 28, ownerName: 'Sky' });
   assert.match(svg, /^<svg width="520" height="\d+"/);

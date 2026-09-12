@@ -1,9 +1,10 @@
 import { buildRhythmCard } from './output/rhythm.js';
 import { buildNowCard } from './output/now.js';
-import { buildCloudTerms, buildWordCloudCard } from './output/cloud.js';
+import { buildCloudTerms, buildWordCloudCard, type CloudEntry } from './output/cloud.js';
+import { dayflowKeywordTime } from './dayflow/keywords.js';
 import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
-import type { DayflowSnapshot } from './dayflow/types.js';
+import { dayflowDay, type DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -226,9 +227,19 @@ let wordCloudRender: Promise<void> | null = null;
 app.use('*', async (c, next) => {
   if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/word-cloud\.(svg|png|webp)$/.test(c.req.path))) {
     if (wordCloudRender) await wordCloudRender;
-    const since = new Date(Date.now() - WORD_CLOUD_DAYS * 86_400_000).toISOString();
+    const now = new Date(Math.floor(Date.now() / 60000) * 60000);
+    const since = new Date(now.getTime() - WORD_CLOUD_DAYS * 86_400_000).toISOString();
     const youtube = getCache<SourceSnapshot<YoutubeExtra>>('data:youtube')?.data;
-    const terms = buildCloudTerms(repository.activitiesSince(since), youtube?.extra.topChannels ?? []);
+    const extras: CloudEntry[] = [];
+    if (dayflowEnabled) {
+      extras.push(...dayflowKeywordTime(repository.dayflow.batchesSince(dayflowDay(new Date(since))), now)
+        .map((keyword) => ({ source: 'dayflow', kind: 'computer' as const, label: keyword.name, count: keyword.mentions, seconds: keyword.seconds })));
+    }
+    if (config.healthConnect.token && config.sourceEnabled('health')) {
+      extras.push(...repository.healthExerciseSince(since)
+        .map((exercise) => ({ source: 'health', kind: 'fitness' as const, label: exercise.title, count: exercise.sessions, seconds: exercise.seconds })));
+    }
+    const terms = buildCloudTerms(repository.activitiesSince(since), youtube?.extra.topChannels ?? [], extras);
     const key = JSON.stringify(terms);
     if (key !== wordCloudKey) {
       wordCloudRender = (async () => {

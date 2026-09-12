@@ -55,6 +55,8 @@ test('Health Connect builds a safe, complete platform projection and measured ex
   const snapshot = repository.healthConnectSnapshot('Sky', NOW);
   assert.equal(snapshot.source, 'health');
   assert.equal(snapshot.stats.records, 9);
+  assert.deepEqual(repository.healthExerciseSince('2026-09-01T00:00:00Z'), [{ title: 'Walking', sessions: 1, seconds: 1800 }]);
+  assert.deepEqual(repository.healthExerciseSince('2026-09-06T00:00:00Z'), []);
   assert.equal(snapshot.stats.totalSteps, 3000);
   assert.equal(snapshot.stats.totalDistanceKm, 1.5);
   assert.equal(snapshot.stats.workouts, 1);
