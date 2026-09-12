@@ -3,7 +3,7 @@ import test from 'node:test';
 import { Repository } from '../src/data/database.js';
 import { dayflowBatchSchema, dayflowDay, type DayflowBatch } from '../src/dayflow/types.js';
 import { summarizeDay } from '../src/dayflow/store.js';
-import { dayflowKeywordTime } from '../src/dayflow/keywords.js';
+import { dayflowCloudTerms } from '../src/dayflow/pools.js';
 import { buildDayflowCard } from '../src/output/dayflow.js';
 import { platformPage } from '../src/output/platforms.js';
 
@@ -36,20 +36,26 @@ test('Dayflow merges overlap, separates idle/errors and clips at day boundaries'
   assert.equal(summary.errorMinutes, 15);
 });
 
-test('Dayflow keyword time credits clipped activity spans to vocabulary keywords only', () => {
+test('Dayflow cloud terms name recurring projects from titles, not the apps they happen in', () => {
+  const day2 = { ...batch, day: '2026-09-04', cards: [
+    { ...batch.cards[0], record_id: 11, start: '2026-09-04T10:00:00+08:00', end: '2026-09-04T11:00:00+08:00', title: '製作口琴社海報並在 Discord 討論 nycu life 排版', summary: 'README' },
+  ] };
   const cards = [
-    { ...batch.cards[0], record_id: 1, title: 'Writing the README', summary: 'documentation for the repo' },
-    // Second device reports the same record: counted once.
-    { ...batch.cards[0], record_id: 2, title: 'Meeting notes', summary: 'weekly meeting', start: '2026-09-05T03:30:00+08:00', end: '2026-09-05T04:30:00+08:00' },
-    { ...batch.cards[0], record_id: 3, category: 'Idle', title: 'documentation while idle' },
+    { ...batch.cards[0], record_id: 1, title: '修改口琴社招募貼文與 NYCU LIFE 首頁，用 Claude 除錯' },
+    // Clipped at the 4am boundary: only 30 minutes count.
+    { ...batch.cards[0], record_id: 2, title: '在 Discord 聊黑客松與 NYCU LIFE', start: '2026-09-05T03:30:00+08:00', end: '2026-09-05T04:30:00+08:00' },
+    { ...batch.cards[0], record_id: 3, category: 'Idle', title: '口琴社 while idle' },
   ];
-  const keywords = dayflowKeywordTime([{ ...batch, cards }, { ...batch, cards: [cards[0]] }], now);
-  assert.deepEqual(keywords, [
-    { name: 'Documentation', mentions: 1, seconds: 3600 },
-    { name: 'Writing', mentions: 1, seconds: 3600 },
-    { name: 'Meetings', mentions: 1, seconds: 1800 },
-  ]);
-  assert.ok(!JSON.stringify(keywords).includes('README'));
+  const terms = dayflowCloudTerms([{ ...batch, cards }, { ...batch, cards: [cards[0]] }, day2], now);
+  assert.deepEqual(terms.slice(0, 3), [
+    { name: 'NYCU LIFE', mentions: 3, days: 2, seconds: 9000 },
+    { name: '口琴社', mentions: 2, days: 2, seconds: 7200 },
+    { name: 'Debugging', mentions: 1, days: 1, seconds: 3600 },
+  ].filter((t) => t.days >= 2));
+  const names = terms.map((t) => t.name);
+  assert.ok(!names.includes('Discord') && !names.includes('Claude'), 'apps stay out of the cloud');
+  assert.ok(!names.includes('黑客松') && !names.includes('Debugging'), 'single-day terms stay out');
+  assert.ok(!JSON.stringify(terms).includes('README'));
 });
 
 test('Dayflow replacement is idempotent, rejects stale writes, and clears deleted records', async () => {

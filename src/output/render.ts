@@ -200,6 +200,12 @@ export async function renderCard(
   return satori(node as never, { width, height: trimmed, fonts: cardFonts });
 }
 
+// Render at exactly the given size, for cards whose content is centred in a
+// fixed area (a word cloud) rather than stacked from the top.
+export function renderFixedCard(node: Record<string, unknown>, width: number, height: number): Promise<string> {
+  return satori(node as never, { width, height, fonts });
+}
+
 // Lazily compile the WebP encoder's wasm once (its default fetch()-based
 // loader doesn't work under Node).
 let webpReady: Promise<unknown> | null = null;

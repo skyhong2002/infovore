@@ -2,8 +2,10 @@ import type { DayflowBatch, DayflowKeyword } from './types.js';
 
 // Publish recognizable tool/project/topic labels, not arbitrary tokens from
 // screen-derived prose. Matching is local; no activity text is sent to an LLM.
-const vocabulary: Array<[string, string[]]> = [
-  ['infovore', ['infovore']], ['urtube', ['urtube']], ['Dayflow', ['dayflow']],
+// Apps, services and technologies: where things happen. The owner's own
+// projects are listed with the activities below instead.
+const tools: Array<[string, string[]]> = [
+  ['Dayflow', ['dayflow']],
   ['Claude', ['claude']], ['Codex', ['codex']], ['ChatGPT', ['chatgpt']],
   ['Gemini', ['gemini']], ['OpenAI', ['openai']], ['Ollama', ['ollama']],
   ['GitHub', ['github']], ['GitLab', ['gitlab']], ['Git', ['git']],
@@ -28,6 +30,10 @@ const vocabulary: Array<[string, string[]]> = [
   ['Discord', ['discord']], ['Slack', ['slack']], ['Telegram', ['telegram']],
   ['YouTube', ['youtube']], ['Spotify', ['spotify']], ['Steam', ['steam']],
   ['Garmin', ['garmin']], ['Health Connect', ['health connect']],
+];
+// Projects and activities: what was being done.
+const activities: Array<[string, string[]]> = [
+  ['infovore', ['infovore']], ['urtube', ['urtube']],
   ['Debugging', ['debug', 'debugging', '除錯', '偵錯', '调试', '調試']],
   ['Testing', ['unit test', 'unit tests', 'integration test', 'testing', '單元測試', '整合測試', '測試', '测试']],
   ['Deployment', ['deploy', 'deploying', 'deployment', '部署']],
@@ -44,6 +50,9 @@ const vocabulary: Array<[string, string[]]> = [
   ['Meetings', ['meeting', 'meetings', '會議', '会议']],
   ['Travel planning', ['itinerary', 'travel planning', '旅遊規劃', '行程規劃']],
 ];
+const vocabulary = [...tools, ...activities];
+const toolNames = new Set(tools.map(([name]) => name));
+export function isToolKeyword(name: string): boolean { return toolNames.has(name); }
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const matchers = vocabulary.map(([name, aliases]) => ({ name, patterns: aliases.map((alias) =>
   // Latin words need token boundaries; Chinese phrases can occur without spaces.
@@ -73,33 +82,6 @@ export function dayflowKeywords(batches: DayflowBatch[], now: Date, limit = 36):
   }
   return [...counts].map(([name, mentions]) => ({ name, mentions }))
     .sort((a, b) => b.mentions - a.mentions || a.name.localeCompare(b.name, 'en')).slice(0, limit);
-}
-
-export interface DayflowKeywordTime extends DayflowKeyword { seconds: number }
-
-// Keyword mentions with the attention time behind them: each activity's
-// recorded span (clipped to its Dayflow day and to `now`) is credited to every
-// vocabulary keyword its narrative matches. Only canonical vocabulary names
-// leave this function, never the raw activity text.
-export function dayflowKeywordTime(batches: DayflowBatch[], now: Date): DayflowKeywordTime[] {
-  const totals = new Map<string, DayflowKeywordTime>(), seen = new Set<string>();
-  for (const batch of batches) for (const card of batch.cards) {
-    const id = `${batch.deviceId}:${card.record_id}`;
-    const start = Date.parse(`${batch.day}T04:00:00+08:00`);
-    const span = Math.min(+now, start + 86400000, Date.parse(card.end)) - Math.max(start, Date.parse(card.start));
-    if (span <= 0) continue;
-    if (card.category.toLowerCase() === 'idle' || card.category.toLowerCase() === 'system'
-      || card.subcategory?.toLowerCase() === 'error' || batch.categories.find((c) => c.name === card.category)?.is_idle) continue;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    for (const name of narrativeKeywords(card.title, card.summary)) {
-      const entry = totals.get(name) ?? { name, mentions: 0, seconds: 0 };
-      entry.mentions++;
-      entry.seconds += Math.round(span / 1000);
-      totals.set(name, entry);
-    }
-  }
-  return [...totals.values()].sort((a, b) => b.seconds - a.seconds || b.mentions - a.mentions || a.name.localeCompare(b.name, 'en'));
 }
 
 const canonicalAliases = new Map(vocabulary.flatMap(([name, values]) => [name, ...values].map((alias) => [alias.toLowerCase(), name] as const)));

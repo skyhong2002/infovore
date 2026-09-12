@@ -97,4 +97,11 @@ test('word cloud card renders terms and an empty state', async () => {
   assert.match(empty, /Nothing recorded in the last 28 days yet/);
   assert.match(empty, /Waiting for activity/);
   assert.match(await buildWordCloudCard([]), /^<svg width="520"/);
+  // The plain variant is only the words: no header, count or legend.
+  const plain = JSON.stringify(wordCloudNode(terms, { plain: true }));
+  assert.match(plain, /"children":"Cy Leo"/);
+  assert.doesNotMatch(plain, /Word cloud|things across|What I have been into/);
+  assert.ok(!plain.includes(JSON.stringify(logo('infovore'))));
+  const plainSvg = await buildWordCloudCard(terms, { plain: true });
+  assert.match(plainSvg, /^<svg width="520" height="344"/, 'plain card keeps the full cloud area, no content trim');
 });

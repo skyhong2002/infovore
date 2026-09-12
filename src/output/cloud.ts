@@ -1,5 +1,5 @@
 import type { Activity, MediaKind } from '../data/types.js';
-import { h, logo, renderCard, textFont } from './render.js';
+import { h, logo, renderCard, renderFixedCard, textFont } from './render.js';
 import { sourceLabel } from './pages.js';
 
 // One thing the owner spent attention on inside the window: an artist, a
@@ -14,7 +14,7 @@ export interface CloudTerm {
   weight: number;
 }
 
-const SOURCE_LIMITS: Record<string, number> = { statsfm: 14, backloggd: 10, youtube: 10, dayflow: 10, health: 6 };
+const SOURCE_LIMITS: Record<string, number> = { statsfm: 14, backloggd: 10, youtube: 10, dayflow: 12, health: 6 };
 const DEFAULT_SOURCE_LIMIT = 8;
 const TOTAL_LIMIT = 48;
 
@@ -26,8 +26,8 @@ const DEFAULT_SECONDS: Record<MediaKind, number> = {
 
 // Health and Dayflow activities in the timeline are daily roll-ups ("12,345
 // steps", a day's computer time). The cloud takes those sources through
-// `extras` instead: exercise types with measured duration, and Dayflow
-// keywords with the time of the activities that mention them.
+// `extras` instead: exercise types with measured duration, and the projects
+// and topics named in Dayflow activity titles with the time behind them.
 const EXCLUDED_KINDS = new Set<MediaKind>(['fitness', 'computer']);
 
 // The shape urtube's summary exposes for a channel (see sources/youtube.ts).
@@ -236,6 +236,8 @@ const CLOUD_HEIGHT = 300;
 export interface WordCloudCardOptions {
   days?: number;
   ownerName?: string;
+  /** Only the words: no header, legend or footnote, for embedding elsewhere. */
+  plain?: boolean;
 }
 
 export function wordCloudNode(terms: CloudTerm[], options: WordCloudCardOptions = {}): Record<string, unknown> {
@@ -264,6 +266,14 @@ export function wordCloudNode(terms: CloudTerm[], options: WordCloudCardOptions 
   const subtitle = placed.length
     ? `${placed.length} things across ${sources.length} ${sources.length === 1 ? 'platform' : 'platforms'}`
     : 'Waiting for activity';
+  if (options.plain) {
+    return h('div', {
+      style: {
+        backgroundColor: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, color: C.text, display: 'flex',
+        fontFamily: 'Inter', height: '100%', padding: PAD, width: '100%',
+      },
+    }, cloud);
+  }
   return h('div', {
     style: {
       backgroundColor: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, color: C.text, display: 'flex',
@@ -278,9 +288,10 @@ export function wordCloudNode(terms: CloudTerm[], options: WordCloudCardOptions 
   h('span', { style: { color: C.text, fontSize: 22, fontWeight: 700, marginBottom: 16 } }, subtitle),
   cloud,
   legend,
-  h('span', { style: { color: C.quiet, fontSize: 9, marginTop: 8 } }, 'Sized by attention time: measured where the platform records it, estimated per play otherwise. Dayflow shows topic keywords, Health shows workout types.'));
+  h('span', { style: { color: C.quiet, fontSize: 9, marginTop: 8 } }, 'Sized by attention time: measured where the platform records it, estimated per play otherwise. Dayflow shows the projects and topics named in activity titles, Health shows workout types.'));
 }
 
 export async function buildWordCloudCard(terms: CloudTerm[], options: WordCloudCardOptions = {}): Promise<string> {
-  return renderCard(wordCloudNode(terms, options), WIDTH, CLOUD_HEIGHT + 190);
+  const node = wordCloudNode(terms, options);
+  return options.plain ? renderFixedCard(node, WIDTH, CLOUD_HEIGHT + PAD * 2) : renderCard(node, WIDTH, CLOUD_HEIGHT + 190);
 }

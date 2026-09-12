@@ -1,7 +1,7 @@
 import { buildRhythmCard } from './output/rhythm.js';
 import { buildNowCard } from './output/now.js';
 import { buildCloudTerms, buildWordCloudCard, type CloudEntry } from './output/cloud.js';
-import { dayflowKeywordTime } from './dayflow/keywords.js';
+import { dayflowCloudTerms } from './dayflow/pools.js';
 import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import { dayflowDay, type DayflowSnapshot } from './dayflow/types.js';
@@ -225,14 +225,14 @@ const WORD_CLOUD_DAYS = 28;
 let wordCloudKey = '';
 let wordCloudRender: Promise<void> | null = null;
 app.use('*', async (c, next) => {
-  if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/word-cloud\.(svg|png|webp)$/.test(c.req.path))) {
+  if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/word-cloud(?:-plain)?\.(svg|png|webp)$/.test(c.req.path))) {
     if (wordCloudRender) await wordCloudRender;
     const now = new Date(Math.floor(Date.now() / 60000) * 60000);
     const since = new Date(now.getTime() - WORD_CLOUD_DAYS * 86_400_000).toISOString();
     const youtube = getCache<SourceSnapshot<YoutubeExtra>>('data:youtube')?.data;
     const extras: CloudEntry[] = [];
     if (dayflowEnabled) {
-      extras.push(...dayflowKeywordTime(repository.dayflow.batchesSince(dayflowDay(new Date(since))), now)
+      extras.push(...dayflowCloudTerms(repository.dayflow.batchesSince(dayflowDay(new Date(since))), now)
         .map((keyword) => ({ source: 'dayflow', kind: 'computer' as const, label: keyword.name, count: keyword.mentions, seconds: keyword.seconds })));
     }
     if (config.healthConnect.token && config.sourceEnabled('health')) {
@@ -244,6 +244,7 @@ app.use('*', async (c, next) => {
     if (key !== wordCloudKey) {
       wordCloudRender = (async () => {
         setCache('svg:word-cloud', await buildWordCloudCard(terms, { days: WORD_CLOUD_DAYS, ownerName: config.ownerName }));
+        setCache('svg:word-cloud-plain', await buildWordCloudCard(terms, { days: WORD_CLOUD_DAYS, ownerName: config.ownerName, plain: true }));
         wordCloudKey = key;
       })();
       try { await wordCloudRender; } finally { wordCloudRender = null; }
@@ -500,7 +501,8 @@ app.get('/platforms/:source', (c) => {
 app.get('/cards', (c) => {
   const rhythm = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/">Activity rhythm</a></h2><span>Daily recording coverage across platforms</span></div><div class="card-gallery-row"><a href="/card/activity-rhythm.svg?v=${version('activity-rhythm')}"><img src="/card/activity-rhythm.webp?v=${version('activity-rhythm')}" alt="Activity rhythm · seven daily 24-hour timelines" width="520" loading="lazy"></a></div><p><a href="/card/activity-rhythm.svg">SVG</a> · <a href="/card/activity-rhythm.png">PNG</a> · <a href="/card/activity-rhythm.webp">WebP</a></p></section>`;
   const nowCard = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/now">Right now</a></h2><span>In progress, up next, and the latest item from each platform</span></div><div class="card-gallery-row"><a href="/card/now.svg?v=${version('now')}"><img src="/card/now.webp?v=${version('now')}" alt="Right now · in-progress media, upcoming events and latest activity" width="520" loading="lazy"></a></div><p><a href="/card/now.svg">SVG</a> · <a href="/card/now.png">PNG</a> · <a href="/card/now.webp">WebP</a></p></section>`;
-  const wordCloud = `<section class="card-gallery-section" id="word-cloud"><div class="card-gallery-title"><h2><a href="/profile">Word cloud</a></h2><span>Artists, games, channels, films and more from the last ${WORD_CLOUD_DAYS} days, sized by attention</span></div><div class="card-gallery-row"><a href="/card/word-cloud.svg?v=${version('word-cloud')}"><img src="/card/word-cloud.webp?v=${version('word-cloud')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud.svg">SVG</a> · <a href="/card/word-cloud.png">PNG</a> · <a href="/card/word-cloud.webp">WebP</a></p></section>`;
+  const wordCloud = `<section class="card-gallery-section" id="word-cloud"><div class="card-gallery-title"><h2><a href="/profile">Word cloud</a></h2><span>Artists, games, channels, films and more from the last ${WORD_CLOUD_DAYS} days, sized by attention</span></div><div class="card-gallery-row"><a href="/card/word-cloud.svg?v=${version('word-cloud')}"><img src="/card/word-cloud.webp?v=${version('word-cloud')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud.svg">SVG</a> · <a href="/card/word-cloud.png">PNG</a> · <a href="/card/word-cloud.webp">WebP</a></p></section>`
+    + `<section class="card-gallery-section" id="word-cloud-plain"><div class="card-gallery-title"><h2><a href="/profile">Word cloud, words only</a></h2><span>The same ${WORD_CLOUD_DAYS} days without the frame, for embedding</span></div><div class="card-gallery-row"><a href="/card/word-cloud-plain.svg?v=${version('word-cloud-plain')}"><img src="/card/word-cloud-plain.webp?v=${version('word-cloud-plain')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days, words only" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud-plain.svg">SVG</a> · <a href="/card/word-cloud-plain.png">PNG</a> · <a href="/card/word-cloud-plain.webp">WebP</a></p></section>`;
   const body = nowCard + wordCloud + rhythm + sections
     .map((s) => {
       const externalUrl = s.url ?? '#';
