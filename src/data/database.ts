@@ -759,10 +759,12 @@ export class Repository {
     intervals.push(...music.map(row => ({ source: 'statsfm', start: Date.parse(row.occurred_at) - Number(row.duration),
       end: Date.parse(row.occurred_at) })));
     // Day-precision rows are backfilled history with a placeholder clock time.
+    // The indexed lower bound keeps this off a full scan; no watch runs longer
+    // than the two-day margin it allows for.
     const youtube = this.db.prepare(`SELECT watched_at, seconds FROM youtube_watch_intervals
-      WHERE precision = 'exact' AND seconds > 0 AND watched_at <= ?
+      WHERE precision = 'exact' AND seconds > 0 AND watched_at <= ? AND watched_at >= datetime(?, '-2 days')
         AND julianday(watched_at) + seconds / 86400.0 >= julianday(?)`)
-      .all(now.toISOString(), since) as Array<{ watched_at: string; seconds: number }>;
+      .all(now.toISOString(), since, since) as Array<{ watched_at: string; seconds: number }>;
     intervals.push(...youtube.map(row => ({ source: 'youtube', start: Date.parse(row.watched_at),
       end: Date.parse(row.watched_at) + Number(row.seconds) * 1000 })));
     return recordedCoverage(intervals, now, days);
