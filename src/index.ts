@@ -23,7 +23,7 @@ import { fetchKitsu } from './sources/kitsu.js';
 import { fetchStatsfm } from './sources/statsfm.js';
 import { fetchSimkl } from './sources/simkl.js';
 import { fetchGoodreads } from './sources/goodreads.js';
-import { fetchYoutube, type YoutubeExtra } from './sources/youtube.js';
+import { fetchYoutube, syncYoutubeIntervals, type YoutubeExtra } from './sources/youtube.js';
 import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
 import { html, nowPage, profilePage, shell, wrappedPage } from './output/pages.js';
@@ -121,6 +121,16 @@ async function refreshSource(name: string, isRetry = false): Promise<void> {
     setCache(`data:${name}`, data);
     await renderCards(name, data);
     console.log(`[refresh] ${name} ok (${persisted.inserted} new, ${persisted.updated} seen)`);
+    if (name === 'youtube') {
+      // Coverage intervals ride along with the summary refresh but must not
+      // fail the public mirror when the private feed is unavailable.
+      try {
+        const stored = await syncYoutubeIntervals(repository);
+        if (stored !== null) console.log(`[refresh] youtube intervals ok (${stored} rows)`);
+      } catch (err) {
+        console.error(`[refresh] youtube intervals failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     repository.failSync(syncId, name, msg);

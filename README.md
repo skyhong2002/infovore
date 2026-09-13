@@ -181,6 +181,12 @@ YouTube tracking itself lives in [urtube](https://urtube.observe.tw): the
 the per-day time ledger. The urtube dashboard must be public. History import
 and the Chrome capture extension live in urtube as well.
 
+Set `URTUBE_DASHBOARD_TOKEN` (the urtube dashboard token, the `?key=` of the
+private dashboard link) to also pull `/u/<handle>/intervals.json`: each watch's
+clock time and measured or estimated seconds, which puts YouTube into the
+activity rhythm and the recorded-time share on the overview. Only the event
+id, timestamp, precision and seconds are stored; titles and video ids are not.
+
 ### Behind a reverse proxy
 
 For TLS + a custom domain via [Traefik](https://traefik.io) (e.g. a

@@ -7,6 +7,7 @@ export const coverageSources: Record<string, { label: string; color: string }> =
   'health-sleep': { label: 'Sleep', color: '#a8c7fa' },
   health: { label: 'Exercise', color: '#67d5c3' },
   statsfm: { label: 'Music', color: '#1ed760' },
+  youtube: { label: 'YouTube', color: '#ff5c5c' },
 };
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'flex', fontFamily: textFont(value, 'Inter'), ...style } }, value);

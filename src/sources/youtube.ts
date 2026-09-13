@@ -1,13 +1,16 @@
 import { z } from 'zod';
 import { config } from '../config.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
+import type { YoutubeWatchInterval } from '../data/database.js';
 
 // YouTube tracking lives in urtube (https://urtube.observe.tw), which keeps
 // the private watch history and exposes public-safe aggregates per handle at
 // /u/<handle>/summary.json. infovore mirrors two windows of that summary:
 // the last 28 days for the platform page and cards, and the lifetime series
-// for the time ledger. Exact watch timestamps are deliberately not exposed by
-// urtube, so mirrored videos carry plays and time rather than a date.
+// for the time ledger. Exact watch timestamps are not on the public summary,
+// so mirrored videos carry plays and time rather than a date. With a dashboard
+// token, the private intervals feed additionally supplies each watch's clock
+// time and seconds for coverage (see syncYoutubeIntervals).
 
 const count = z.coerce.number().finite().catch(0);
 const optionalString = z.string().catch('');
@@ -161,4 +164,60 @@ async function getSummary(range: '28d' | 'all'): Promise<unknown> {
 export async function fetchYoutube(): Promise<SourceSnapshot<YoutubeExtra>> {
   const [recent, lifetime] = await Promise.all([getSummary('28d'), getSummary('all')]);
   return normalizeYoutube(recent, lifetime, { ...config.urtube, ownerName: config.ownerName });
+}
+
+const intervalsSchema = z.object({
+  nextSince: z.string().nullable().catch(null),
+  intervals: z.array(z.object({
+    eventId: z.string().min(1),
+    watchedAt: z.string().datetime({ offset: true }),
+    precision: z.enum(['exact', 'day']).catch('day'),
+    actualWatchedSeconds: z.coerce.number().finite().nullable().catch(null),
+    estimatedWatchSeconds: z.coerce.number().finite().nullable().catch(null),
+  })),
+});
+
+export interface YoutubeIntervalStore {
+  youtubeIntervalCheckpoint(): string | null;
+  upsertYoutubeWatchIntervals(rows: YoutubeWatchInterval[]): number;
+}
+
+const INTERVAL_PAGE = 5000;
+const INTERVAL_MAX_PAGES = 50;
+// urtube revises the newest estimates as later events arrive, so each sync
+// re-reads the day before the checkpoint.
+const INTERVAL_OVERLAP_MS = 86_400_000;
+
+async function getIntervalPage(since: string): Promise<z.infer<typeof intervalsSchema>> {
+  const { baseUrl, handle, dashboardToken } = config.urtube;
+  const url = `${baseUrl}/u/${encodeURIComponent(handle)}/intervals.json?since=${encodeURIComponent(since)}&limit=${INTERVAL_PAGE}`;
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${dashboardToken}`, 'User-Agent': config.userAgent },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!res.ok) throw new Error(`youtube: HTTP ${res.status} for ${url.replace(/since=[^&]*/, 'since=…')}`);
+  return intervalsSchema.parse(await res.json());
+}
+
+// Pull every watch interval since the stored checkpoint (all history on the
+// first run) and keep only its clock time and seconds. Returns rows stored,
+// or null when no dashboard token is configured.
+export async function syncYoutubeIntervals(store: YoutubeIntervalStore): Promise<number | null> {
+  if (!config.urtube.dashboardToken) return null;
+  const checkpoint = store.youtubeIntervalCheckpoint();
+  let since = checkpoint ? new Date(Date.parse(checkpoint) - INTERVAL_OVERLAP_MS).toISOString() : '2000-01-01T00:00:00.000Z';
+  let stored = 0;
+  for (let page = 0; page < INTERVAL_MAX_PAGES; page++) {
+    const { intervals, nextSince } = await getIntervalPage(since);
+    stored += store.upsertYoutubeWatchIntervals(intervals.map((entry) => ({
+      eventId: entry.eventId,
+      watchedAt: new Date(entry.watchedAt).toISOString(),
+      precision: entry.precision,
+      seconds: entry.actualWatchedSeconds ?? entry.estimatedWatchSeconds ?? 0,
+      method: entry.actualWatchedSeconds === null ? 'estimated' : 'measured',
+    })));
+    if (!nextSince || nextSince <= since || intervals.length === 0) break;
+    since = nextSince;
+  }
+  return stored;
 }

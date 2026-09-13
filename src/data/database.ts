@@ -62,6 +62,14 @@ export interface WrappedSummary {
 
 export type TimeMethod = 'measured' | 'estimated' | 'unavailable';
 
+export interface YoutubeWatchInterval {
+  eventId: string;
+  watchedAt: string;
+  precision: 'exact' | 'day';
+  seconds: number;
+  method: 'measured' | 'estimated';
+}
+
 // Seconds per window. `last24h` rolls; `last28d` is the 28 Taipei calendar
 // days ending today; the rest are Taipei calendar windows.
 export interface TimeWindows {
@@ -278,6 +286,52 @@ export class Repository {
     if (afterHealth.user_version < 10) migrateDayflow(this.db);
     const afterDayflow = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterDayflow.user_version < 11) this.migrateHealthOriginIndex();
+    const afterHealthOriginIndex = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterHealthOriginIndex.user_version < 12) this.migrateYoutubeWatchIntervals();
+  }
+
+  // Clock intervals from urtube's private feed, kept to what coverage needs:
+  // when, for how long, and how the seconds were obtained. Titles, channels
+  // and video ids never enter this table.
+  private migrateYoutubeWatchIntervals(): void {
+    this.db.exec(`
+      BEGIN;
+      CREATE TABLE youtube_watch_intervals (
+        event_id TEXT PRIMARY KEY,
+        watched_at TEXT NOT NULL,
+        precision TEXT NOT NULL CHECK (precision IN ('exact', 'day')),
+        seconds INTEGER NOT NULL,
+        method TEXT NOT NULL CHECK (method IN ('measured', 'estimated')),
+        imported_at TEXT NOT NULL
+      );
+      CREATE INDEX youtube_watch_intervals_time_idx ON youtube_watch_intervals(watched_at DESC);
+      PRAGMA user_version = 12;
+      COMMIT;
+    `);
+  }
+
+  youtubeIntervalCheckpoint(): string | null {
+    const row = this.db.prepare('SELECT MAX(watched_at) latest FROM youtube_watch_intervals').get() as { latest: string | null };
+    return row.latest ?? null;
+  }
+
+  // Estimates for the newest events are revised by urtube once the next event
+  // arrives, so re-fetched rows replace what was stored.
+  upsertYoutubeWatchIntervals(rows: YoutubeWatchInterval[], importedAt = new Date().toISOString()): number {
+    const upsert = this.db.prepare(`
+      INSERT INTO youtube_watch_intervals(event_id, watched_at, precision, seconds, method, imported_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(event_id) DO UPDATE SET watched_at=excluded.watched_at, precision=excluded.precision,
+        seconds=excluded.seconds, method=excluded.method, imported_at=excluded.imported_at`);
+    this.db.exec('BEGIN');
+    try {
+      for (const row of rows) upsert.run(row.eventId, row.watchedAt, row.precision, Math.max(0, Math.round(row.seconds)), row.method, importedAt);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+    return rows.length;
   }
 
   private migrateHealthOriginIndex(): void {
@@ -704,6 +758,13 @@ export class Repository {
       .all(now.toISOString(), since) as Array<{ occurred_at: string; duration: number }>;
     intervals.push(...music.map(row => ({ source: 'statsfm', start: Date.parse(row.occurred_at) - Number(row.duration),
       end: Date.parse(row.occurred_at) })));
+    // Day-precision rows are backfilled history with a placeholder clock time.
+    const youtube = this.db.prepare(`SELECT watched_at, seconds FROM youtube_watch_intervals
+      WHERE precision = 'exact' AND seconds > 0 AND watched_at <= ?
+        AND julianday(watched_at) + seconds / 86400.0 >= julianday(?)`)
+      .all(now.toISOString(), since) as Array<{ watched_at: string; seconds: number }>;
+    intervals.push(...youtube.map(row => ({ source: 'youtube', start: Date.parse(row.watched_at),
+      end: Date.parse(row.watched_at) + Number(row.seconds) * 1000 })));
     return recordedCoverage(intervals, now, days);
   }
 
