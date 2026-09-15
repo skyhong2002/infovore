@@ -246,7 +246,7 @@ function rhythmPanel(coverage: CoverageDay[]): string {
   return `<div class="home-panel"><h2>Activity rhythm</h2><a href="/card/activity-rhythm.svg" style="float:right;color:var(--muted);font-size:11px">Share card ↗</a><p class="home-panel-intro">Recorded time each day · recent 7 days · Taipei time</p>
     <div class="home-coverage-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24h</span></div>${rows}
     <div class="home-rhythm-legend">${Object.values(sources).map(source => `<span><i style="background:${source.color}"></i>${source.label}</span>`).join('')}<span><i style="background:var(--surface-raised)"></i>Unrecorded</span></div>
-    <p class="home-footnote">Overlapping time counts once. Dayflow includes idle records; analysis errors are excluded. Music uses track duration; YouTube uses measured or, failing that, estimated watch time. Daily totals and events without a duration are excluded.</p></div>`;
+    <p class="home-footnote">Overlapping time counts once. Dayflow counts active computer time only; idle records and analysis errors are excluded. Music uses track duration; YouTube uses measured or, failing that, estimated watch time. Daily totals and events without a duration are excluded.</p></div>`;
 }
 
 export function homePage(data: HomepageData): string {

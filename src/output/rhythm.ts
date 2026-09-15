@@ -35,6 +35,6 @@ export function buildRhythmCard(owner: string, days: CoverageDay[]): Promise<str
       h('div', { style: { display: 'flex', width: 7, height: 7, backgroundColor: source.color, marginRight: 4 } }), text(source.label, { fontSize: 10, color: '#b8bbc4' }),
     ], { alignItems: 'center' })), { gap: 12, marginTop: 18 }),
     text('Overlaps counted once · Today is still in progress', { color: '#92949c', fontSize: 10, marginTop: 14 }),
-    text('Dayflow includes idle · Sleep sessions · Music duration', { color: '#92949c', fontSize: 10, marginTop: 5 }),
+    text('Dayflow active only · Sleep sessions · Music duration · YouTube watch time', { color: '#92949c', fontSize: 10, marginTop: 5 }),
   ], { width: 520, height: '100%', flexDirection: 'column', padding: 24, backgroundColor: '#18191f', color: '#f4f5f7', fontFamily: 'Inter' }), 520, 720);
 }

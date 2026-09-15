@@ -26,14 +26,18 @@ test('Dayflow coverage crosses its 4am boundary without exposing narratives or c
   const repository = new Repository(':memory:');
   try {
     repository.dayflow.ingest({ schemaVersion: 1, deviceId: 'private-mac', day: '2026-09-05',
-      observedAt: '2026-09-06T04:00:00+08:00', timeZone: 'Asia/Taipei', dayBoundaryHour: 4, categories: [],
+      observedAt: '2026-09-06T04:00:00+08:00', timeZone: 'Asia/Taipei', dayBoundaryHour: 4, categories: [{ name: 'Away', color_hex: '#999999', is_idle: true, is_system: false }],
       cards: [
-        { record_id: 1, start: '2026-09-05T23:00:00+08:00', end: '2026-09-06T02:00:00+08:00', category: 'Idle', duration_minutes: 180, title: 'PRIVATE NARRATIVE' },
-        { record_id: 2, start: '2026-09-06T02:00:00+08:00', end: '2026-09-06T03:00:00+08:00', category: 'System', duration_minutes: 60, title: 'PRIVATE ERROR' },
+        { record_id: 1, start: '2026-09-05T23:00:00+08:00', end: '2026-09-06T01:00:00+08:00', category: 'Work', duration_minutes: 120, title: 'PRIVATE NARRATIVE' },
+        { record_id: 2, start: '2026-09-06T01:00:00+08:00', end: '2026-09-06T02:00:00+08:00', category: 'Away', duration_minutes: 60, title: 'PRIVATE AWAY' },
+        { record_id: 3, start: '2026-09-06T02:00:00+08:00', end: '2026-09-06T03:00:00+08:00', category: 'System', duration_minutes: 60, title: 'PRIVATE ERROR' },
+        { record_id: 4, start: '2026-09-06T03:00:00+08:00', end: '2026-09-06T04:00:00+08:00', category: 'Idle', duration_minutes: 60, title: 'PRIVATE IDLE' },
       ] });
     const coverage = repository.activityCoverage(now);
-    assert.equal(coverage[0].recordedSeconds, 7200);
+    // Work crosses midnight; the is_idle category, System and Idle leave gaps.
+    assert.equal(coverage[0].recordedSeconds, 3600);
     assert.equal(coverage[1].recordedSeconds, 3600);
+    assert.deepEqual(coverage[0].lanes[0].spans, [{ startHour: 0, endHour: 1 }]);
     assert.doesNotMatch(JSON.stringify(coverage), /PRIVATE|private-mac|record_id/);
     assert.ok(repository.activityCoverage(now, { dayflow: false, health: false }).every(day => day.recordedSeconds === 0));
   } finally { repository.close(); }

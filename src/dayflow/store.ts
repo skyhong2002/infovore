@@ -36,13 +36,17 @@ export class DayflowStore {
     const rows = this.db.prepare('SELECT payload_json FROM dayflow_days WHERE day >= ? ORDER BY day').all(day) as Array<{ payload_json: string }>;
     return rows.map((row) => JSON.parse(row.payload_json) as DayflowBatch);
   }
+  // Idle time is recorded by Dayflow but is not activity, so the rhythm
+  // timeline leaves it unrecorded along with system/error cards.
   recordedIntervals(since: string, now = new Date()) {
     const rows = this.db.prepare('SELECT payload_json FROM dayflow_days WHERE day >= ?').all(since) as Array<{ payload_json: string }>;
     return rows.flatMap(row => {
       const batch = JSON.parse(row.payload_json) as DayflowBatch;
       const boundary = Date.parse(`${batch.day}T04:00:00+08:00`);
+      const idle = (card: DayflowBatch['cards'][number]) => card.category.toLowerCase() === 'idle'
+        || Boolean(batch.categories.find((c) => c.name === card.category)?.is_idle);
       return batch.cards.filter(card => card.category.toLowerCase() !== 'system'
-        && card.subcategory?.toLowerCase() !== 'error').map(card => ({ source: 'dayflow',
+        && card.subcategory?.toLowerCase() !== 'error' && !idle(card)).map(card => ({ source: 'dayflow',
           start: Math.max(boundary, Date.parse(card.start)),
           end: Math.min(boundary + 86400000, Date.parse(card.end), +now),
         }));
