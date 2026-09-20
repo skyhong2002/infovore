@@ -64,6 +64,9 @@ are activity mentions, not time spent. Existing history is re-derived immediatel
 no new import is required. New vocabulary can be added without changing storage.
 
 Days start at **04:00 Asia/Taipei**, including weekly Monday boundaries.
+The companion sets `TZ=Asia/Taipei` only for the Dayflow MCP helper, keeping
+its date queries and timestamps on this calendar when the Mac changes timezone
+during travel. The Mac's system timezone and Dayflow app settings stay unchanged.
 Durations use clipped start/end intervals, merge overlapping records/devices,
 and prefer analyzed active intervals over idle/error intervals. Error intervals
 are reported separately and excluded from tracked time. Active means non-idle,

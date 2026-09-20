@@ -74,7 +74,9 @@ async function main() {
   try {
     let state = {};
     try { state = JSON.parse(await readFile(statePath, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    await client.connect(new StdioClientTransport({ command: config.dayflowCommand ?? '/Applications/Dayflow.app/Contents/Helpers/dayflow', args: ['mcp'], stderr: 'ignore' }));
+    // Dayflow uses the helper process's timezone to partition and format days.
+    // Keep the archive's Taipei calendar when the Mac changes timezone during travel.
+    await client.connect(new StdioClientTransport({ command: config.dayflowCommand ?? '/Applications/Dayflow.app/Contents/Helpers/dayflow', args: ['mcp'], env: { TZ: 'Asia/Taipei' }, stderr: 'ignore' }));
     const count = await syncDays({ client, config, state, fullBackfill: process.argv.includes('--backfill'),
       saveState: async (value) => {
         await writeFile(`${statePath}.tmp`, JSON.stringify(value), { mode: 0o600 });
