@@ -1,5 +1,5 @@
 import type { Activity } from '../data/types.js';
-import type { WrappedSummary } from '../data/database.js';
+import type { ActivityPage, WrappedSummary } from '../data/database.js';
 import { config } from '../config.js';
 import { healthActivityMeta } from './health-activity.js';
 import { baseStyles } from './styles.js';
@@ -30,7 +30,43 @@ export function timeAmount(seconds: number): string {
 
 export const stylesVersion = createHash('sha1').update(baseStyles).digest('hex').slice(0, 8);
 
-export type PageKey = 'home' | 'now' | 'platforms' | 'profile' | 'cards' | 'stats';
+
+// Inline SVG sparkline: one series, no axes, sized for a table cell or tile.
+export function sparkline(values: number[], options: { width?: number; height?: number; color?: string; label?: string } = {}): string {
+  const width = options.width ?? 96;
+  const height = options.height ?? 26;
+  const color = options.color ?? 'var(--accent)';
+  if (!values.length || values.every((value) => !value)) {
+    return `<svg class="spark" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" aria-hidden="true"><line x1="0" y1="${height - 1.5}" x2="${width}" y2="${height - 1.5}" stroke="var(--line-strong)" stroke-dasharray="2 3"/></svg>`;
+  }
+  const max = Math.max(...values, 1);
+  const step = values.length > 1 ? width / (values.length - 1) : width;
+  const points = values.map((value, index) => `${(index * step).toFixed(1)},${(height - 2 - (value / max) * (height - 4)).toFixed(1)}`);
+  const area = `M0,${height} L${points.join(' L')} L${width},${height} Z`;
+  return `<svg class="spark" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${html(options.label ?? 'trend')}"><path d="${area}" fill="${color}" fill-opacity=".14"/><polyline points="${points.join(' ')}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+// A small "how is this computed" marker whose note shows on hover and focus.
+export function info(note: string): string {
+  return `<span class="info" tabindex="0" role="note" aria-label="${html(note)}" data-tip="${html(note)}">i</span>`;
+}
+
+// Change against the previous period, rendered as a signed chip.
+export function delta(current: number, previous: number, format: (value: number) => string): string {
+  if (!current && !previous) return '<span class="delta flat">—</span>';
+  const diff = current - previous;
+  if (Math.abs(diff) < 1e-9) return '<span class="delta flat">= 0</span>';
+  const cls = diff > 0 ? 'up' : 'down';
+  return `<span class="delta ${cls}">${diff > 0 ? '▲' : '▼'} ${html(format(Math.abs(diff)))}</span>`;
+}
+
+export function sum(values: number[], from: number, to: number): number {
+  let total = 0;
+  for (let index = Math.max(0, from); index < Math.min(values.length, to); index += 1) total += values[index] ?? 0;
+  return total;
+}
+
+export type PageKey = 'home' | 'now' | 'platforms' | 'profile' | 'cards' | 'stats' | 'search' | 'api';
 
 const adaptiveMediaScript = `<script>
   (() => {
@@ -70,12 +106,12 @@ export function shell(title: string, body: string, active: PageKey, extraStyles 
   <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${html(title)} · infovore"><meta name="twitter:description" content="${description}"><meta name="twitter:image" content="${html(config.publicBaseUrl)}/og.png?v=life-rings-muted">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=muted"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=muted"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f3ef"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0f12"><link rel="alternate" type="application/rss+xml" title="infovore" href="/feed.xml"><title>${html(title)} · infovore</title>
   ${themeInit}<link rel="preload" href="/fonts/Figtree-Regular.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/styles.css?v=${stylesVersion}">${extraStyles ? `<style>${extraStyles}</style>` : ''}</head><body>
-  <header class="site-header"><div class="site-header-inner"><a class="site-brand" href="/"><img class="brand-mark" src="/logos/infovore.png?v=muted" alt="" width="36" height="36"><span><strong>infovore</strong><small>Sky's personal infoboard</small></span></a><nav class="site-nav" aria-label="Primary">${nav}</nav><div class="site-tools">${themeToggle}</div></div></header>
+  <header class="site-header"><div class="site-header-inner"><a class="site-brand" href="/"><img class="brand-mark" src="/logos/infovore.png?v=muted" alt="" width="36" height="36"><span><strong>infovore</strong><small>Sky's personal infoboard</small></span></a><nav class="site-nav" aria-label="Primary">${nav}</nav><div class="site-tools"><form class="site-search" action="/search" role="search"><input type="search" name="q" placeholder="Search the archive" aria-label="Search the archive" autocomplete="off"><button type="submit" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></form><a class="site-search-link" href="/search" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></a>${themeToggle}</div></div></header>
   <main class="site-main">${body}</main>
   <footer class="site-footer"><div class="footer-about"><a class="site-brand" href="/"><img class="brand-mark" src="/logos/infovore.png?v=muted" alt="" width="36" height="36"><strong>infovore</strong></a><p>Sky's media, activities, and plans gathered into one personal home.</p></div>
   <div class="footer-group"><span>Explore</span><a href="/">Home</a><a href="/now">Now</a><a href="/platforms">Platforms</a></div>
   <div class="footer-group"><span>Reflect</span><a href="/profile">Archive</a><a href="/stats">Time</a><a href="/wrapped">Wrapped</a><a href="/cards">Cards</a></div>
-  <div class="footer-group"><span>Data</span><a href="/feed.xml">RSS</a><a href="/api/activities.json">JSON</a><a href="/status">Status</a><a href="https://github.com/skyhong2002/infovore">Source</a></div></footer>
+  <div class="footer-group"><span>Data</span><a href="/search">Search</a><a href="/api">API</a><a href="/feed.xml">RSS</a><a href="/status">Status</a><a href="https://github.com/skyhong2002/infovore">Source</a></div></footer>
   ${themeToggleScript}${adaptiveMediaScript}</body></html>`;
 }
 
@@ -97,6 +133,89 @@ function activityCard(activity: Activity): string {
     : when;
   const meta = [activity.source, activity.status, activity.extra.venue, date].filter(Boolean).join(' · ');
   return `<article class="card entry" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted">${html(meta)}</div></div></article>`;
+}
+
+
+export interface SearchFilters {
+  query: string;
+  source: string;
+  kind: string;
+}
+
+export function searchPage(ownerName: string, filters: SearchFilters, page: ActivityPage, bySource: Record<string, number>, kinds: string[]): string {
+  const params = (overrides: Partial<SearchFilters> & { offset?: number }) => {
+    const next = { ...filters, ...overrides };
+    const query = new URLSearchParams();
+    if (next.query) query.set('q', next.query);
+    if (next.source) query.set('source', next.source);
+    if (next.kind) query.set('kind', next.kind);
+    if (overrides.offset) query.set('offset', String(overrides.offset));
+    const text = query.toString();
+    return `/search${text ? `?${text}` : ''}`;
+  };
+  const active = Boolean(filters.query || filters.source || filters.kind);
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Archive search</div><h1>Search</h1><p>Find anything ${html(ownerName)} has watched, read, played, heard or attended — titles, artists, channels, venues and tags across every connected platform.</p></div><div class="page-intro-aside">${page.total ? `${page.total.toLocaleString('en')} matching public entries.` : 'Public entries only; raw health and daily computer records stay out of the index.'}</div></section>
+    <div class="context-line"><a href="/">Home</a><span>→</span><a href="/profile">Archive</a><span>→</span><strong>Search</strong></div>`;
+  const form = `<form class="search-form" action="/search" role="search"><input type="search" name="q" value="${html(filters.query)}" placeholder="Try an artist, a game, a book, a channel…" aria-label="Search the archive" autofocus>${filters.source ? `<input type="hidden" name="source" value="${html(filters.source)}">` : ''}${filters.kind ? `<input type="hidden" name="kind" value="${html(filters.kind)}">` : ''}<button type="submit">Search</button></form>`;
+  const sources = Object.entries(bySource).sort((a, b) => b[1] - a[1]);
+  const sourceChips = `<div class="search-filters" aria-label="Filter by platform"><a href="${params({ source: '', offset: 0 })}"${filters.source ? '' : ' aria-current="true"'}>All platforms</a>${sources.map(([source, count]) =>
+    `<a href="${params({ source, offset: 0 })}"${filters.source === source ? ' aria-current="true"' : ''}>${html(sourceLabel(source))} <small>${count.toLocaleString('en')}</small></a>`).join('')}</div>`;
+  const kindChips = kinds.length ? `<div class="search-filters" aria-label="Filter by kind"><a href="${params({ kind: '', offset: 0 })}"${filters.kind ? '' : ' aria-current="true"'}>All kinds</a>${kinds.map((kind) =>
+    `<a href="${params({ kind, offset: 0 })}"${filters.kind === kind ? ' aria-current="true"' : ''}>${html(kind)}</a>`).join('')}</div>` : '';
+  const results = page.data.length
+    ? `<div class="grid">${page.data.map(activityCard).join('')}</div>`
+    : `<div class="empty">${active ? 'Nothing matched. Try a shorter word, or clear a filter.' : 'Type something above, or pick a platform to browse.'}</div>`;
+  const previous = page.offset > 0 ? `<a class="button" href="${params({ offset: Math.max(0, page.offset - page.limit) })}">← Newer</a>` : '<span></span>';
+  const next = page.offset + page.limit < page.total ? `<a class="button" href="${params({ offset: page.offset + page.limit })}">Older →</a>` : '';
+  const pager = page.total > page.limit ? `<nav class="pager" aria-label="Pagination">${previous}<span class="muted">${page.offset + 1}–${Math.min(page.total, page.offset + page.limit)} of ${page.total.toLocaleString('en')}</span>${next}</nav>` : '';
+  return shell(`${ownerName} · search${filters.query ? ` · ${filters.query}` : ''}`, intro + form + sourceChips + kindChips + results + pager, 'search');
+}
+
+export interface ApiDocs {
+  baseUrl: string;
+  sources: string[];
+  cards: string[];
+}
+
+export function apiPage(ownerName: string, docs: ApiDocs): string {
+  const row = (path: string, description: string, params = '') => `<tr><td><code>${html(path)}</code></td><td>${description}${params ? `<br><span class="muted">${params}</span>` : ''}</td></tr>`;
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Data access</div><h1>API</h1><p>Everything on this site is also available as JSON, RSS and image cards. Read-only, no key, no rate limit beyond good manners.</p></div><div class="page-intro-aside">Base URL <code>${html(docs.baseUrl)}</code></div></section>
+    <div class="context-line"><a href="/">Home</a><span>→</span><strong>API</strong><span>→</span><a href="/status">Status</a></div>`;
+  const rules = `<section class="card"><p class="muted">All endpoints are <code>GET</code> and return UTF-8 JSON unless noted. Times are ISO 8601 in UTC; "a day" means a Taipei (UTC+8) calendar day. Only <em>public</em> activities are exposed: raw health samples, private events and Dayflow screen text never leave the server. Responses are not cached by the server, but the data behind them refreshes hourly, so please do not poll faster than that. Content belongs to the original platforms; credit "${html(ownerName)} · infovore" when you reuse it.</p></section>`;
+  const activities = `<h2>Activities</h2><table>
+    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
+    ${row('/api/activities.json', 'A page of public activities, newest first, as <code>{ data, total, limit, offset }</code>.', 'Query: <code>q</code> text match on title and metadata · <code>source</code> platform id · <code>kind</code> media kind · <code>status</code> · <code>since</code>/<code>until</code> ISO instants · <code>limit</code> (1–500, default 100) · <code>offset</code>')}
+    ${row('/feed.json', 'The latest 100 activities in the same shape.', 'Query: <code>limit</code>')}
+    ${row('/feed.xml', 'RSS 2.0 feed of the latest 100 activities.')}
+    ${row('/api/wrapped/<year>.json', 'A year-in-review summary: totals by source and kind, most active titles, average rating.', 'Years 2000–2200')}
+    </tbody></table>`;
+  const time = `<h2>Time</h2><table>
+    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
+    ${row('/api/time-spent.json', 'Recorded time per platform across seven windows (<code>last24h</code>, <code>last28d</code>, <code>day</code>, <code>week</code>, <code>month</code>, <code>year</code>, <code>allTime</code>) in seconds, each marked <code>measured</code> or <code>estimated</code>, plus <code>daily</code>: seconds per Taipei day for the last 28 days per source.')}
+    </tbody></table>`;
+  const mirrors = `<h2>Platform mirrors</h2><p class="muted">The last snapshot pulled from each connected platform, as <code>{ fetchedAt, data }</code> where <code>data</code> carries <code>profile</code>, <code>stats</code>, <code>entries</code> and a platform-specific <code>extra</code>.</p><table>
+    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
+    ${docs.sources.map((source) => row(`/api/${source}.json`, `${html(sourceLabel(source))} snapshot.`)).join('')}
+    </tbody></table>`;
+  const cards = `<h2>Cards</h2><p class="muted">Rendered share cards, in <code>.svg</code> (vector), <code>.png</code> and <code>.webp</code>. Pass <code>?scale=2</code> for retina rasters where supported.</p><table>
+    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
+    ${['now', 'word-cloud', 'word-cloud-plain', 'activity-rhythm', ...docs.cards].map((card) => row(`/card/${card}.svg`, `${html(card)} card`)).join('')}
+    </tbody></table>`;
+  const service = `<h2>Service</h2><table>
+    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
+    ${row('/status', 'Collector status: refresh schedule, database counts, last fetch and error per source, card list.')}
+    ${row('/healthz', '<code>healthy</code>, <code>degraded</code> or <code>unhealthy</code> (HTTP 503) from source freshness.')}
+    ${row('/mcp', 'Model Context Protocol endpoint (POST) exposing the archive as tools for AI agents.')}
+    </tbody></table>`;
+  const examples = `<h2>Examples</h2><pre><code># Everything with "Daft Punk" in it, last 90 days
+curl -s '${html(docs.baseUrl)}/api/activities.json?q=Daft%20Punk&since=2026-07-06T00:00:00Z' | jq '.data[] | {title, source, occurredAt}'
+
+# Hours per platform this month
+curl -s '${html(docs.baseUrl)}/api/time-spent.json' | jq '.sources[] | {source, hours: (.windows.month / 3600 | floor)}'
+
+# Embed a card
+&lt;img src="${html(docs.baseUrl)}/card/now.webp" width="520" alt="What ${html(ownerName)} is up to"&gt;</code></pre>`;
+  return shell(`${ownerName} · API`, `<div class="api-doc">${intro}${rules}${activities}${time}${mirrors}${cards}${service}${examples}</div>`, 'api');
 }
 
 export function nowPage(ownerName: string, current: Activity[], upcoming: Activity[], recent: Activity[]): string {

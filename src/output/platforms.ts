@@ -5,7 +5,7 @@ import type { DayflowExtra } from '../dayflow/types.js';
 import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 import type { HealthConnectExtra, HealthDailySummary } from '../health/types.js';
-import { html, shell, timeAmount } from './pages.js';
+import { html, info, shell, timeAmount } from './pages.js';
 import { sleepSection } from './sleep.js';
 import { dateFormat } from '../data/time.js';
 
@@ -61,7 +61,7 @@ const statLabels: Record<string, string> = {
   agentHours: 'agent-hours（平行加總）· 30 天',
 };
 
-const timeNotes: Record<string, string> = {
+export const timeNotes: Record<string, string> = {
   statsfm: "Measured from individual stream durations; the longer windows come from stats.fm's full listening history.",
   simkl: "Estimated from the growth of Simkl's lifetime watch total between syncs — accumulating since this tracking was deployed.",
   kitsu: "Estimated from the growth of Kitsu's lifetime anime time between syncs — accumulating since this tracking was deployed.",
@@ -77,12 +77,13 @@ function timeSection(timeSpent: SourceTimeSpent): string {
   if (!windows.allTime) return '';
   const approx = timeSpent.method === 'estimated' ? '~' : '';
   const heading = timeSpent.source === 'health' ? 'Exercise time' : 'Time spent';
-  const tile = (name: string, seconds: number) =>
-    `<div class="platform-stat"><span>${name}</span><strong>${seconds ? approx + timeAmount(seconds) : '—'}</strong></div>`;
   const note = timeNotes[timeSpent.source];
-  return `<section><div class="platform-section-heading"><h2>${heading}</h2><span>${html(timeSpent.method)}</span></div>
-    <div class="platform-stats">${tile('today', windows.day)}${tile('this week', windows.week)}${tile('this month', windows.month)}${tile('this year', windows.year)}${tile('all time', windows.allTime)}</div>
-    ${note ? `<div class="platform-note">${html(note)}</div>` : ''}</section>`;
+  const max = Math.max(1, windows.year, windows.month, windows.week, windows.day);
+  const row = (name: string, seconds: number) =>
+    `<div class="aside-row"><span>${name}</span><div class="bar"><span style="width:${seconds ? Math.max(2, Math.round(seconds / max * 100)) : 0}%"></span></div><strong>${seconds ? approx + timeAmount(seconds) : '—'}</strong></div>`;
+  return `<section class="aside-card"><div class="aside-head"><h2>${heading}</h2><span>${html(timeSpent.method)}${note ? info(note) : ''}</span></div>
+    <div class="aside-rows">${row('today', windows.day)}${row('this week', windows.week)}${row('this month', windows.month)}${row('this year', windows.year)}</div>
+    <div class="aside-row aside-total"><span>all time</span><strong>${windows.allTime ? approx + timeAmount(windows.allTime) : '—'}</strong></div></section>`;
 }
 
 function number(value: number): string {
@@ -285,6 +286,19 @@ export function platformPage(
         return `<a href="/card/${html(name)}.svg${suffix}"><img src="/card/${html(name)}.webp${suffix}" alt="${html(definition.title)} ${html(name)} card" loading="lazy"></a>`;
       }).join('')}</div></section>`
     : '';
+  const facts: Array<[string, string]> = [
+    ['Profile', html(snapshot.profile.name || ownerName)],
+    ['Platform', `${html(definition.title)}${definition.via ? ` · via <a href="${html(definition.via.url)}">${html(definition.via.name)}</a>` : ''}`],
+    ...(profileUrl ? [['Source', `<a href="${html(profileUrl)}">${html(profileUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))} ↗</a>`] as [string, string]] : []),
+    ['Data', `<a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a> · <a href="/search?source=${html(definition.source)}">Search</a>`],
+    ['Synced', fetchedAt ? html(date(fetchedAt)) : 'Stored manually'],
+    ['Entries', `${number(snapshot.entries.length)} synced`],
+  ];
+  const aside = `<aside class="platform-aside">
+    <section class="aside-card"><h3>About this mirror</h3><dl class="fact-list">${facts.map(([term, value]) => `<dt>${term}</dt><dd>${value}</dd>`).join('')}</dl></section>
+    ${timeSpent ? timeSection(timeSpent) : ''}
+    ${stats ? `<section class="aside-card"><div class="aside-head"><h2>Overview</h2><span>${snapshot.entries.length} synced entries</span></div><div class="platform-stats aside-stats">${stats}</div></section>` : ''}
+  </aside>`;
   const body = `<div class="context-line"><a href="/">Home</a><span>→</span><a href="/platforms">Platforms</a><span>→</span><strong>${html(definition.title)}</strong></div>${platformNav(definition.source)}
     <section class="platform-hero" style="--platform-accent:${html(definition.accent)}">
       ${snapshot.profile.avatar
@@ -297,8 +311,7 @@ export function platformPage(
       <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">${definition.via ? `Open on ${html(definition.via.name)}` : 'View original'} ↗</a>` : ''}
       <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : 'Stored manually'}</div>
-    </section>${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${cards}${timeSpent ? timeSection(timeSpent) : ''}
-    <section><div class="platform-section-heading"><h2>Overview</h2><span>${snapshot.entries.length} synced entries</span></div>
-    <div class="platform-stats">${stats}</div></section>${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}`;
+    </section>
+    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${cards}${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}</div>${aside}</div>`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms');
 }

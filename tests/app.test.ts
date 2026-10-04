@@ -458,7 +458,7 @@ test('time spent surfaces on the homepage, platform pages, /stats, and the JSON 
   repository.recordTimeLedger(simkl(130));
 
   const homeHtml = await (await app.request('/')).text();
-  assert.match(homeHtml, /class="home-metric-label">Time recorded<\/span><strong class="home-metric-value">\d+%</);
+  assert.match(homeHtml, /class="home-metric-label">Time recorded(?:<span class="info"[^>]*>i<\/span>)?<\/span><strong class="home-metric-value">\d+%</);
   assert.match(homeHtml, /of the last 28 days/);
   assert.match(homeHtml, /class="home-metric-label">Active days</);
   assert.match(homeHtml, /Time by platform/);

@@ -89,6 +89,11 @@ export interface SourceTimeSpent {
   windows: TimeWindows;
 }
 
+export interface DailyTimeSeries {
+  days: string[];
+  sources: Record<string, number[]>;
+}
+
 export interface TimeSpentSummary {
   generatedAt: string;
   sources: SourceTimeSpent[];
@@ -130,6 +135,32 @@ const PREFERRED_HEALTH_RECORDS = `
   ) preferred ON preferred.data_type = r.data_type
     AND preferred.day = date(r.start_at, '+8 hours')
     AND preferred.data_origin = r.data_origin`;
+
+// (occurred_at, seconds) subqueries behind the time stats, shared by the
+// window totals and the per-day series.
+const STATSFM_SECONDS_SQL = `
+  SELECT occurred_at, COALESCE(json_extract(extra_json, '$.durationMs'), 0) / 1000.0 seconds
+  FROM activities WHERE source='statsfm' AND media_kind='music' AND occurred_at IS NOT NULL
+`;
+const EVENTS_SECONDS_SQL = `
+  SELECT occurred_at,
+    COALESCE(json_extract(extra_json, '$.durationMinutes') * 60.0, ${EVENT_DEFAULT_SECONDS}) seconds
+  FROM activities
+  WHERE source='events' AND status='attended' AND visibility IN ('public', 'summary')
+    AND occurred_at IS NOT NULL AND occurred_at<=?
+`;
+const HEALTH_SECONDS_SQL = `
+  SELECT start_at occurred_at,
+    MAX(0, (julianday(end_at)-julianday(start_at)) * 86400.0) seconds
+  FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
+  WHERE data_type='exercise_session' AND end_at>=start_at
+`;
+const GOODREADS_SECONDS_SQL = `
+  SELECT occurred_at, json_extract(extra_json, '$.pages') * ${SECONDS_PER_PAGE}.0 seconds
+  FROM activities
+  WHERE source='goodreads' AND status='read' AND occurred_at IS NOT NULL
+    AND json_extract(extra_json, '$.pages') > 0
+`;
 
 const EXERCISE_NAMES: Record<number, string> = {
   0: 'Workout', 2: 'Badminton', 4: 'Baseball', 5: 'Basketball', 8: 'Cycling',
@@ -1090,6 +1121,46 @@ export class Repository {
     }
   }
 
+  // Seconds per Taipei calendar day for the last `days` days (oldest first),
+  // per source, from the same subqueries as timeSpent(). Day-granular ledger
+  // sources map directly; instant-based sources bucket by Taipei date.
+  dailyTime(now = new Date(), days = 28): DailyTimeSeries {
+    const start = new Date(+taipeiWindowStarts(now).day - (days - 1) * 86_400_000);
+    const dayList = Array.from({ length: days }, (_, index) => taipeiDay(new Date(+start + index * 86_400_000)));
+    const index = new Map(dayList.map((day, position) => [day, position]));
+    const sources: Record<string, number[]> = {};
+    const fill = (source: string, rows: Array<{ day: string; seconds: number }>) => {
+      const series = new Array<number>(days).fill(0);
+      let any = false;
+      for (const row of rows) {
+        const position = index.get(row.day);
+        if (position === undefined) continue;
+        series[position] += Math.round(Number(row.seconds) || 0);
+        any = true;
+      }
+      if (any) sources[source] = series;
+    };
+    const byDay = (innerSql: string, ...params: string[]) => this.db.prepare(`
+      SELECT date(occurred_at, '+8 hours') day, SUM(seconds) seconds FROM (${innerSql})
+      WHERE occurred_at>=? GROUP BY day
+    `).all(...params, start.toISOString()) as Array<{ day: string; seconds: number }>;
+    fill('statsfm', byDay(STATSFM_SECONDS_SQL));
+    fill('events', byDay(EVENTS_SECONDS_SQL, now.toISOString()));
+    fill('health', byDay(HEALTH_SECONDS_SQL));
+    fill('goodreads', byDay(GOODREADS_SECONDS_SQL));
+    const ledger = this.db.prepare('SELECT day, SUM(seconds) seconds FROM time_ledger WHERE source=? AND day>=? GROUP BY day');
+    for (const source of ['simkl', 'kitsu', 'backloggd', 'youtube']) {
+      fill(source, ledger.all(source, dayList[0]) as Array<{ day: string; seconds: number }>);
+    }
+    return { days: dayList, sources };
+  }
+
+  // Public activities first collected on or after an instant.
+  countNewSince(since: string): number {
+    const row = this.db.prepare("SELECT COUNT(*) count FROM activities WHERE visibility='public' AND first_seen_at>=?").get(since) as { count: number };
+    return Number(row.count);
+  }
+
   timeSpent(now = new Date()): TimeSpentSummary {
     const starts = taipeiWindowStarts(now);
     const cutoffs = {
@@ -1127,10 +1198,7 @@ export class Repository {
         cutoffs.last24h, cutoffs.last28d, cutoffs.day, cutoffs.week, cutoffs.month, cutoffs.year, ...innerParams
       ) as Record<string, number>);
 
-    const local = activityWindows(`
-      SELECT occurred_at, COALESCE(json_extract(extra_json, '$.durationMs'), 0) / 1000.0 seconds
-      FROM activities WHERE source='statsfm' AND media_kind='music' AND occurred_at IS NOT NULL
-    `);
+    const local = activityWindows(STATSFM_SECONDS_SQL);
     // Local streams only reach back to when infovore started syncing; the
     // snapshot carries stats.fm-side totals for the longer windows. A remote
     // value only applies while the fetch that produced it happened inside the
@@ -1156,33 +1224,17 @@ export class Repository {
     // Manual events count their scheduled start–end span (default 2 h when no
     // end time was recorded) — only once marked attended, and never from
     // private entries, which stay out of public totals entirely.
-    const events = activityWindows(`
-      SELECT occurred_at,
-        COALESCE(json_extract(extra_json, '$.durationMinutes') * 60.0, ${EVENT_DEFAULT_SECONDS}) seconds
-      FROM activities
-      WHERE source='events' AND status='attended' AND visibility IN ('public', 'summary')
-        AND occurred_at IS NOT NULL AND occurred_at<=?
-    `, now.toISOString());
+    const events = activityWindows(EVENTS_SECONDS_SQL, now.toISOString());
     if (events.allTime > 0) sources.push({ source: 'events', method: 'estimated', windows: events });
 
     // Health Connect exercise sessions have exact start/end instants, so the
     // duration is measured directly while raw health records stay private.
-    const health = activityWindows(`
-      SELECT start_at occurred_at,
-        MAX(0, (julianday(end_at)-julianday(start_at)) * 86400.0) seconds
-      FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
-      WHERE data_type='exercise_session' AND end_at>=start_at
-    `);
+    const health = activityWindows(HEALTH_SECONDS_SQL);
     if (health.allTime > 0) sources.push({ source: 'health', method: 'measured', windows: health });
 
     // Books: pages × reading pace, attributed to the day the book was
     // finished. Books without a page count in the shelf RSS are skipped.
-    const goodreads = activityWindows(`
-      SELECT occurred_at, json_extract(extra_json, '$.pages') * ${SECONDS_PER_PAGE}.0 seconds
-      FROM activities
-      WHERE source='goodreads' AND status='read' AND occurred_at IS NOT NULL
-        AND json_extract(extra_json, '$.pages') > 0
-    `);
+    const goodreads = activityWindows(GOODREADS_SECONDS_SQL);
     if (goodreads.allTime > 0) sources.push({ source: 'goodreads', method: 'estimated', windows: goodreads });
 
     const ledgerQuery = this.db.prepare(`

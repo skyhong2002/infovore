@@ -2,11 +2,12 @@ import { coverageSources, platformColors } from './rhythm.js';
 import { agentName, type WorkBlock } from '../computai/types.js';
 import type { PlatformOverview } from './overview.js';
 import { recordedCoverage, type CoverageDay } from '../data/coverage.js';
-import type { TimeSpentSummary, TimeWindows } from '../data/database.js';
+import type { DailyTimeSeries, TimeMethod, TimeSpentSummary, TimeWindows } from '../data/database.js';
+import type { CloudTerm } from './cloud.js';
 import { dayflowDay, type DayflowSnapshot } from '../dayflow/types.js';
 import { taipeiDay, dateFormat } from '../data/time.js';
 import type { Activity } from '../data/types.js';
-import { html, shell, sourceLabel, timeAmount } from './pages.js';
+import { delta, html, info, shell, sourceLabel, sparkline, sum, timeAmount } from './pages.js';
 import { healthActivityMeta } from './health-activity.js';
 
 export interface HomepageData {
@@ -25,6 +26,11 @@ export interface HomepageData {
   dayflow?: DayflowSnapshot | null;
   healthSleepTime?: TimeWindows | null;
   agentTime?: TimeWindows | null;
+  // Seconds per day for the last 28 days per source, for trends.
+  daily?: DailyTimeSeries | null;
+  // Public entries first collected in the last 7 days and the 7 before.
+  newEntries?: { week: number; previous: number } | null;
+  cloudTerms?: CloudTerm[] | null;
 }
 
 const homeStyles = `
@@ -48,6 +54,8 @@ const homeStyles = `
   .home-metric-label{color:var(--muted);display:block;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .home-metric-value{color:var(--text);display:block;font-size:30px;font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:-.03em;line-height:1.1;margin-top:12px}
   .home-metric-note{color:var(--quiet);display:block;font-size:12px;margin-top:5px}
+  .home-metric-trend{align-items:center;display:flex;gap:10px;margin-top:10px;min-height:26px}
+  .home-time-row{grid-template-columns:118px minmax(0,1fr) 60px 64px}.home-time-spark{display:block}.home-time-row:not(:has(.home-time-spark)){grid-template-columns:118px minmax(0,1fr) 60px}
   .home-section{margin-top:44px}
   .home-section-head{align-items:end;display:flex;gap:16px;justify-content:space-between;margin-bottom:14px}
   .home-section-head h2{font-size:22px;line-height:1.2;margin:0}
@@ -78,7 +86,7 @@ const homeStyles = `
   .home-keywords{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;color:var(--muted);font-size:11.5px}
   .home-keywords span{background:var(--surface-raised);border-radius:5px;padding:3px 7px;overflow-wrap:anywhere}
   .home-time-list{display:flex;flex-direction:column;gap:13px}
-  .home-time-row{align-items:center;color:inherit;display:grid;gap:12px;grid-template-columns:118px minmax(0,1fr) 60px;text-decoration:none}
+  .home-time-row{align-items:center;color:inherit;display:grid;gap:12px;text-decoration:none}
   .home-time-row:hover .home-time-label{color:var(--accent)}
   .home-time-label{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .home-time-track{background:var(--surface-raised);border-radius:4px;height:9px;overflow:hidden}
@@ -100,7 +108,7 @@ const homeStyles = `
   .home-recent-time{color:var(--quiet);font-size:12px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
   .home-footnote{color:var(--quiet);font-size:12px;line-height:1.5;margin:12px 0 0}
   @media(max-width:780px){.home-profile{align-items:flex-start;flex-direction:column;padding:22px}.home-profile-status{max-width:none;text-align:left}.home-status-line{justify-content:flex-start}.home-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home-dashboard-grid{grid-template-columns:1fr}}
-  @media(max-width:520px){.home-profile-main{align-items:flex-start;gap:14px}.home-avatar,.home-avatar-placeholder{flex-basis:68px;height:68px;width:68px}.home-profile h1{font-size:40px}.home-metric-value{font-size:24px}.home-section-head{align-items:flex-start;flex-direction:column;gap:5px}.home-section-head a{margin-top:4px}.home-time-row{grid-template-columns:84px minmax(0,1fr) 52px}.home-recent-item{gap:10px;grid-template-columns:44px minmax(0,1fr);padding-inline:14px}.home-recent-art,.home-recent-placeholder{height:44px;width:44px}.home-recent-time{grid-column:2;text-align:left}.home-recent-title{font-size:13.5px}.home-panel{padding:16px}}
+  @media(max-width:520px){.home-profile-main{align-items:flex-start;gap:14px}.home-avatar,.home-avatar-placeholder{flex-basis:68px;height:68px;width:68px}.home-profile h1{font-size:40px}.home-metric-value{font-size:24px}.home-metric-trend{flex-wrap:wrap;gap:6px}.home-metric-trend .spark{width:100%}.home-section-head{align-items:flex-start;flex-direction:column;gap:5px}.home-section-head a{margin-top:4px}.home-time-row{grid-template-columns:84px minmax(0,1fr) 52px}.home-recent-item{gap:10px;grid-template-columns:44px minmax(0,1fr);padding-inline:14px}.home-recent-art,.home-recent-placeholder{height:44px;width:44px}.home-recent-time{grid-column:2;text-align:left}.home-recent-title{font-size:13.5px}.home-panel{padding:16px}}
 `;
 
 function formatDate(activity: Activity): { date: string; time: string; datetime: string } {
@@ -219,25 +227,90 @@ function recentRow(activity: Activity, dayflow?: DayflowSnapshot | null): string
   </li>`;
 }
 
-function metric(label: string, value: string, note: string): string {
-  return `<div class="home-metric"><span class="home-metric-label">${html(label)}</span><strong class="home-metric-value">${html(value)}</strong><span class="home-metric-note">${html(note)}</span></div>`;
+function metric(label: string, value: string, note: string, options: { tip?: string; series?: number[]; change?: string; color?: string } = {}): string {
+  const trend = options.series || options.change
+    ? `<span class="home-metric-trend">${options.series ? sparkline(options.series, { width: 110, height: 26, color: options.color, label: `${label} · last 28 days` }) : ''}${options.change ?? ''}</span>`
+    : '';
+  return `<div class="home-metric"><span class="home-metric-label">${html(label)}${options.tip ? info(options.tip) : ''}</span><strong class="home-metric-value">${html(value)}</strong><span class="home-metric-note">${html(note)}</span>${trend}</div>`;
 }
 
-function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null, agentTime?: TimeWindows | null): string {
-  const window = homeTimeWindow(timeSpent);
+// Public activities per Taipei day over the last 28 days, oldest first.
+function dailyActivityCounts(activities: Activity[], days: string[]): number[] {
+  const index = new Map(days.map((day, position) => [day, position]));
+  const counts = new Array<number>(days.length).fill(0);
+  for (const activity of activities) {
+    const raw = activity.occurredAt ?? activity.firstSeenAt;
+    const parsed = new Date(raw);
+    const day = Number.isNaN(parsed.getTime()) ? raw?.slice(0, 10) : taipeiDay(parsed);
+    const position = index.get(day);
+    if (position !== undefined) counts[position] += 1;
+  }
+  return counts;
+}
+
+// One stacked bar of the recorded time per platform over the same window as
+// the time panel, so the split is visible before the detail.
+function shareBar(entries: TimeEntry[], windowKey: 'last28d' | 'allTime', label: string): string {
+  const total = entries.reduce((sum, entry) => sum + entry.windows[windowKey], 0);
+  if (!total) return '';
+  const segments = entries.map((entry) => {
+    const seconds = entry.windows[windowKey];
+    const share = seconds / total;
+    const name = timeLabel(entry.source);
+    return { entry, seconds, share, name, color: platformColors[entry.source] ?? '#8caacb', href: entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${entry.source}` };
+  });
+  return `<div class="share-bar"><div class="share-bar-head"><strong>Where the time went</strong><span>${html(label)} · ${html(timeAmount(total))} across ${segments.length} platforms, overlaps counted per platform</span></div>
+    <div class="share-track">${segments.map((segment) => `<a href="${html(segment.href)}" style="flex:${segment.share.toFixed(4)} 0 0;background:${segment.color}" title="${html(segment.name)} · ${html(timeAmount(segment.seconds))} · ${Math.round(segment.share * 100)}%"></a>`).join('')}</div>
+    <div class="share-legend">${segments.filter((segment) => segment.share >= 0.02).map((segment) => `<span><i style="background:${segment.color}"></i>${html(segment.name)} <b>${Math.round(segment.share * 100)}%</b></span>`).join('')}</div></div>`;
+}
+
+// Text word cloud of the last 28 days, sized by attention and linked to search.
+function cloudSection(terms: CloudTerm[]): string {
+  if (!terms.length) return '';
+  const max = Math.max(...terms.map((term) => term.weight), 1);
+  const min = Math.min(...terms.map((term) => term.weight));
+  const ranked = [...terms].sort((a, b) => b.weight - a.weight);
+  const hot = new Set(ranked.slice(0, 8).map((term) => term.label));
+  const warm = new Set(ranked.slice(8, 20).map((term) => term.label));
+  // Spread the biggest words through the middle instead of stacking them first.
+  const ordered: CloudTerm[] = [];
+  ranked.forEach((term, index) => (index % 2 ? ordered.push(term) : ordered.unshift(term)));
+  const items = ordered.map((term) => {
+    const scale = max > min ? (term.weight - min) / (max - min) : 0.5;
+    const size = Math.round(13 + Math.sqrt(scale) * 23);
+    const cls = hot.has(term.label) ? 'hot' : warm.has(term.label) ? 'warm' : '';
+    return `<a class="${cls}" href="/search?q=${encodeURIComponent(term.label)}" style="font-size:${size}px" title="${html(sourceLabel(term.source))} · ${html(term.kind)} · ${term.count} ${term.count === 1 ? 'time' : 'times'}">${html(term.label)}</a>`;
+  }).join('');
+  return `<section class="home-section"><div class="home-section-head"><div><h2>On repeat</h2><p>Artists, games, channels, books and work topics from the last 28 days, sized by attention.</p></div><a href="/cards#word-cloud">Share card →</a></div><div class="home-panel"><div class="cloud">${items}</div></div></section>`;
+}
+
+interface TimeEntry { source: string; method: TimeMethod; windows: { last28d: number; allTime: number } }
+
+function timeLabel(source: string): string {
+  return source === 'dayflow' ? 'Dayflow · active' : source === 'health-sleep' ? 'Health · sleep' : source === 'health' ? 'Health · exercise' : source === 'computai' ? 'AI agents · working' : sourceLabel(source);
+}
+
+function timeEntries(window: { key: 'last28d' | 'allTime' }, timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null, agentTime?: TimeWindows | null): { entries: TimeEntry[]; computerSeconds: number } {
   const today = dayflowDay();
   const computerSeconds = dayflow?.extra.daily.filter(day => day.day <= today && (window.key === 'allTime' || day.day >= last28Days())).reduce((sum, day) => sum + day.activeMinutes * 60, 0) ?? 0;
-  const entries = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { last28d: computerSeconds, allTime: computerSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : []), ...(agentTime ? [{ source: 'computai', method: 'measured' as const, windows: agentTime }] : [])]
+  const entries: TimeEntry[] = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { last28d: computerSeconds, allTime: computerSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : []), ...(agentTime ? [{ source: 'computai', method: 'measured' as const, windows: agentTime }] : [])]
     .filter((entry) => entry.windows[window.key] > 0)
     .sort((a, b) => b.windows[window.key] - a.windows[window.key]);
+  return { entries, computerSeconds };
+}
+
+function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null, agentTime?: TimeWindows | null, daily?: DailyTimeSeries | null): string {
+  const window = homeTimeWindow(timeSpent);
+  const { entries, computerSeconds } = timeEntries(window, timeSpent, sleepTime, dayflow, agentTime);
   if (!entries.length) return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">No time records are available yet.</p><div class="home-empty">Time appears after the first platform sync.</div></div>`;
   const max = Math.max(1, ...entries.map((entry) => entry.windows[window.key]));
   const rows = entries.map((entry) => {
     const seconds = entry.windows[window.key];
     const approx = entry.method === 'estimated' ? '~' : '';
-    const label = entry.source === 'dayflow' ? 'Dayflow · active' : entry.source === 'health-sleep' ? 'Health · sleep' : entry.source === 'health' ? 'Health · exercise' : entry.source === 'computai' ? 'AI agents · working' : sourceLabel(entry.source);
+    const label = timeLabel(entry.source);
+    const series = window.key === 'last28d' ? daily?.sources[entry.source] : undefined;
     const href = entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${html(entry.source)}`;
-    return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${platformColors[entry.source] ? `;background:${platformColors[entry.source]}` : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
+    return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${platformColors[entry.source] ? `;background:${platformColors[entry.source]}` : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong>${series ? `<span class="home-time-spark">${sparkline(series, { width: 64, height: 18, color: platformColors[entry.source], label: `${label} · daily` })}</span>` : ''}</a>`;
   }).join('');
   return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${computerSeconds ? '<p class="home-footnote">Dayflow shows active computer time by recorded day. It can overlap other platforms; the recorded-time share above counts overlaps once.</p>' : ''}${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time, shown separately from exercise.</p>' : ''}${entries.some((entry) => entry.source === 'computai') ? '<p class="home-footnote">AI agents = wall-clock time with any Claude Code or Codex session producing output, parallel sessions counted once.</p>' : ''}</div>`;
 }
@@ -265,19 +338,25 @@ export function homePage(data: HomepageData): string {
     ? `<div class="home-platform-scroller">${data.platformOverviews.map(overviewTile).join('')}</div>`
     : '<div class="home-empty">No platform summaries are available yet.</div>';
   const updated = data.lastUpdated ? `Updated ${data.lastUpdated}` : 'Waiting for the first sync';
+  const window = homeTimeWindow(data.timeSpent);
+  const coverageDays = [...(data.coverage ?? [])].sort((a, b) => a.day.localeCompare(b.day));
+  const recordedSeries = coverageDays.map((day) => day.recordedSeconds);
+  const activitySeries = dailyActivityCounts(data.allActivities, coverageDays.length ? coverageDays.map((day) => day.day) : (data.daily?.days ?? []));
   const body = `<div class="home-page">
     <section class="home-profile" aria-labelledby="home-title">
       <div class="home-profile-main">${profileAvatar(data)}<div><span class="home-kicker">Personal lifelog dashboard</span><h1 id="home-title">${html(data.ownerName)}</h1><p class="home-handle">Watched, read, played, heard, attended, moved</p><div class="home-profile-links"><a href="/platforms">Connected platforms</a><a href="/cards#word-cloud">28-day word cloud</a><a href="/feed.xml">RSS feed</a><a href="/api/activities.json">JSON API</a></div></div></div>
       <div class="home-profile-status"><span class="home-status-line"><span class="home-status-dot" aria-hidden="true"></span>Live profile</span><strong>${html(updated)}</strong><span>${html(data.connectedSources)} connected sources</span></div>
     </section>
     <section class="home-metric-grid" aria-label="Overview metrics">
-      ${metric('Time recorded', shareLabel(data.recordedShare), 'of the last 28 days')}
-      ${metric('Active days', String(activeDays(data.allActivities)), 'available timeline')}
-      ${metric('Public entries', String(data.publicActivityCount), 'in the archive')}
-      ${metric('Active platforms', String(data.connectedSources), 'currently configured')}
+      ${metric('Time recorded', shareLabel(data.recordedShare), 'of the last 28 days', { tip: 'Share of the last 28 days with any recording. Overlapping platforms count once; Dayflow idle time, daily totals and events without a duration are excluded.', series: recordedSeries, change: delta(sum(recordedSeries, 21, 28) / 7, sum(recordedSeries, 14, 21) / 7, (value) => `${timeAmount(value)}/day`) })}
+      ${metric('Active days', String(activeDays(data.allActivities)), 'available timeline', { tip: 'Days with at least one public activity across the loaded timeline. The trend counts activities per day over the last 28 days.', series: activitySeries, change: delta(activitySeries.slice(21).filter(Boolean).length, activitySeries.slice(14, 21).filter(Boolean).length, (value) => `${value} ${value === 1 ? 'day' : 'days'}`) })}
+      ${metric('Public entries', String(data.publicActivityCount), 'in the archive', { tip: 'Public activities stored locally, plus lifetime YouTube watches mirrored from urtube. The change is entries first collected in the last 7 days versus the 7 before.', change: data.newEntries ? delta(data.newEntries.week, data.newEntries.previous, (value) => `${value} new`) : undefined })}
+      ${metric('Active platforms', String(data.connectedSources), 'currently configured', { tip: 'Connected sources that have completed at least one sync, plus manual events when any exist.' })}
     </section>
+    ${shareBar(timeEntries(window, data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime).entries, window.key, window.key === 'last28d' ? 'Last 28 days' : 'All time')}
     <section class="home-section"><div class="home-section-head"><div><h2>Platform overview</h2><p>Current interests, library progress and recent trends.</p></div><a href="/platforms">View all platforms →</a></div>${highlights}</section>
-    <section class="home-section home-dashboard-grid">${rhythmPanel(data.coverage ?? recordedCoverage([]))}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime)}</section>
+    ${cloudSection(data.cloudTerms ?? [])}
+    <section class="home-section home-dashboard-grid">${rhythmPanel(data.coverage ?? recordedCoverage([]))}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime, data.daily)}</section>
     <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Recent activity</h2><p>The latest public activity from each source.</p></div><a href="/profile">Show all →</a></div>${recent}<p class="home-footnote">${data.lastUpdated ? `Last synced ${html(data.lastUpdated)}. ` : ''}Each source appears once, with its latest activity.</p></section>
   </div>`;
   return shell(`${data.ownerName} · overview`, body, 'home', homeStyles);

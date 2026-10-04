@@ -1,6 +1,6 @@
 import { buildRhythmCard } from './output/rhythm.js';
 import { buildNowCard } from './output/now.js';
-import { buildCloudTerms, buildWordCloudCard, type CloudEntry } from './output/cloud.js';
+import { buildCloudTerms, buildWordCloudCard, type CloudEntry, type CloudTerm } from './output/cloud.js';
 import { dayflowCloudTerms } from './dayflow/pools.js';
 import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
@@ -28,7 +28,7 @@ import { fetchGoodreads } from './sources/goodreads.js';
 import { fetchYoutube, syncYoutubeIntervals, type YoutubeExtra } from './sources/youtube.js';
 import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
-import { html, nowPage, profilePage, shell, stylesVersion, wrappedPage } from './output/pages.js';
+import { apiPage, html, nowPage, profilePage, searchPage, shell, stylesVersion, wrappedPage } from './output/pages.js';
 import { baseStyles } from './output/styles.js';
 import { homePage } from './output/home.js';
 import { dashboardActivities } from './health/home.js';
@@ -290,10 +290,12 @@ const WORD_CLOUD_DAYS = 28;
 let wordCloudKey = '';
 let dayflowCloudCache: { key: string; terms: CloudEntry[] } | null = null;
 let wordCloudRender: Promise<void> | null = null;
-app.use('*', async (c, next) => {
-  if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/word-cloud(?:-plain)?\.(svg|png|webp)$/.test(c.req.path))) {
-    if (wordCloudRender) await wordCloudRender;
+// Terms for the rolling word cloud, cached per hour and Dayflow revision.
+let cloudTermsCache: { key: string; terms: CloudTerm[] } | null = null;
+function currentCloudTerms(): CloudTerm[] {
     const now = roundedNow(HOUR);
+    const cacheKey = `${+now}:${dayflowEnabled ? repository.dayflow.status().revision : ''}:${repository.countPublicActivities()}`;
+    if (cloudTermsCache?.key === cacheKey) return cloudTermsCache.terms;
     const since = new Date(now.getTime() - WORD_CLOUD_DAYS * 86_400_000).toISOString();
     const youtube = getCache<SourceSnapshot<YoutubeExtra>>('data:youtube')?.data;
     const extras: CloudEntry[] = [];
@@ -311,6 +313,13 @@ app.use('*', async (c, next) => {
         .map((exercise) => ({ source: 'health', kind: 'fitness' as const, label: exercise.title, count: exercise.sessions, seconds: exercise.seconds })));
     }
     const terms = buildCloudTerms(repository.activitiesSince(since), youtube?.extra.topChannels ?? [], extras);
+    cloudTermsCache = { key: cacheKey, terms };
+    return terms;
+}
+app.use('*', async (c, next) => {
+  if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/word-cloud(?:-plain)?\.(svg|png|webp)$/.test(c.req.path))) {
+    if (wordCloudRender) await wordCloudRender;
+    const terms = currentCloudTerms();
     const key = JSON.stringify(terms);
     if (key !== wordCloudKey) {
       wordCloudRender = (async () => {
@@ -538,6 +547,12 @@ app.get('/', (c) => {
     recordedShare: recordedShare(coverage, now),
     healthSleepTime: healthSnapshot ? repository.healthConnectSleepTime(now) : null,
     agentTime: computaiEnabled ? repository.computai.agentTime(now) : null,
+    daily: repository.dailyTime(now),
+    newEntries: (() => {
+      const week = repository.countNewSince(new Date(now.getTime() - 7 * 86_400_000).toISOString());
+      return { week, previous: repository.countNewSince(new Date(now.getTime() - 14 * 86_400_000).toISOString()) - week };
+    })(),
+    cloudTerms: currentCloudTerms(),
   }));
 });
 
@@ -757,12 +772,28 @@ app.get('/api/wrapped/:file{[0-9]{4}\\.json}', (c) => {
   catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 400); }
 });
 
-app.get('/stats', (c) => {
+
+app.get('/search', (c) => {
+  const filters = { query: (c.req.query('q') ?? '').trim().slice(0, 120), source: (c.req.query('source') ?? '').trim(), kind: (c.req.query('kind') ?? '').trim() };
+  const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
+  const page = repository.queryActivities({ query: filters.query || undefined, source: filters.source || undefined, kind: filters.kind || undefined, limit: 48, offset });
+  const kinds = [...new Set(repository.listActivities(500).map((activity) => activity.mediaKind))].sort();
   c.header('Cache-Control', 'no-cache');
-  return c.html(statsPage(config.ownerName, repository.timeSpent()));
+  return c.html(searchPage(config.ownerName, filters, page, repository.countBySource(), kinds));
 });
 
-app.get('/api/time-spent.json', (c) => c.json(repository.timeSpent()));
+app.get('/api', (c) => c.html(apiPage(config.ownerName, {
+  baseUrl: config.publicBaseUrl,
+  sources: [...activeSources, ...(config.healthConnect.token ? ['health'] : []), ...(dayflowEnabled ? ['dayflow'] : []), ...(computaiEnabled ? ['computai'] : [])],
+  cards: sections.flatMap((s) => s.cards ?? []),
+})));
+
+app.get('/stats', (c) => {
+  c.header('Cache-Control', 'no-cache');
+  return c.html(statsPage(config.ownerName, repository.timeSpent(), repository.dailyTime()));
+});
+
+app.get('/api/time-spent.json', (c) => c.json({ ...repository.timeSpent(), daily: repository.dailyTime() }));
 
 app.get('/api/dayflow.json', (c) => {
   if (!dayflowEnabled) return c.json({ error: 'Dayflow is not configured' }, 404);
