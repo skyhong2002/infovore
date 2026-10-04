@@ -28,7 +28,8 @@ import { fetchGoodreads } from './sources/goodreads.js';
 import { fetchYoutube, syncYoutubeIntervals, type YoutubeExtra } from './sources/youtube.js';
 import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
-import { html, nowPage, profilePage, shell, wrappedPage } from './output/pages.js';
+import { html, nowPage, profilePage, shell, stylesVersion, wrappedPage } from './output/pages.js';
+import { baseStyles } from './output/styles.js';
 import { homePage } from './output/home.js';
 import { dashboardActivities } from './health/home.js';
 import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
@@ -372,6 +373,27 @@ for (const [route, file] of [
     return c.body(image.buffer.slice(image.byteOffset, image.byteOffset + image.byteLength) as ArrayBuffer);
   });
 }
+
+// The shared stylesheet is fingerprinted by content, so it can be cached for a
+// year while the (uncached) pages always link the current version.
+app.get('/styles.css', (c) => {
+  c.header('Content-Type', 'text/css; charset=utf-8');
+  c.header('Cache-Control', c.req.query('v') === stylesVersion ? 'public, max-age=31536000, immutable' : 'no-cache');
+  return c.body(baseStyles);
+});
+
+const webFonts = new Map<string, Buffer>();
+app.get('/fonts/:file{(Figtree-Regular|Figtree-Bold|InstrumentSerif-Regular)\\.ttf}', (c) => {
+  const file = c.req.param('file');
+  let font = webFonts.get(file);
+  if (!font) {
+    font = readFileSync(new URL(`../assets/fonts/${file}`, import.meta.url));
+    webFonts.set(file, font);
+  }
+  c.header('Content-Type', 'font/ttf');
+  c.header('Cache-Control', 'public, max-age=31536000, immutable');
+  return c.body(font.buffer.slice(font.byteOffset, font.byteOffset + font.byteLength) as ArrayBuffer);
+});
 
 // Site and platform brand marks shipped in-repo (assets/logos); the pattern keeps
 // requests to plain file names.

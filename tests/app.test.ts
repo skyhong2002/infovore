@@ -259,7 +259,22 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(homeHtml, /href="\/" aria-current="page">Home/);
   assert.match(homeHtml, /property="og:image" content="http:\/\/localhost:3000\/og\.png\?v=life-rings-muted"/);
   assert.doesNotMatch(homeHtml, /src="\/card\//);
-  assert.match(homeHtml, /img\[data-adaptive-media\]\{aspect-ratio:var\(--media-ratio,.75\)/);
+  assert.match(homeHtml, /<link rel="stylesheet" href="\/styles\.css\?v=[0-9a-f]{8}">/);
+  const stylesVersion = homeHtml.match(/\/styles\.css\?v=([0-9a-f]{8})/)![1];
+  const styles = await app.request(`/styles.css?v=${stylesVersion}`);
+  assert.equal(styles.status, 200);
+  assert.match(styles.headers.get('content-type') ?? '', /text\/css/);
+  assert.equal(styles.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+  const css = await styles.text();
+  assert.match(css, /img\[data-adaptive-media\]\{aspect-ratio:var\(--media-ratio,.75\)/);
+  assert.match(css, /\.platform-card-grid a,\.card-gallery-row a\{border-radius:12px;display:block;flex:0 1 520px/);
+  assert.match(css, /\.platform-card-grid img,\.card-gallery-row img\{display:block;height:auto;max-width:100%;width:520px\}/);
+  assert.match(css, /\.card-gallery-row\{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px\}/);
+  for (const font of ['Figtree-Regular', 'Figtree-Bold', 'InstrumentSerif-Regular']) {
+    const response = await app.request(`/fonts/${font}.ttf`);
+    assert.equal(response.status, 200, `${font} is served`);
+    assert.equal(response.headers.get('content-type'), 'font/ttf');
+  }
   assert.match(homeHtml, /Math\.min\(2, Math\.max\(0\.5, naturalRatio\)\)/);
   assert.match(homeHtml, /class="home-recent-art" data-adaptive-media/);
   const og = await app.request('/og.png');
@@ -289,8 +304,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.equal(plainCard.status, 200);
   assert.match(plainCard.headers.get('content-type') ?? '', /image\/png/);
   assert.match(cardsHtml, /href="\/cards" aria-current="page">Cards/);
-  assert.match(cardsHtml, /\.card-gallery-row\{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px\}/);
-  assert.match(cardsHtml, /\.card-gallery-row img\{display:block;height:auto;max-width:100%;width:520px\}/);
+  assert.match(cardsHtml, /<link rel="stylesheet" href="\/styles\.css\?v=/);
   const profile = await app.request('/profile');
   assert.equal(profile.status, 200);
   assert.match(await profile.text(), /The archive/);
@@ -398,8 +412,7 @@ test('platform index and dedicated mirrors render source-native content', async 
   assert.match(mirrorHtml, /src="\/card\/statsfm-artists\.webp\?v=/);
   assert.match(mirrorHtml, /<img data-adaptive-media src="https:\/\/example\.test\/song\.jpg"/);
   assert.match(mirrorHtml, /<img data-adaptive-media src="https:\/\/example\.test\/album\.jpg"/);
-  assert.match(mirrorHtml, /\.platform-card-grid a\{border-radius:10px;display:block;flex:0 1 520px/);
-  assert.match(mirrorHtml, /\.platform-card-grid img\{display:block;height:auto;max-width:100%;width:520px\}/);
+  assert.match(mirrorHtml, /<link rel="stylesheet" href="\/styles\.css\?v=/);
 
   const manual = await app.request('/platforms/events');
   assert.equal(manual.status, 200);
