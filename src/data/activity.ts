@@ -89,11 +89,14 @@ export function selectHomepageActivities(
   let musicCount = 0;
   let youtubeCount = 0;
   let regularCount = 0;
-  let healthCount = 0;
-  const healthBudget = activities.some((activity) => activity.source !== 'health') ? Math.max(1, Math.floor(limit / 4)) : limit;
+  // Daily health roll-ups and AI agent work blocks are frequent; each may take
+  // at most a quarter of the list when anything else is available.
+  const capped = new Map<string, number>();
+  const cappedBudget = (source: string) => activities.some((activity) => activity.source !== source) ? Math.max(1, Math.floor(limit / 4)) : limit;
 
   for (const activity of activities) {
-    if (activity.source === 'health' && healthCount >= healthBudget) continue;
+    const isCapped = activity.source === 'health' || activity.source === 'computai';
+    if (isCapped && (capped.get(activity.source) ?? 0) >= cappedBudget(activity.source)) continue;
     if (isMusic(activity)) {
       const day = activityTaipeiDay(activity);
       if (musicCount >= musicBudget || seenMusicDays.has(day)) continue;
@@ -109,7 +112,7 @@ export function selectHomepageActivities(
       regularCount++;
     }
     selected.push(activity);
-    if (activity.source === 'health') healthCount++;
+    if (isCapped) capped.set(activity.source, (capped.get(activity.source) ?? 0) + 1);
     if (selected.length >= limit) break;
   }
   return selected;

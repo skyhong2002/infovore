@@ -21,3 +21,22 @@ test('ComputAI sync sends only the aggregates the schema accepts', () => {
   assert.deepEqual(report.models[0], { model: 'gpt-6-astra', sharePct: 49 });
   assert.throws(() => toReport({ ...card, period: 'month' }, { deviceId: 'mbp' }));
 });
+
+test('ComputAI work segments follow the five-minute rule without exposing paths or session ids', async () => {
+  const { toSegments } = await import('../scripts/computai-sync.mjs');
+  const row = (ts, extra = {}) => ({ source: 'codex', session: 'secret-session-id', subagent: 0, device: '', project: '/Users/me/work/alpha', ts, tokens: 100, requests: 1, ...extra });
+  const segments = toSegments([
+    row(1000), row(1200), row(1499), row(1900),
+    { ...row(1000), device: 'abc123', session: '', project: 'beta' }, { ...row(1100), device: 'abc123', session: '', project: 'gamma' },
+  ].sort((a, b) => [a.source, a.device, a.session, a.subagent, a.project].join().localeCompare([b.source, b.device, b.session, b.subagent, b.project].join()) || a.ts - b.ts),
+  { machineNames: { abc123: 'mini' }, localMachine: 'my mac' });
+  const local = segments.filter((s) => s.machine === 'my-mac');
+  assert.deepEqual(local.map((s) => [s.start, s.end, s.requests, s.tokens]), [
+    ['1970-01-01T00:16:40.000Z', '1970-01-01T00:25:59.000Z', 3, 300],
+    ['1970-01-01T00:31:40.000Z', '1970-01-01T00:32:40.000Z', 1, 100],
+  ]);
+  assert.equal(local[0].project, 'alpha');
+  assert.match(local[0].session, /^[a-f0-9]{12}$/);
+  assert.deepEqual(segments.filter((s) => s.machine === 'mini').map((s) => [s.project, s.session]), [['beta', ''], ['gamma', '']]);
+  assert.doesNotMatch(JSON.stringify(segments), /secret-session-id|\/Users/);
+});

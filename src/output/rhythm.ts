@@ -8,6 +8,7 @@ export const coverageSources: Record<string, { label: string; color: string }> =
   health: { label: 'Exercise', color: '#67d5c3' },
   statsfm: { label: 'Music', color: '#1ed760' },
   youtube: { label: 'YouTube', color: '#ff5c5c' },
+  computai: { label: 'AI agents', color: '#b48cff' },
 };
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'flex', fontFamily: textFont(value, 'Inter'), ...style } }, value);
@@ -35,6 +36,6 @@ export function buildRhythmCard(owner: string, days: CoverageDay[]): Promise<str
       h('div', { style: { display: 'flex', width: 7, height: 7, backgroundColor: source.color, marginRight: 4 } }), text(source.label, { fontSize: 10, color: '#b8bbc4' }),
     ], { alignItems: 'center' })), { gap: 12, marginTop: 18 }),
     text('Overlaps counted once · Today is still in progress', { color: '#92949c', fontSize: 10, marginTop: 14 }),
-    text('Dayflow active only · Sleep sessions · Music duration · YouTube watch time', { color: '#92949c', fontSize: 10, marginTop: 5 }),
+    text('Dayflow active only · Sleep sessions · Music duration · YouTube watch time · AI agent work', { color: '#92949c', fontSize: 10, marginTop: 5 }),
   ], { width: 520, height: '100%', flexDirection: 'column', padding: 24, backgroundColor: '#18191f', color: '#f4f5f7', fontFamily: 'Inter' }), 520, 720);
 }

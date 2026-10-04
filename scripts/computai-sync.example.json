@@ -2,5 +2,6 @@
   "baseUrl": "https://infovore.example",
   "token": "REPLACE_WITH_A_DEDICATED_RANDOM_COMPUTAI_TOKEN",
   "deviceId": "my-mac",
+  "machineName": "my-mac",
   "computaiCommand": "/Users/YOUR_USER/.local/bin/computai"
 }

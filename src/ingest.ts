@@ -1,6 +1,6 @@
 import { bodyLimit } from 'hono/body-limit';
 import { dayflowBatchSchema } from './dayflow/types.js';
-import { computaiReportSchema } from './computai/types.js';
+import { computaiReportSchema, computaiSegmentsSchema } from './computai/types.js';
 import { timingSafeEqual } from 'node:crypto';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -48,6 +48,14 @@ export function createIngestApp(repository: Repository): Hono {
       return c.json({ ok: true, ...repository.computai.ingest(report) });
     } catch {
       return c.json({ error: 'Invalid ComputAI report' }, 400);
+    }
+  });
+  app.post('/api/ingest/computai/segments', bodyLimit({ maxSize: 4 * 1024 * 1024 }), async (c) => {
+    try {
+      const batch = computaiSegmentsSchema.parse(await c.req.json());
+      return c.json({ ok: true, ...repository.computai.ingestSegments(batch) });
+    } catch {
+      return c.json({ error: 'Invalid ComputAI segments' }, 400);
     }
   });
   app.post('/api/ingest/events', async (c) => {

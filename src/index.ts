@@ -226,7 +226,7 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/activity-rhythm\.(svg|png|webp)$/.test(c.req.path))) {
     if (rhythmRender) await rhythmRender;
     const now = roundedNow(QUARTER_HOUR);
-    const days = repository.activityCoverage(now, { dayflow: dayflowEnabled,
+    const days = repository.activityCoverage(now, { dayflow: dayflowEnabled, computai: computaiEnabled,
       health: Boolean(config.healthConnect.token) && config.sourceEnabled('health') });
     const key = JSON.stringify(days);
     if (key !== rhythmKey) {
@@ -441,7 +441,7 @@ function dashboardView(now: Date) {
   const dayflow = dayflowEnabled ? getCache<DayflowSnapshot>('data:dayflow')?.data : null;
   const daily = dayflow?.entries.map((entry) => activityFromEntry(entry, `${entry.activityAt}T04:00:00+08:00`)) ?? [];
   const agents = computaiEnabled ? getCache<ComputaiSnapshot>('data:computai')?.data?.entries
-    .map((entry) => activityFromEntry(entry, `${entry.activityAt}T00:00:00+08:00`)) ?? [] : [];
+    .map((entry) => activityFromEntry(entry, entry.activityAt.includes('T') ? entry.activityAt : `${entry.activityAt}T00:00:00+08:00`)) ?? [] : [];
   return { healthSnapshot, activities: dashboardActivities([...repository.listActivities(500), ...repository.latestPublicActivitiesBySource(now), ...daily, ...agents], healthSnapshot, now) };
 }
 
@@ -451,7 +451,7 @@ const HOME_COVERAGE_DAYS = 28;
 app.get('/', (c) => {
   const now = new Date();
   const { healthSnapshot, activities: combined } = dashboardView(now);
-  const coverage = repository.activityCoverage(now, { dayflow: dayflowEnabled, health: Boolean(healthSnapshot) }, HOME_COVERAGE_DAYS);
+  const coverage = repository.activityCoverage(now, { dayflow: dayflowEnabled, health: Boolean(healthSnapshot), computai: computaiEnabled }, HOME_COVERAGE_DAYS);
   const recent = latestSourceActivities(combined);
   const profileSnapshot = getCache<SourceSnapshot>('data:statsfm')?.data;
   const sourceCounts = repository.countBySource();
@@ -476,6 +476,7 @@ app.get('/', (c) => {
     coverage,
     recordedShare: recordedShare(coverage, now),
     healthSleepTime: healthSnapshot ? repository.healthConnectSleepTime(now) : null,
+    agentTime: computaiEnabled ? repository.computai.agentTime(now) : null,
   }));
 });
 

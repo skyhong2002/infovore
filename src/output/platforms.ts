@@ -40,7 +40,7 @@ const kindLabels: Record<string, string> = {
   event: 'Events',
   fitness: 'Daily health and workouts',
   computer: 'Daily computer activity',
-  ai: 'Daily AI agent usage',
+  ai: 'AI agent work blocks',
 };
 
 // Machine-facing snapshot stats (raw units for the time ledger and

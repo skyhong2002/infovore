@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Repository } from '../src/data/database.js';
-import { computaiReportSchema, type ComputaiReport } from '../src/computai/types.js';
+import { computaiReportSchema, computaiSegmentsSchema, type ComputaiReport, type ComputaiSegments } from '../src/computai/types.js';
 import { buildAiAgentsCard, buildAiAgentsLightCard } from '../src/output/computai.js';
 
 const report: ComputaiReport = {
@@ -78,9 +78,60 @@ test('ComputAI ingestion enforces its token and refreshes the public cards', asy
     if (path === '/platforms/computai') assert.match(body, /gpt-6-astra · 49%/);
     if (path === '/') assert.match(body, /AI agents · [\d.]+[MB] tokens/);
   }
+  const postSegments = (value: unknown, token = 'test-computai-token-with-at-least-32-characters') => ingest.request('/api/ingest/computai/segments', {
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(value),
+  });
+  const start = new Date(Date.now() - 3 * 3_600_000);
+  const liveSegments = { ...segments, observedAt: new Date().toISOString(), from: new Date(+start - 3_600_000).toISOString(), to: new Date().toISOString(),
+    segments: [seg(start.toISOString(), 45), seg(new Date(+start + 30 * 60_000).toISOString(), 30, { source: 'claude', project: 'beta', session: 'bbbbbbbbbbbb' })] };
+  assert.equal((await postSegments(liveSegments, 'test-dayflow-token-with-at-least-32-characters')).status, 401);
+  assert.equal((await postSegments(liveSegments)).status, 200);
+  const home = await (await app.request('/')).text();
+  assert.match(home, /AI agents · 1h 0m/);
+  assert.match(home, /2 sessions · Codex, Claude Code · alpha, beta/);
+  assert.match(home, /AI agents · working/);
+  assert.doesNotMatch(home, /secret-mac/);
   const nowCard = await (await app.request('/card/now.svg')).text();
   assert.doesNotMatch(nowCard, /AI agents ·/);
   const json = await (await app.request('/api/computai.json')).text();
   assert.match(json, /gpt-6-astra/);
   assert.doesNotMatch(json, /secret-mac/);
+});
+
+const seg = (start: string, minutes: number, extra: Partial<ComputaiSegments['segments'][number]> = {}) => ({
+  source: 'codex', machine: 'mbp', project: 'alpha', session: 'aaaaaaaaaaaa', subagent: false,
+  start, end: new Date(Date.parse(start) + minutes * 60_000).toISOString(), tokens: 1000, requests: 3, ...extra,
+});
+const segments: ComputaiSegments = {
+  schemaVersion: 1, deviceId: 'secret-mac', observedAt: '2026-10-04T06:00:00Z', from: '2026-10-03T16:00:00Z', to: '2026-10-04T16:00:00Z',
+  segments: [
+    seg('2026-10-04T01:00:00Z', 30), seg('2026-10-04T01:10:00Z', 40, { source: 'claude', project: 'beta', session: 'bbbbbbbbbbbb' }),
+    seg('2026-10-04T02:00:00Z', 20),                         // 10 minutes after the last one ends: same block
+    seg('2026-10-04T05:00:00Z', 15, { machine: 'mini', session: '' }),  // a separate block
+  ],
+};
+
+test('ComputAI segments replace their window and merge into work blocks', () => {
+  const repo = new Repository(':memory:');
+  try {
+    assert.equal(computaiSegmentsSchema.safeParse({ ...segments, segments: [seg('2026-10-02T00:00:00Z', 5)] }).success, false);
+    assert.deepEqual(repo.computai.ingestSegments(segments), { removed: 0, stored: 4 });
+    assert.deepEqual(repo.computai.ingestSegments(segments), { removed: 4, stored: 4 });
+    const blocks = repo.computai.workBlocks('2026-10-03T00:00:00Z');
+    assert.deepEqual(blocks.map((b) => [b.start, b.end, b.activeSeconds, b.sessions]), [
+      ['2026-10-04T05:00:00.000Z', '2026-10-04T05:15:00.000Z', 900, 1],
+      ['2026-10-04T01:00:00.000Z', '2026-10-04T02:20:00.000Z', 70 * 60, 2],
+    ]);
+    assert.deepEqual([blocks[1].sources, blocks[1].projects], [['codex', 'claude'], ['alpha', 'beta']]);
+    const now = new Date('2026-10-04T12:00:00Z');
+    const coverage = repo.activityCoverage(now, { dayflow: false, health: false, computai: true }, 1);
+    assert.equal(coverage[0].recordedSeconds, 85 * 60);
+    assert.ok(coverage[0].lanes.some((lane) => lane.source === 'computai'));
+    assert.equal(repo.computai.agentTime(now).day, 85 * 60);
+    const snapshot = repo.computai.snapshot('Sky', now);
+    assert.deepEqual(snapshot.entries.map((e) => e.title), ['AI agents · 15m', 'AI agents · 1h 10m']);
+    assert.doesNotMatch(JSON.stringify(snapshot), /secret-mac/);
+    repo.computai.ingestSegments({ ...segments, observedAt: '2026-10-04T07:00:00Z', segments: [] });
+    assert.equal(repo.computai.workBlocks('2026-10-03T00:00:00Z').length, 0);
+  } finally { repo.close(); }
 });

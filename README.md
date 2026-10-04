@@ -139,10 +139,15 @@ report every hour: tokens, agent hours, peak parallel sessions, prompt-cache
 share, model shares and tokens per day. Spend, plan value, rank and badges stay
 on the Mac, and the ingest schema drops any field it does not know. The report
 feeds `/platforms/computai` (models, the Claude Code/Codex split and tokens per
-day), a daily "AI agents · N tokens" entry on Home and Now, and
+day) and
 `/card/ai-agents.*` (dark) and `/card/ai-agents-light.*`, meant to be paired with
-`<picture>` in a GitHub profile README. Agent tokens stay out of the word cloud
-and the cross-platform time totals.
+`<picture>` in a GitHub profile README. The same companion sends work
+segments: spans when a session was producing output, using ComputAI's rule that
+requests less than five minutes apart are continuous. Segments within 15 minutes
+of each other form one work block on Home and Now ("AI agents · 1h 10m", with its
+sessions, agents and projects); they add an AI agents lane to the activity
+rhythm, count toward recorded time (overlaps once) and get their own row in Time
+by platform. Agent work stays out of the word cloud and the Now card.
 Set a dedicated `COMPUTAI_TOKEN`; see [setup](scripts/COMPUTAI.md).
 
 ## Android Health Connect sync

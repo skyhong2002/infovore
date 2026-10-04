@@ -1,4 +1,5 @@
 import { coverageSources } from './rhythm.js';
+import { agentName, type WorkBlock } from '../computai/types.js';
 import type { PlatformOverview } from './overview.js';
 import { recordedCoverage, type CoverageDay } from '../data/coverage.js';
 import type { TimeSpentSummary, TimeWindows } from '../data/database.js';
@@ -22,6 +23,7 @@ export interface HomepageData {
   recordedShare?: number | null;
   dayflow?: DayflowSnapshot | null;
   healthSleepTime?: TimeWindows | null;
+  agentTime?: TimeWindows | null;
 }
 
 const homeStyles = `
@@ -118,10 +120,20 @@ function formatDate(activity: Activity): { date: string; time: string; datetime:
   return { date, time, datetime: parsed.toISOString() };
 }
 
+// A work block: when, how many sessions, which agents and projects. Daily
+// summaries from before segments were synced have only a token count.
+function computaiMeta(activity: Activity): string {
+  const e = activity.extra as Partial<WorkBlock>;
+  if (!e.start || !e.end) return 'Claude Code and Codex · every machine';
+  const clock = (iso: string) => new Intl.DateTimeFormat('en', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+  return [`${clock(e.start)}–${clock(e.end)}`, `${e.sessions} session${e.sessions === 1 ? '' : 's'}`,
+    (e.sources ?? []).map(agentName).join(', '), (e.projects ?? []).slice(0, 3).join(', ')].filter(Boolean).join(' · ');
+}
+
 function activityMeta(activity: Activity): string {
   if (activity.source === 'health') return html(healthActivityMeta(activity));
   if (activity.source === 'dayflow') return html(`${timeAmount(Number(activity.extra.activeMinutes) * 60)} active · ${timeAmount(Number(activity.extra.idleMinutes) * 60)} idle`);
-  if (activity.source === 'computai') return html('Claude Code and Codex · every machine');
+  if (activity.source === 'computai') return html(computaiMeta(activity));
   const details: string[] = [];
   const add = (value: unknown) => details.push(html(value));
   if (activity.status) add(activity.status.replaceAll('_', ' '));
@@ -216,11 +228,11 @@ function metric(label: string, value: string, note: string): string {
   return `<div class="home-metric"><span class="home-metric-label">${html(label)}</span><strong class="home-metric-value">${html(value)}</strong><span class="home-metric-note">${html(note)}</span></div>`;
 }
 
-function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null): string {
+function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null, agentTime?: TimeWindows | null): string {
   const window = homeTimeWindow(timeSpent);
   const today = dayflowDay();
   const computerSeconds = dayflow?.extra.daily.filter(day => day.day <= today && (window.key === 'allTime' || day.day >= last28Days())).reduce((sum, day) => sum + day.activeMinutes * 60, 0) ?? 0;
-  const entries = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { last28d: computerSeconds, allTime: computerSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : [])]
+  const entries = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { last28d: computerSeconds, allTime: computerSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : []), ...(agentTime ? [{ source: 'computai', method: 'measured' as const, windows: agentTime }] : [])]
     .filter((entry) => entry.windows[window.key] > 0)
     .sort((a, b) => b.windows[window.key] - a.windows[window.key]);
   if (!entries.length) return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">No time records are available yet.</p><div class="home-empty">Time appears after the first platform sync.</div></div>`;
@@ -228,11 +240,11 @@ function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows |
   const rows = entries.map((entry) => {
     const seconds = entry.windows[window.key];
     const approx = entry.method === 'estimated' ? '~' : '';
-    const label = entry.source === 'dayflow' ? 'Dayflow · active' : entry.source === 'health-sleep' ? 'Health · sleep' : entry.source === 'health' ? 'Health · exercise' : sourceLabel(entry.source);
+    const label = entry.source === 'dayflow' ? 'Dayflow · active' : entry.source === 'health-sleep' ? 'Health · sleep' : entry.source === 'health' ? 'Health · exercise' : entry.source === 'computai' ? 'AI agents · working' : sourceLabel(entry.source);
     const href = entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${html(entry.source)}`;
-    return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${entry.source.startsWith('health') ? `;background:${entry.source === 'health-sleep' ? '#a8c7fa' : '#67d5c3'}` : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
+    return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${entry.source.startsWith('health') ? `;background:${entry.source === 'health-sleep' ? '#a8c7fa' : '#67d5c3'}` : entry.source === 'computai' ? ';background:#b48cff' : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
   }).join('');
-  return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${computerSeconds ? '<p class="home-footnote">Dayflow shows active computer time by recorded day. It can overlap other platforms; the recorded-time share above counts overlaps once.</p>' : ''}${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time, shown separately from exercise.</p>' : ''}</div>`;
+  return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${computerSeconds ? '<p class="home-footnote">Dayflow shows active computer time by recorded day. It can overlap other platforms; the recorded-time share above counts overlaps once.</p>' : ''}${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time, shown separately from exercise.</p>' : ''}${entries.some((entry) => entry.source === 'computai') ? '<p class="home-footnote">AI agents = wall-clock time with any Claude Code or Codex session producing output, parallel sessions counted once.</p>' : ''}</div>`;
 }
 
 function rhythmPanel(coverage: CoverageDay[]): string {
@@ -271,7 +283,7 @@ export function homePage(data: HomepageData): string {
       ${metric('Active platforms', String(data.connectedSources), 'currently configured')}
     </section>
     <section class="home-section"><div class="home-section-head"><div><h2>Platform overview</h2><p>Current interests, library progress and recent trends.</p></div><a href="/platforms">View all platforms →</a></div>${highlights}</section>
-    <section class="home-section home-dashboard-grid">${rhythmPanel(data.coverage ?? recordedCoverage([]))}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow)}</section>
+    <section class="home-section home-dashboard-grid">${rhythmPanel(data.coverage ?? recordedCoverage([]))}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime)}</section>
     <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Recent activity</h2><p>The latest public activity from each source.</p></div><a href="/profile">Show all →</a></div>${recent}<p class="home-footnote">${data.lastUpdated ? `Last synced ${html(data.lastUpdated)}. ` : ''}Each source appears once, with its latest activity.</p></section>
   </div>`;
   return shell(`${data.ownerName} · overview`, body, 'home', homeStyles);

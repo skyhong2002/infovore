@@ -1,6 +1,6 @@
 import { recordedCoverage, type RecordedInterval } from './coverage.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
-import { ComputaiStore, migrateComputai } from '../computai/store.js';
+import { ComputaiStore, migrateComputai, migrateComputaiSegments } from '../computai/store.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -293,6 +293,8 @@ export class Repository {
     if (afterHealthOriginIndex.user_version < 12) this.migrateYoutubeWatchIntervals();
     const afterWatchIntervals = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterWatchIntervals.user_version < 13) migrateComputai(this.db);
+    const afterComputai = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterComputai.user_version < 14) migrateComputaiSegments(this.db);
   }
 
   // Clock intervals from urtube's private feed, kept to what coverage needs:
@@ -744,10 +746,12 @@ export class Repository {
     return rows.map((row) => this.rowToActivity(row));
   }
 
-  activityCoverage(now = new Date(), enabled = { dayflow: true, health: true }, days = 7) {
+  activityCoverage(now = new Date(), enabled: { dayflow: boolean; health: boolean; computai?: boolean } = { dayflow: true, health: true, computai: true }, days = 7) {
     const since = new Date(+taipeiWindowStarts(now).day - (days - 1) * 86400000).toISOString();
     const intervals: RecordedInterval[] = [];
     if (enabled.dayflow) intervals.push(...this.dayflow.recordedIntervals(taipeiDay(new Date(Date.parse(since) - 86400000)), now));
+    // Agent work counts as recorded time; overlaps with the rest count once.
+    if (enabled.computai) intervals.push(...this.computai.recordedIntervals(since));
     if (enabled.health) {
       const rows = this.db.prepare(`SELECT data_type, start_at, end_at FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
         WHERE data_type IN ('sleep_session', 'exercise_session') AND end_at >= ? AND start_at <= ?`)
