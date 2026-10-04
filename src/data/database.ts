@@ -204,6 +204,8 @@ function ledgerLifetimeSeconds(snapshot: SourceSnapshot<unknown>): number | null
   return Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
 }
 
+const minute = (now: Date) => Math.floor(+now / 60_000);
+
 export class Repository {
   private readonly db: DatabaseSync;
   readonly dayflow: DayflowStore;
@@ -219,6 +221,24 @@ export class Repository {
   }
 
   close(): void { this.db.close(); }
+
+  // Request-path reads repeat until the data changes. PRAGMA data_version moves
+  // when another connection (the ingest container) commits, and total_changes()
+  // counts this connection's own writes, so either invalidates every entry.
+  // Keys carry a minute bucket where the answer depends on the clock.
+  private readCache = new Map<string, unknown>();
+  private readCacheVersion = '';
+  private cached<T>(key: string, compute: () => T): T {
+    const data = this.db.prepare('PRAGMA data_version').get() as { data_version: number };
+    const own = this.db.prepare('SELECT total_changes() changes').get() as { changes: number };
+    const version = `${data.data_version}:${own.changes}`;
+    if (version !== this.readCacheVersion || this.readCache.size > 500) {
+      this.readCache.clear();
+      this.readCacheVersion = version;
+    }
+    if (!this.readCache.has(key)) this.readCache.set(key, compute());
+    return this.readCache.get(key) as T;
+  }
 
   private migrate(): void {
     const version = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
@@ -714,7 +734,7 @@ export class Repository {
   }
 
   listActivities(limit = 100): Activity[] {
-    return this.queryActivities({ limit }).data;
+    return this.cached(`list:${limit}`, () => this.queryActivities({ limit }).data);
   }
 
   // Exercise sessions since `since`, grouped by type, with their measured
@@ -738,63 +758,69 @@ export class Repository {
   // queryActivities this is uncapped by the API page size, so aggregate
   // views (the word cloud) see the whole window.
   activitiesSince(since: string, limit = 5000): Activity[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM activities
-      WHERE visibility='public' AND occurred_precision IN ('exact', 'day') AND occurred_at>=?
-      ORDER BY occurred_at DESC, first_seen_at DESC LIMIT ?
-    `).all(since, limit) as Record<string, unknown>[];
-    return rows.map((row) => this.rowToActivity(row));
+    return this.cached(`since:${since}:${limit}`, () => {
+      const rows = this.db.prepare(`
+        SELECT * FROM activities
+        WHERE visibility='public' AND occurred_precision IN ('exact', 'day') AND occurred_at>=?
+        ORDER BY occurred_at DESC, first_seen_at DESC LIMIT ?
+      `).all(since, limit) as Record<string, unknown>[];
+      return rows.map((row) => this.rowToActivity(row));
+    });
   }
 
   activityCoverage(now = new Date(), enabled: { dayflow: boolean; health: boolean; computai?: boolean } = { dayflow: true, health: true, computai: true }, days = 7) {
-    const since = new Date(+taipeiWindowStarts(now).day - (days - 1) * 86400000).toISOString();
-    const intervals: RecordedInterval[] = [];
-    if (enabled.dayflow) intervals.push(...this.dayflow.recordedIntervals(taipeiDay(new Date(Date.parse(since) - 86400000)), now));
-    // Agent work counts as recorded time; overlaps with the rest count once.
-    if (enabled.computai) intervals.push(...this.computai.recordedIntervals(since));
-    if (enabled.health) {
-      const rows = this.db.prepare(`SELECT data_type, start_at, end_at FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
-        WHERE data_type IN ('sleep_session', 'exercise_session') AND end_at >= ? AND start_at <= ?`)
-        .all(since, now.toISOString()) as Array<{ data_type: string; start_at: string; end_at: string }>;
-      intervals.push(...rows.map(row => ({ source: row.data_type === 'sleep_session' ? 'health-sleep' : 'health',
-        start: Date.parse(row.start_at), end: Date.parse(row.end_at) })));
-    }
-    // Listening records have an end timestamp and duration; daily totals and
-    // completion timestamps from other media cannot locate a recorded interval.
-    const music = this.db.prepare(`SELECT occurred_at, json_extract(extra_json, '$.durationMs') duration
-      FROM activities WHERE source = 'statsfm' AND visibility = 'public' AND occurred_precision = 'exact'
-        AND occurred_at <= ? AND occurred_at >= ?`)
-      .all(now.toISOString(), since) as Array<{ occurred_at: string; duration: number }>;
-    intervals.push(...music.map(row => ({ source: 'statsfm', start: Date.parse(row.occurred_at) - Number(row.duration),
-      end: Date.parse(row.occurred_at) })));
-    // Day-precision rows are backfilled history with a placeholder clock time.
-    // The indexed lower bound keeps this off a full scan; no watch runs longer
-    // than the two-day margin it allows for.
-    const youtube = this.db.prepare(`SELECT watched_at, seconds FROM youtube_watch_intervals
-      WHERE precision = 'exact' AND seconds > 0 AND watched_at <= ? AND watched_at >= datetime(?, '-2 days')
-        AND julianday(watched_at) + seconds / 86400.0 >= julianday(?)`)
-      .all(now.toISOString(), since, since) as Array<{ watched_at: string; seconds: number }>;
-    intervals.push(...youtube.map(row => ({ source: 'youtube', start: Date.parse(row.watched_at),
-      end: Date.parse(row.watched_at) + Number(row.seconds) * 1000 })));
-    return recordedCoverage(intervals, now, days);
+    return this.cached(`coverage:${JSON.stringify(enabled)}:${days}:${minute(now)}`, () => {
+      const since = new Date(+taipeiWindowStarts(now).day - (days - 1) * 86400000).toISOString();
+      const intervals: RecordedInterval[] = [];
+      if (enabled.dayflow) intervals.push(...this.dayflow.recordedIntervals(taipeiDay(new Date(Date.parse(since) - 86400000)), now));
+      // Agent work counts as recorded time; overlaps with the rest count once.
+      if (enabled.computai) intervals.push(...this.computai.recordedIntervals(since));
+      if (enabled.health) {
+        const rows = this.db.prepare(`SELECT data_type, start_at, end_at FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
+          WHERE data_type IN ('sleep_session', 'exercise_session') AND end_at >= ? AND start_at <= ?`)
+          .all(since, now.toISOString()) as Array<{ data_type: string; start_at: string; end_at: string }>;
+        intervals.push(...rows.map(row => ({ source: row.data_type === 'sleep_session' ? 'health-sleep' : 'health',
+          start: Date.parse(row.start_at), end: Date.parse(row.end_at) })));
+      }
+      // Listening records have an end timestamp and duration; daily totals and
+      // completion timestamps from other media cannot locate a recorded interval.
+      const music = this.db.prepare(`SELECT occurred_at, json_extract(extra_json, '$.durationMs') duration
+        FROM activities WHERE source = 'statsfm' AND visibility = 'public' AND occurred_precision = 'exact'
+          AND occurred_at <= ? AND occurred_at >= ?`)
+        .all(now.toISOString(), since) as Array<{ occurred_at: string; duration: number }>;
+      intervals.push(...music.map(row => ({ source: 'statsfm', start: Date.parse(row.occurred_at) - Number(row.duration),
+        end: Date.parse(row.occurred_at) })));
+      // Day-precision rows are backfilled history with a placeholder clock time.
+      // The indexed lower bound keeps this off a full scan; no watch runs longer
+      // than the two-day margin it allows for.
+      const youtube = this.db.prepare(`SELECT watched_at, seconds FROM youtube_watch_intervals
+        WHERE precision = 'exact' AND seconds > 0 AND watched_at <= ? AND watched_at >= datetime(?, '-2 days')
+          AND julianday(watched_at) + seconds / 86400.0 >= julianday(?)`)
+        .all(now.toISOString(), since, since) as Array<{ watched_at: string; seconds: number }>;
+      intervals.push(...youtube.map(row => ({ source: 'youtube', start: Date.parse(row.watched_at),
+        end: Date.parse(row.watched_at) + Number(row.seconds) * 1000 })));
+      return recordedCoverage(intervals, now, days);
+    });
   }
 
   latestPublicActivitiesBySource(now = new Date()): Activity[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (
-          PARTITION BY source
-          ORDER BY CASE WHEN occurred_precision IN ('exact', 'day') THEN 0 ELSE 1 END,
-                   occurred_at DESC, first_seen_at DESC, id DESC
-        ) AS source_rank
-        FROM activities
-        WHERE visibility = 'public'
-          AND (occurred_at IS NULL OR occurred_precision NOT IN ('exact', 'day')
-            OR (occurred_precision = 'exact' AND occurred_at <= ?)
-            OR (occurred_precision = 'day' AND substr(occurred_at, 1, 10) <= ?))
-      ) WHERE source_rank = 1
-    `).all(now.toISOString(), taipeiDay(now)) as Record<string, unknown>[];
-    return rows.map(row => this.rowToActivity(row));
+    return this.cached(`latestBySource:${minute(now)}`, () => {
+      const rows = this.db.prepare(`
+        SELECT * FROM (
+          SELECT *, ROW_NUMBER() OVER (
+            PARTITION BY source
+            ORDER BY CASE WHEN occurred_precision IN ('exact', 'day') THEN 0 ELSE 1 END,
+                     occurred_at DESC, first_seen_at DESC, id DESC
+          ) AS source_rank
+          FROM activities
+          WHERE visibility = 'public'
+            AND (occurred_at IS NULL OR occurred_precision NOT IN ('exact', 'day')
+              OR (occurred_precision = 'exact' AND occurred_at <= ?)
+              OR (occurred_precision = 'day' AND substr(occurred_at, 1, 10) <= ?))
+        ) WHERE source_rank = 1
+      `).all(now.toISOString(), taipeiDay(now)) as Record<string, unknown>[];
+      return rows.map(row => this.rowToActivity(row));
+    });
   }
 
   queryActivities(query: ActivityQuery = {}): ActivityPage {
@@ -885,14 +911,18 @@ export class Repository {
   }
 
   countPublicActivities(): number {
-    const row = this.db.prepare("SELECT COUNT(*) count FROM activities WHERE visibility='public'").get() as { count: number };
-    return Number(row.count);
+    return this.cached('countPublic', () => {
+      const row = this.db.prepare("SELECT COUNT(*) count FROM activities WHERE visibility='public'").get() as { count: number };
+      return Number(row.count);
+    });
   }
 
   countBySource(): Record<string, number> {
-    const rows = this.db.prepare("SELECT source, COUNT(*) count FROM activities WHERE visibility='public' GROUP BY source ORDER BY count DESC")
-      .all() as Array<{ source: string; count: number }>;
-    return Object.fromEntries(rows.map((row) => [row.source, Number(row.count)]));
+    return this.cached('countBySource', () => {
+      const rows = this.db.prepare("SELECT source, COUNT(*) count FROM activities WHERE visibility='public' GROUP BY source ORDER BY count DESC")
+        .all() as Array<{ source: string; count: number }>;
+      return Object.fromEntries(rows.map((row) => [row.source, Number(row.count)]));
+    });
   }
 
   wrapped(year: number): WrappedSummary {
@@ -1281,20 +1311,22 @@ export class Repository {
   }
 
   healthConnectStatus(): HealthConnectStatus {
-    const latest = this.db.prepare(`
-      SELECT device_id, received_at FROM health_connect_syncs
-      ORDER BY received_at DESC LIMIT 1
-    `).get() as { device_id: string; received_at: string } | undefined;
-    const typeRows = this.db.prepare(`
-      SELECT data_type, COUNT(*) count FROM health_connect_records
-      GROUP BY data_type ORDER BY data_type
-    `).all() as Array<{ data_type: string; count: number }>;
-    return {
-      totalStored: this.healthConnectCount(),
-      lastSyncedAt: latest?.received_at ?? null,
-      lastDeviceId: latest?.device_id ?? null,
-      recordsByType: Object.fromEntries(typeRows.map((row) => [row.data_type, Number(row.count)])),
-    };
+    return this.cached('healthStatus', () => {
+      const latest = this.db.prepare(`
+        SELECT device_id, received_at FROM health_connect_syncs
+        ORDER BY received_at DESC LIMIT 1
+      `).get() as { device_id: string; received_at: string } | undefined;
+      const typeRows = this.db.prepare(`
+        SELECT data_type, COUNT(*) count FROM health_connect_records
+        GROUP BY data_type ORDER BY data_type
+      `).all() as Array<{ data_type: string; count: number }>;
+      return {
+        totalStored: this.healthConnectCount(),
+        lastSyncedAt: latest?.received_at ?? null,
+        lastDeviceId: latest?.device_id ?? null,
+        recordsByType: Object.fromEntries(typeRows.map((row) => [row.data_type, Number(row.count)])),
+      };
+    });
   }
 
   // The snapshot aggregates every health record, so it is memoised until the
@@ -1473,9 +1505,11 @@ export class Repository {
   }
 
   healthConnectSleepTime(now = new Date()): TimeWindows {
-    const rows = this.db.prepare(`SELECT start_at, end_at FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
-      WHERE data_type='sleep_session'`).all() as Array<{ start_at: string; end_at: string }>;
-    return recordedSleepWindows(rows, now);
+    return this.cached(`sleepTime:${minute(now)}`, () => {
+      const rows = this.db.prepare(`SELECT start_at, end_at FROM (${PREFERRED_HEALTH_RECORDS}) health_connect_records
+        WHERE data_type='sleep_session'`).all() as Array<{ start_at: string; end_at: string }>;
+      return recordedSleepWindows(rows, now);
+    });
   }
 
   latestRuns(): SyncRun[] {

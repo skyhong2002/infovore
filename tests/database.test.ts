@@ -282,3 +282,20 @@ test('latest source activities reach beyond the global page and exclude private 
     assert.equal(new Set(latest.map(a => a.source)).size, latest.length);
   } finally { repository.close(); }
 });
+
+test('cached reads see writes from another connection, like the ingest container', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'infovore-cache-'));
+  const reader = new Repository(join(dir, 'db.sqlite'));
+  const writer = new Repository(join(dir, 'db.sqlite'));
+  try {
+    const at = new Date('2026-10-04T08:00:00Z');
+    const coverage = () => reader.activityCoverage(at, { dayflow: false, health: false, computai: true }, 1)[0].recordedSeconds;
+    const before = reader.healthConnectStatus().totalStored;
+    assert.equal(coverage(), 0);                        // cached now
+    writer.computai.ingestSegments({ schemaVersion: 1, deviceId: 'mac', observedAt: '2026-10-04T06:00:00Z',
+      from: '2026-10-04T00:00:00Z', to: '2026-10-04T06:00:00Z', segments: [{ source: 'codex', machine: 'mac', project: 'p', session: '',
+        subagent: false, start: '2026-10-04T01:00:00Z', end: '2026-10-04T01:30:00Z', tokens: 1, requests: 1 }] });
+    assert.equal(coverage(), 1800);                     // the other connection's commit invalidated it
+    assert.equal(reader.healthConnectStatus().totalStored, before);
+  } finally { reader.close(); writer.close(); rmSync(dir, { recursive: true, force: true }); }
+});

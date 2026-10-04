@@ -164,30 +164,46 @@ const QUARTER_HOUR = 15 * 60_000;
 const HOUR = 60 * 60_000;
 const roundedNow = (step: number) => new Date(Math.floor(Date.now() / step) * step);
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
-let dayflowRevision = '';
+// New Dayflow data rebuilds the snapshot before the request continues. When
+// only the clock moved (today's in-progress totals), it rebuilds at most every
+// five minutes, after the response, so no visitor waits for it.
+const FIVE_MINUTES = 5 * 60_000;
+let dayflowRevision = -1;
+let dayflowClock = -1;
+let dayflowRefresh: ReturnType<typeof setTimeout> | null = null;
 let dayflowRenderRevision = '';
 let dayflowRender: Promise<void> | null = null;
+function rebuildDayflow(status = repository.dayflow.status()): void {
+  restoreCache('data:dayflow', repository.dayflow.snapshot(config.ownerName), status.lastSyncedAt ? Date.parse(status.lastSyncedAt) : 0);
+  dayflowRevision = status.revision;
+  dayflowClock = Math.floor(Date.now() / FIVE_MINUTES);
+}
 app.use('*', async (c, next) => {
   if (dayflowEnabled && c.req.method === 'GET') {
     const status = repository.dayflow.status();
-    const revision = `${status.revision}:${Math.floor(Date.now() / 60000)}`;
     const renderRevision = `${status.revision}:${Math.floor(Date.now() / QUARTER_HOUR)}`;
-    if (revision !== dayflowRevision) {
-      const snapshot = repository.dayflow.snapshot(config.ownerName);
-      restoreCache('data:dayflow', snapshot, status.lastSyncedAt ? Date.parse(status.lastSyncedAt) : 0);
-      dayflowRevision = revision;
+    if (status.revision !== dayflowRevision || !getCache('data:dayflow')) rebuildDayflow(status);
+    else if (Math.floor(Date.now() / FIVE_MINUTES) !== dayflowClock && !dayflowRefresh) {
+      dayflowRefresh = setTimeout(() => { dayflowRefresh = null; rebuildDayflow(); }, 0);
     }
     if (c.req.path === '/cards' || c.req.path === '/platforms/dayflow' || /^\/card\/dayflow(?:-keywords|-categories)?\.(svg|png|webp)$/.test(c.req.path)) {
       if (dayflowRender) await dayflowRender;
       if (dayflowRenderRevision !== renderRevision) {
         const snapshot = getCache<DayflowSnapshot>('data:dayflow')!.data!;
-        dayflowRender = (async () => {
+        const render = async () => {
           const rendered = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === 'dayflow')
             .map(async ([name, card]) => [name, await card.build(snapshot)] as const));
           for (const [name, svg] of rendered) setCache(`svg:${name}`, svg);
           dayflowRenderRevision = renderRevision;
-        })();
-        try { await dayflowRender; } finally { dayflowRender = null; }
+        };
+        // Same data, only the quarter-hour moved: serve the cards already
+        // rendered and refresh them after this response.
+        if (dayflowRenderRevision.startsWith(`${status.revision}:`) && getCache('svg:dayflow')?.data) {
+          dayflowRender = new Promise((resolve) => setTimeout(resolve, 0)).then(render).finally(() => { dayflowRender = null; });
+        } else {
+          dayflowRender = render();
+          try { await dayflowRender; } finally { dayflowRender = null; }
+        }
       }
     }
   }
@@ -311,17 +327,28 @@ app.use('*', async (c, next) => {
     /^\/card\/health(?:-[a-z-]+)?\.(svg|png|webp)$/.test(c.req.path)
   )) {
     if (healthCardRefresh) await healthCardRefresh;
-    const revision = `${repository.healthConnectStatus().lastSyncedAt}:${new Date().toISOString().slice(0, 10)}`;
+    const synced = repository.healthConnectStatus().lastSyncedAt;
+    const revision = `${synced}:${new Date().toISOString().slice(0, 10)}`;
+    const rendered = Boolean(getCache('svg:health')?.data);
+    // Startup already rendered these cards from the current data.
+    if (!healthCardRevision && rendered) healthCardRevision = revision;
     if (revision !== healthCardRevision) {
-      healthCardRefresh = (async () => {
+      const render = async () => {
         const snapshot = repository.healthConnectSnapshot(config.ownerName);
         // Publish one coherent revision only after every variant renders successfully.
-        const rendered = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === 'health')
+        const variants = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === 'health')
           .map(async ([name, card]) => [name, await card.build(snapshot)] as const));
-        for (const [name, svg] of rendered) setCache(`svg:${name}`, svg);
+        for (const [name, svg] of variants) setCache(`svg:${name}`, svg);
         healthCardRevision = revision;
-      })();
-      try { await healthCardRefresh; } finally { healthCardRefresh = null; }
+      };
+      // Same sync, only the date moved: serve yesterday's render once and
+      // refresh after this response.
+      if (healthCardRevision.startsWith(`${synced}:`) && rendered) {
+        healthCardRefresh = new Promise((resolve) => setTimeout(resolve, 0)).then(render).finally(() => { healthCardRefresh = null; });
+      } else {
+        healthCardRefresh = render();
+        try { await healthCardRefresh; } finally { healthCardRefresh = null; }
+      }
     }
   }
   await next();

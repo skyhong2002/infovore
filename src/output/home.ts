@@ -4,6 +4,7 @@ import type { PlatformOverview } from './overview.js';
 import { recordedCoverage, type CoverageDay } from '../data/coverage.js';
 import type { TimeSpentSummary, TimeWindows } from '../data/database.js';
 import { dayflowDay, type DayflowSnapshot } from '../dayflow/types.js';
+import { taipeiDay } from '../data/time.js';
 import type { Activity } from '../data/types.js';
 import { html, shell, sourceLabel, timeAmount } from './pages.js';
 import { healthActivityMeta } from './health-activity.js';
@@ -189,9 +190,7 @@ function activeDays(activities: Activity[]): number {
       if (raw) days.add(raw.slice(0, 10));
       continue;
     }
-    days.add(new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(parsed));
+    days.add(taipeiDay(parsed));
   }
   return days.size;
 }
