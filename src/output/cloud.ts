@@ -26,14 +26,14 @@ const SOURCE_SCALE: Record<string, number> = { dayflow: 0.25 };
 // Attention seconds assumed per event when the source does not measure time.
 const DEFAULT_SECONDS: Record<MediaKind, number> = {
   music: 4 * 60, game: 20 * 60, anime: 24 * 60, manga: 20 * 60, movie: 2 * 3600,
-  show: 45 * 60, book: 3600, video: 10 * 60, event: 2 * 3600, fitness: 0, computer: 0,
+  show: 45 * 60, book: 3600, video: 10 * 60, event: 2 * 3600, fitness: 0, computer: 0, ai: 0,
 };
 
-// Health and Dayflow activities in the timeline are daily roll-ups ("12,345
-// steps", a day's computer time). The cloud takes those sources through
+// Health, Dayflow and ComputAI activities in the timeline are daily roll-ups
+// ("12,345 steps", a day's computer time, a day's agent tokens). The cloud takes those sources through
 // `extras` instead: exercise types with measured duration, and the projects
 // and topics named in Dayflow activity titles with the time behind them.
-const EXCLUDED_KINDS = new Set<MediaKind>(['fitness', 'computer']);
+const EXCLUDED_KINDS = new Set<MediaKind>(['fitness', 'computer', 'ai']);
 
 // The shape urtube's summary exposes for a channel (see sources/youtube.ts).
 export interface CloudChannel {

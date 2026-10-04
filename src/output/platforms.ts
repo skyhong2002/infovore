@@ -1,4 +1,6 @@
 import { dayflowDetails } from './dayflow.js';
+import { computaiDetails } from './computai.js';
+import type { ComputaiExtra } from '../computai/types.js';
 import type { DayflowExtra } from '../dayflow/types.js';
 import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
@@ -38,6 +40,7 @@ const kindLabels: Record<string, string> = {
   event: 'Events',
   fitness: 'Daily health and workouts',
   computer: 'Daily computer activity',
+  ai: 'Daily AI agent usage',
 };
 
 // Machine-facing snapshot stats (raw units for the time ledger and
@@ -202,6 +205,7 @@ function platformNav(active?: string): string {
     ['youtube', 'YouTube'],
     ['health', 'Health'],
     ['dayflow', 'Dayflow'],
+    ['computai', 'ComputAI'],
     ['events', 'Manual'],
   ];
   return `<nav class="platform-nav" aria-label="Platforms"><a href="/platforms"${active ? '' : ' aria-current="page"'}>All</a>${sources.map(([source, title]) =>
@@ -257,6 +261,7 @@ export function platformPage(
   const extra = (snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {}) as Record<string, unknown>;
   const extras = [
     definition.source === 'dayflow' ? dayflowDetails(extra as unknown as DayflowExtra) : '',
+    definition.source === 'computai' ? computaiDetails(extra as unknown as ComputaiExtra) : '',
     definition.source === 'health' ? healthDetails(extra as unknown as HealthConnectExtra) : '',
     typeof extra.yearExtras === 'string' && extra.yearExtras
       ? `<div class="platform-note">${html(extra.yearExtras)}</div>`

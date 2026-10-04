@@ -11,3 +11,4 @@ Display it on a white background in the platform page, platform index, and
 shareable card. The page is an infovore mirror, not an official Google app.
 
 - `dayflow.png`: Dayflow macOS app icon, converted from the installed app’s `Contents/Resources/AppIcon.icns` at 256px for source identification.
+- `computai.svg`: drawn for infovore (ComputAI has no logo): three rising bars in the AI agents card's GitHub palette. Not an official ComputAI mark.

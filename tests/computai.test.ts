@@ -30,7 +30,16 @@ test('ComputAI keeps the newest report and its public snapshot drops the device'
     assert.equal(repo.computai.ingest({ ...report, observedAt: '2026-10-04T09:00:00Z', tokens: 7e9 }).updated, 1);
     const snapshot = repo.computai.snapshot('Sky');
     assert.equal(snapshot.extra.report?.tokens, 7e9);
-    assert.equal(snapshot.stats.peakParallel, 6);
+    assert.equal(snapshot.stats.sessionsAtOnce, 6);
+    // 09:00Z is 17:00 in Taipei: the last daily value is Oct 4, newest entry first.
+    assert.deepEqual(snapshot.entries.slice(0, 2).map((e) => [e.sourceItemId, e.title, e.kind]),
+      [['day:2026-10-04', 'AI agents · 300.0M tokens', 'ai'], ['day:2026-10-03', 'AI agents · 290.0M tokens', 'ai']]);
+    assert.equal(repo.computai.snapshot('Sky').entries.length, 14);
+    // 16:30Z is already the next day in Taipei.
+    const late = new Repository(':memory:');
+    late.computai.ingest({ ...report, observedAt: '2026-10-01T16:30:00Z' });
+    assert.equal(late.computai.snapshot('Sky').entries[0].sourceItemId, 'day:2026-10-02');
+    late.close();
     const dark = await buildAiAgentsCard(snapshot), light = await buildAiAgentsLightCard(snapshot);
     for (const value of [JSON.stringify(snapshot), dark, light]) assert.doesNotMatch(value, /secret-mac/);
     assert.match(dark, /<svg/);
@@ -61,6 +70,16 @@ test('ComputAI ingestion enforces its token and refreshes the public cards', asy
   const status = await (await app.request('/status')).json() as { sources: Array<{ source: string }>; cards: string[] };
   assert.ok(status.sources.some((s) => s.source === 'computai'));
   assert.ok(status.cards.includes('/card/ai-agents.svg'));
+  for (const path of ['/platforms/computai', '/platforms', '/', '/now', '/feed.json']) {
+    const response = await app.request(path);
+    assert.equal(response.status, 200, path);
+    const body = await response.text();
+    assert.doesNotMatch(body, /secret-mac/, path);
+    if (path === '/platforms/computai') assert.match(body, /gpt-6-astra · 49%/);
+    if (path === '/') assert.match(body, /AI agents · [\d.]+[MB] tokens/);
+  }
+  const nowCard = await (await app.request('/card/now.svg')).text();
+  assert.doesNotMatch(nowCard, /AI agents ·/);
   const json = await (await app.request('/api/computai.json')).text();
   assert.match(json, /gpt-6-astra/);
   assert.doesNotMatch(json, /secret-mac/);

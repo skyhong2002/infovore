@@ -138,8 +138,11 @@ usage across several machines. A small companion pushes its rolling 30-day
 report every hour: tokens, agent hours, peak parallel sessions, prompt-cache
 share, model shares and tokens per day. Spend, plan value, rank and badges stay
 on the Mac, and the ingest schema drops any field it does not know. The report
-feeds `/card/ai-agents.*` (dark) and `/card/ai-agents-light.*`, meant to be paired
-with `<picture>` in a GitHub profile README.
+feeds `/platforms/computai` (models, the Claude Code/Codex split and tokens per
+day), a daily "AI agents · N tokens" entry on Home and Now, and
+`/card/ai-agents.*` (dark) and `/card/ai-agents-light.*`, meant to be paired with
+`<picture>` in a GitHub profile README. Agent tokens stay out of the word cloud
+and the cross-platform time totals.
 Set a dedicated `COMPUTAI_TOKEN`; see [setup](scripts/COMPUTAI.md).
 
 ## Android Health Connect sync

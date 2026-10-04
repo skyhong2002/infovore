@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="ComputAI">
+  <rect width="64" height="64" rx="14" fill="#0d1117"/>
+  <rect x="14" y="34" width="9" height="16" rx="2.5" fill="#3b82c4"/>
+  <rect x="27.5" y="24" width="9" height="26" rx="2.5" fill="#58a6ff"/>
+  <rect x="41" y="14" width="9" height="36" rx="2.5" fill="#2f81f7"/>
+</svg>

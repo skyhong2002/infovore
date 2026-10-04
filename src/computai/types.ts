@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SourceSnapshot } from '../data/types.js';
+import { taipeiDay } from '../data/time.js';
 
 const timestamp = z.string().datetime({ offset: true });
 const share = z.number().finite().min(0).max(100);
@@ -25,6 +26,18 @@ export const computaiReportSchema = z.object({
 });
 
 export type ComputaiReport = z.infer<typeof computaiReportSchema>;
+
+export function compactNumber(n: number): string {
+  for (const [size, unit] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'k']] as const) if (n >= size) return `${(n / size).toFixed(1)}${unit}`;
+  return String(Math.round(n));
+}
+// ComputAI counts days on the Mac's local (Taipei) calendar, ending with the
+// reporting day; newest first.
+export function dailyTokens(report: Pick<ComputaiReport, 'daily' | 'observedAt'>): Array<{ day: string; tokens: number }> {
+  const last = Date.parse(`${taipeiDay(report.observedAt)}T00:00:00Z`);
+  return report.daily.map((tokens, i) => ({ tokens, day: new Date(last - (report.daily.length - 1 - i) * 86_400_000).toISOString().slice(0, 10) })).reverse();
+}
+
 export type PublicComputaiReport = Omit<ComputaiReport, 'deviceId' | 'schemaVersion'>;
 export interface ComputaiExtra { report: PublicComputaiReport | null; lastSyncedAt: string | null }
 export type ComputaiSnapshot = SourceSnapshot<ComputaiExtra>;

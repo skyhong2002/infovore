@@ -121,6 +121,7 @@ function formatDate(activity: Activity): { date: string; time: string; datetime:
 function activityMeta(activity: Activity): string {
   if (activity.source === 'health') return html(healthActivityMeta(activity));
   if (activity.source === 'dayflow') return html(`${timeAmount(Number(activity.extra.activeMinutes) * 60)} active · ${timeAmount(Number(activity.extra.idleMinutes) * 60)} idle`);
+  if (activity.source === 'computai') return html('Claude Code and Codex · every machine');
   const details: string[] = [];
   const add = (value: unknown) => details.push(html(value));
   if (activity.status) add(activity.status.replaceAll('_', ' '));
@@ -206,7 +207,7 @@ function recentRow(activity: Activity, dayflow?: DayflowSnapshot | null): string
   const time = when.time ? `${when.date} · ${when.time}` : when.date;
   return `<li class="home-recent-item">
     ${imageOrPlaceholder(activity.image, 'home-recent-art', activity.title)}
-    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(activity.mediaKind)}</span></span>${activity.source === 'health' || activity.source === 'dayflow' ? `<a class="home-recent-title" href="/platforms/${html(activity.source)}${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span>${activity.source === 'dayflow' ? dailyKeywords(activity, dayflow) : ''}</span>
+    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(activity.mediaKind)}</span></span>${activity.source === 'health' || activity.source === 'dayflow' || activity.source === 'computai' ? `<a class="home-recent-title" href="/platforms/${html(activity.source)}${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span>${activity.source === 'dayflow' ? dailyKeywords(activity, dayflow) : ''}</span>
     <time class="home-recent-time"${when.datetime ? ` datetime="${html(when.datetime)}"` : ''}>${html(time)}${when.time ? ' GMT+8' : ''}</time>
   </li>`;
 }

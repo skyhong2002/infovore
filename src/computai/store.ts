@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { computaiReportSchema, type ComputaiReport, type ComputaiSnapshot } from './types.js';
+import { compactNumber, computaiReportSchema, dailyTokens, type ComputaiReport, type ComputaiSnapshot } from './types.js';
 
 export function migrateComputai(db: DatabaseSync): void {
   db.exec(`BEGIN;
@@ -37,8 +37,13 @@ export class ComputaiStore {
     const { deviceId: _device, schemaVersion: _version, ...open } = report ?? ({} as ComputaiReport);
     return {
       source: 'computai', profile: { id: 'computai', name: owner, avatar: '', url: '' },
-      stats: report ? { tokens: report.tokens, agentHours: report.agentHours, peakParallel: report.peakParallel, cacheHitPct: report.cacheHitPct } : {},
-      entries: [],
+      stats: report ? { tokens: report.tokens, agentHours: Math.round(report.agentHours), sessionsAtOnce: report.peakParallel, promptCachePercent: Math.round(report.cacheHitPct) } : {},
+      // One timeline entry per day with usage, like Dayflow's daily computer time.
+      entries: report ? dailyTokens(report).filter((d) => d.tokens > 0).slice(0, 14).map((d) => ({
+        source: 'computai', sourceItemId: `day:${d.day}`, kind: 'ai' as const, visibility: 'public' as const,
+        title: `AI agents · ${compactNumber(d.tokens)} tokens`, image: '/logos/computai.svg', status: 'daily_summary',
+        activityAt: d.day, rating: null, extra: { tokens: d.tokens },
+      })) : [],
       extra: { report: report ? open : null, lastSyncedAt: this.status().lastSyncedAt },
     };
   }

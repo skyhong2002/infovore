@@ -1,6 +1,7 @@
 import type { SourceSnapshot } from '../data/types.js';
 import type { HealthConnectSnapshot } from '../health/types.js';
 import type { DayflowSnapshot } from '../dayflow/types.js';
+import { compactNumber, type ComputaiSnapshot } from '../computai/types.js';
 import { taipeiDay } from '../data/time.js';
 import { timeAmount } from './pages.js';
 
@@ -18,6 +19,12 @@ export function platformOverview(source: string, image: string, snapshot: Source
     const pools = (snapshot as DayflowSnapshot).extra.keywordPools;
     const topics = pools?.distinctive.slice(0, 3).map(k => k.name).join(' · ');
     return result(`${count('weeklyActiveHours')}h active this week`, topics ? `Distinctive lately: ${topics}` : `${count('recordedDays')} recorded days`);
+  }
+  if (source === 'computai') {
+    const report = (snapshot as ComputaiSnapshot).extra.report;
+    return report ? result(`${compactNumber(report.tokens)} tokens in 30 days`,
+      `${Math.round(report.agentHours)} agent hours${report.models[0] ? ` · top model ${report.models[0].model}` : ''}`)
+      : result('Waiting for the first report', 'AI agent usage appears after the Mac syncs.');
   }
   if (source === 'statsfm') {
     const artist = top('topArtists');

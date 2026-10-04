@@ -1,4 +1,5 @@
-import type { ComputaiSnapshot } from '../computai/types.js';
+import { compactNumber, dailyTokens, type ComputaiExtra, type ComputaiSnapshot } from '../computai/types.js';
+import { html } from './pages.js';
 import { h, renderCard } from './render.js';
 
 // A deliberately plain card in GitHub's own palette so it sits quietly in a
@@ -15,11 +16,6 @@ type Theme = typeof THEMES.dark;
 const span = (value: string, style: Record<string, unknown>) => h('span', { style: { display: 'flex', ...style } }, value);
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 
-function compact(n: number): string {
-  for (const [size, unit] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'k']] as const) if (n >= size) return `${(n / size).toFixed(1)}${unit}`;
-  return String(Math.round(n));
-}
-
 function taipeiDate(iso: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', month: 'short', day: 'numeric' }).format(new Date(iso));
 }
@@ -33,7 +29,7 @@ function aiAgentsCard(data: ComputaiSnapshot, c: Theme): Promise<string> {
   if (!report) {
     return shell(c, [header, span('Waiting for the first ComputAI report.', { fontSize: 13, color: c.muted })]);
   }
-  const stats = [[compact(report.tokens), 'tokens'], [`${Math.round(report.agentHours)} h`, 'agent hours'],
+  const stats = [[compactNumber(report.tokens), 'tokens'], [`${Math.round(report.agentHours)} h`, 'agent hours'],
     [String(report.peakParallel), 'sessions at once'], [`${Math.round(report.cacheHitPct)}%`, 'from prompt cache']];
   const peak = Math.max(1, ...report.daily);
   const top = report.models.slice(0, 3);
@@ -70,3 +66,18 @@ function shell(c: Theme, content: unknown[]): Promise<string> {
 
 export const buildAiAgentsCard = (data: ComputaiSnapshot) => aiAgentsCard(data, THEMES.dark);
 export const buildAiAgentsLightCard = (data: ComputaiSnapshot) => aiAgentsCard(data, THEMES.light);
+
+// Platform page sections: what the agents ran on, and the daily volume behind the card.
+export function computaiDetails(extra: ComputaiExtra): string {
+  const report = extra.report;
+  if (!report) return '<section><div class="empty">Waiting for the first ComputAI report.</div></section>';
+  const chips = (items: Array<[string, number]>) => items.map(([name, pct]) => `<span>${html(name)} · ${Math.round(pct)}%</span>`).join('');
+  const peak = Math.max(1, ...report.daily);
+  return `<section><div class="platform-section-heading"><h2>Models</h2><span>Share of tokens · last 30 days</span></div>
+    <div class="platform-tags">${chips(report.models.map((m) => [m.model, m.sharePct]))}</div></section>
+    <section><div class="platform-section-heading"><h2>Agents</h2><span>Share of tokens · last 30 days</span></div>
+    <div class="platform-tags">${chips(report.fleet.map((f) => [f.source === 'claude' ? 'Claude Code' : f.source === 'codex' ? 'Codex' : f.source, f.pct]))}</div></section>
+    <section><div class="platform-section-heading"><h2>Tokens per day</h2><span>Every computer ComputAI reads</span></div>
+    <div class="health-days">${dailyTokens(report).filter((d) => d.tokens > 0).map((d) => `<article class="health-day"><time datetime="${d.day}">${d.day}</time><div class="health-step-track"><span style="width:${d.tokens / peak * 100}%"></span></div><strong>${compactNumber(d.tokens)}</strong><p>tokens</p></article>`).join('')}</div>
+    <div class="platform-note">ComputAI counts Claude Code and Codex tokens from local session logs on every machine it reads, including prompt-cache reads. Only these aggregates reach infovore; spend, projects and prompts stay on the Mac.</div></section>`;
+}

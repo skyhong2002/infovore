@@ -5,6 +5,7 @@ import { dayflowCloudTerms } from './dayflow/pools.js';
 import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js';
+import type { ComputaiSnapshot } from './computai/types.js';
 import { dayflowDay, type DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
 import { recordedShare } from './data/coverage.js';
@@ -251,8 +252,8 @@ app.use('*', async (c, next) => {
     const { activities } = dashboardView(now);
     const current = currentActivities(activities, 4);
     const upcoming = upcomingActivities(now.toISOString(), 3);
-    // Health and Dayflow have dedicated cards; keep this one to media and events.
-    const recent = latestSourceActivities(activities.filter((a) => a.source !== 'health' && a.source !== 'dayflow')).slice(0, 5);
+    // Health, Dayflow and ComputAI have dedicated cards; keep this one to media and events.
+    const recent = latestSourceActivities(activities.filter((a) => !['health', 'dayflow', 'computai'].includes(a.source))).slice(0, 5);
     const key = JSON.stringify([now.toISOString().slice(0, 10), ...[current, upcoming, recent].map((list) => list.map((a) => `${a.id}:${a.status}`))]);
     if (key !== nowCardKey) {
       nowCardRender = (async () => {
@@ -376,13 +377,17 @@ const allSections: PlatformDefinition[] = [
     logo: '/logos/urtube.svg', via: { name: 'urtube', url: config.urtube.baseUrl },
   },
   {
+    source: 'computai', title: 'ComputAI', description: 'AI agent tokens, hours and models across Claude Code and Codex on every machine, as a rolling 30-day report.',
+    accent: '#58a6ff', cards: ['ai-agents', 'ai-agents-light'], jsonUrl: '/api/computai.json', logo: '/logos/computai.svg',
+  },
+  {
     source: 'health', title: 'Health Connect', description: 'Daily movement, workouts, sleep, heart rate and body measurements from Android and Garmin.',
     accent: '#a8c7fa', cards: ['health', 'health-sleep', 'health-sleep-stages', 'health-exercise', 'health-steps'], jsonUrl: '/api/health.json', logo: '/logos/healthconnect.png',
   },
 ];
 
 const sections = allSections.filter((s) =>
-  config.sourceEnabled(s.source) && (s.source !== 'dayflow' || dayflowEnabled) && (s.source !== 'health' || Boolean(config.healthConnect.token))
+  config.sourceEnabled(s.source) && (s.source !== 'dayflow' || dayflowEnabled) && (s.source !== 'computai' || computaiEnabled) && (s.source !== 'health' || Boolean(config.healthConnect.token))
 );
 const manualPlatform: PlatformDefinition = {
   source: 'events', title: 'Manual events', description: 'Concerts, performances and real-world activities recorded by hand.',
@@ -435,7 +440,9 @@ function dashboardView(now: Date) {
     ? repository.healthConnectSnapshot(config.ownerName, now) : null;
   const dayflow = dayflowEnabled ? getCache<DayflowSnapshot>('data:dayflow')?.data : null;
   const daily = dayflow?.entries.map((entry) => activityFromEntry(entry, `${entry.activityAt}T04:00:00+08:00`)) ?? [];
-  return { healthSnapshot, activities: dashboardActivities([...repository.listActivities(500), ...repository.latestPublicActivitiesBySource(now), ...daily], healthSnapshot, now) };
+  const agents = computaiEnabled ? getCache<ComputaiSnapshot>('data:computai')?.data?.entries
+    .map((entry) => activityFromEntry(entry, `${entry.activityAt}T00:00:00+08:00`)) ?? [] : [];
+  return { healthSnapshot, activities: dashboardActivities([...repository.listActivities(500), ...repository.latestPublicActivitiesBySource(now), ...daily, ...agents], healthSnapshot, now) };
 }
 
 // The overview metric is the share of the last 28 days with any recording; the
@@ -557,8 +564,7 @@ app.get('/cards', (c) => {
   const nowCard = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/now">Right now</a></h2><span>In progress, up next, and the latest item from each platform</span></div><div class="card-gallery-row"><a href="/card/now.svg?v=${version('now')}"><img src="/card/now.webp?v=${version('now')}" alt="Right now · in-progress media, upcoming events and latest activity" width="520" loading="lazy"></a></div><p><a href="/card/now.svg">SVG</a> · <a href="/card/now.png">PNG</a> · <a href="/card/now.webp">WebP</a></p></section>`;
   const wordCloud = `<section class="card-gallery-section" id="word-cloud"><div class="card-gallery-title"><h2><a href="/profile">Word cloud</a></h2><span>Artists, games, channels, films and more from the last ${WORD_CLOUD_DAYS} days, sized by attention</span></div><div class="card-gallery-row"><a href="/card/word-cloud.svg?v=${version('word-cloud')}"><img src="/card/word-cloud.webp?v=${version('word-cloud')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud.svg">SVG</a> · <a href="/card/word-cloud.png">PNG</a> · <a href="/card/word-cloud.webp">WebP</a></p></section>`
     + `<section class="card-gallery-section" id="word-cloud-plain"><div class="card-gallery-title"><h2><a href="/profile">Word cloud, words only</a></h2><span>The same ${WORD_CLOUD_DAYS} days without the frame, for embedding</span></div><div class="card-gallery-row"><a href="/card/word-cloud-plain.svg?v=${version('word-cloud-plain')}"><img src="/card/word-cloud-plain.webp?v=${version('word-cloud-plain')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days, words only" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud-plain.svg">SVG</a> · <a href="/card/word-cloud-plain.png">PNG</a> · <a href="/card/word-cloud-plain.webp">WebP</a></p></section>`;
-  const aiAgents = computaiEnabled ? `<section class="card-gallery-section" id="ai-agents"><div class="card-gallery-title"><h2>AI agents</h2><span>Tokens, agent hours and models over the last 30 days, reported by ComputAI · dark and light</span></div><div class="card-gallery-row">${['ai-agents', 'ai-agents-light'].map((n) => `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.webp?v=${version(n)}" alt="AI agents · tokens, agent hours and models over the last 30 days" width="520" loading="lazy"></a>`).join('\n')}</div><p><a href="/card/ai-agents.svg">SVG</a> · <a href="/card/ai-agents-light.svg">light SVG</a> · <a href="/card/ai-agents.png">PNG</a> · <a href="/card/ai-agents.webp">WebP</a></p></section>` : '';
-  const body = nowCard + wordCloud + rhythm + aiAgents + sections
+  const body = nowCard + wordCloud + rhythm + sections
     .map((s) => {
       const externalUrl = s.url ?? '#';
       // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,
@@ -606,7 +612,7 @@ app.get('/status', (c) => {
       nextScheduledAt: new Date(nextRunAt()).toISOString(),
     },
     database: { activities: repository.countPublicActivities(), latestRuns: repository.latestRuns() },
-    cards: [...sections.flatMap((s) => s.cards ?? []), ...(computaiEnabled ? ['ai-agents', 'ai-agents-light'] : [])].map((n) => `/card/${n}.svg`),
+    cards: sections.flatMap((s) => s.cards ?? []).map((n) => `/card/${n}.svg`),
     sources,
   });
 });
