@@ -10,6 +10,15 @@ export const coverageSources: Record<string, { label: string; color: string }> =
   youtube: { label: 'YouTube', color: '#ff5c5c' },
   computai: { label: 'AI agents', color: '#b48cff' },
 };
+// Home's time-by-platform bars use the rhythm colors, plus distinct hues for
+// platforms that only report totals and never appear as rhythm lanes.
+export const platformColors: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(coverageSources).map(([source, { color }]) => [source, color])),
+  backloggd: '#f2d45c',
+  simkl: '#5b8def',
+  kitsu: '#f779a1',
+  goodreads: '#c8a27a',
+};
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'flex', fontFamily: textFont(value, 'Inter'), ...style } }, value);
 

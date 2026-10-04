@@ -54,6 +54,12 @@ const hiddenStats = new Set([
   'lifetimeMinutes',
 ]);
 
+// Stat tiles whose key alone would mislead. ComputAI adds up parallel sessions
+// over its 30-day report, unlike Home's wall-clock agent time.
+const statLabels: Record<string, string> = {
+  agentHours: 'agent-hours（平行加總）· 30 天',
+};
+
 const timeNotes: Record<string, string> = {
   statsfm: "Measured from individual stream durations; the longer windows come from stats.fm's full listening history.",
   simkl: "Estimated from the growth of Simkl's lifetime watch total between syncs — accumulating since this tracking was deployed.",
@@ -250,7 +256,7 @@ export function platformPage(
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
   const stats = Object.entries(snapshot.stats).filter(([key]) => !hiddenStats.has(key)).map(([key, value]) =>
-    `<div class="platform-stat"><span>${html(label(key))}</span><strong>${number(value)}</strong></div>`
+    `<div class="platform-stat"><span>${html(statLabels[key] ?? label(key))}</span><strong>${number(value)}</strong></div>`
   ).join('');
   const groups = [...new Set(snapshot.entries.map((entry) => entry.kind))];
   const entries = groups.map((kind) => {

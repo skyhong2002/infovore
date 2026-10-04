@@ -1,4 +1,4 @@
-import { coverageSources } from './rhythm.js';
+import { coverageSources, platformColors } from './rhythm.js';
 import { agentName, type WorkBlock } from '../computai/types.js';
 import type { PlatformOverview } from './overview.js';
 import { recordedCoverage, type CoverageDay } from '../data/coverage.js';
@@ -242,7 +242,7 @@ function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows |
     const approx = entry.method === 'estimated' ? '~' : '';
     const label = entry.source === 'dayflow' ? 'Dayflow · active' : entry.source === 'health-sleep' ? 'Health · sleep' : entry.source === 'health' ? 'Health · exercise' : entry.source === 'computai' ? 'AI agents · working' : sourceLabel(entry.source);
     const href = entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${html(entry.source)}`;
-    return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${entry.source.startsWith('health') ? `;background:${entry.source === 'health-sleep' ? '#a8c7fa' : '#67d5c3'}` : entry.source === 'computai' ? ';background:#b48cff' : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
+    return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${platformColors[entry.source] ? `;background:${platformColors[entry.source]}` : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong></a>`;
   }).join('');
   return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div>${computerSeconds ? '<p class="home-footnote">Dayflow shows active computer time by recorded day. It can overlap other platforms; the recorded-time share above counts overlaps once.</p>' : ''}${entries.some((entry) => entry.source === 'health-sleep') ? '<p class="home-footnote">Sleep = recorded sessions, including awake time, shown separately from exercise.</p>' : ''}${entries.some((entry) => entry.source === 'computai') ? '<p class="home-footnote">AI agents = wall-clock time with any Claude Code or Codex session producing output, parallel sessions counted once.</p>' : ''}</div>`;
 }
