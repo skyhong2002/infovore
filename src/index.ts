@@ -287,6 +287,7 @@ app.use('*', async (c, next) => {
 // window) rather than any one sync.
 const WORD_CLOUD_DAYS = 28;
 let wordCloudKey = '';
+let dayflowCloudCache: { key: string; terms: CloudEntry[] } | null = null;
 let wordCloudRender: Promise<void> | null = null;
 app.use('*', async (c, next) => {
   if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/word-cloud(?:-plain)?\.(svg|png|webp)$/.test(c.req.path))) {
@@ -296,8 +297,13 @@ app.use('*', async (c, next) => {
     const youtube = getCache<SourceSnapshot<YoutubeExtra>>('data:youtube')?.data;
     const extras: CloudEntry[] = [];
     if (dayflowEnabled) {
-      extras.push(...dayflowCloudTerms(repository.dayflow.batchesSince(dayflowDay(new Date(since))), now)
-        .map((keyword) => ({ source: 'dayflow', kind: 'computer' as const, label: keyword.name, count: keyword.mentions, seconds: keyword.seconds })));
+      // Keyword extraction over 28 days of Dayflow text only reruns for new data or a new hour.
+      const key = `${repository.dayflow.status().revision}:${+now}`;
+      if (dayflowCloudCache?.key !== key) {
+        dayflowCloudCache = { key, terms: dayflowCloudTerms(repository.dayflow.batchesSince(dayflowDay(new Date(since))), now)
+          .map((keyword) => ({ source: 'dayflow', kind: 'computer' as const, label: keyword.name, count: keyword.mentions, seconds: keyword.seconds })) };
+      }
+      extras.push(...dayflowCloudCache.terms);
     }
     if (config.healthConnect.token && config.sourceEnabled('health')) {
       extras.push(...repository.healthExerciseSince(since)
@@ -432,10 +438,16 @@ function youtubeLifetimeWatches(): number {
 // changes when the rendered card actually changes. Unchanged data across
 // refreshes keeps the same URL → the browser serves it from cache instead of
 // re-downloading megabytes of identical images.
+// Some card SVGs are megabytes; hash each rendered string once.
+const versions = new Map<string, { svg: string; hash: string }>();
 function version(cardName: string): string {
   const svg = getCache<string>(`svg:${cardName}`)?.data;
   if (!svg) return '0';
-  return createHash('sha1').update(svg).digest('hex').slice(0, 12);
+  const known = versions.get(cardName);
+  if (known?.svg === svg) return known.hash;
+  const hash = createHash('sha1').update(svg).digest('hex').slice(0, 12);
+  versions.set(cardName, { svg, hash });
+  return hash;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -856,6 +868,13 @@ app.get('/healthz', (c) => {
 if (process.env.NODE_ENV !== 'test') {
   serve({ fetch: app.fetch, port: config.port }, (info) => {
     console.log(`listening on :${info.port}`);
+    // Fill the snapshot, coverage and card caches before the first visitor
+    // after a deploy has to wait for them.
+    void (async () => {
+      for (const path of ['/', '/cards', '/now', '/platforms']) {
+        try { await (await app.request(path)).arrayBuffer(); } catch (err) { console.error(`[warm] ${path} failed:`, err); }
+      }
+    })();
   });
 }
 

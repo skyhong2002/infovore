@@ -1,6 +1,7 @@
 import { compactNumber, dailyTokens, type ComputaiExtra, type ComputaiSnapshot } from '../computai/types.js';
 import { html } from './pages.js';
 import { h, renderCard } from './render.js';
+import { dateFormat } from '../data/time.js';
 
 // A deliberately plain card in GitHub's own palette so it sits quietly in a
 // profile README. Two variants share one layout; the README picks one with
@@ -17,7 +18,7 @@ const span = (value: string, style: Record<string, unknown>) => h('span', { styl
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 
 function taipeiDate(iso: string): string {
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', month: 'short', day: 'numeric' }).format(new Date(iso));
+  return dateFormat('en-US', { timeZone: 'Asia/Taipei', month: 'short', day: 'numeric' }).format(new Date(iso));
 }
 
 function aiAgentsCard(data: ComputaiSnapshot, c: Theme): Promise<string> {

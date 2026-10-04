@@ -1,6 +1,7 @@
 import type { HealthConnectSnapshot, SleepDay, SleepSession, SleepStage } from '../health/types.js';
 import { sleepAxis, sleepHour } from '../health/sleep.js';
 import { h, logo, renderCard, truncate } from './render.js';
+import { dateFormat } from '../data/time.js';
 
 const C = { bg: '#111418', panel: '#1e232b', text: '#e2e5eb', dim: '#b5becb', accent: '#a8c7fa', border: '#343b46', teal: '#67d5c3' };
 const STAGES: Array<{ key: SleepStage; label: string; color: string }> = [
@@ -16,7 +17,7 @@ const duration = (seconds: number) => {
   const m = Math.round(seconds / 60);
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 };
-const clock = (timestamp: string) => new Intl.DateTimeFormat('en-GB', {
+const clock = (timestamp: string) => dateFormat('en-GB', {
   timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 }).format(new Date(timestamp));
 const asleep = (s: SleepSession) => s.stageSeconds.unknown >= s.sessionSeconds ? '—'
@@ -146,7 +147,7 @@ export async function buildHealthExerciseCard(data: HealthConnectSnapshot): Prom
   return shell(data, 'EXERCISE', 'Recorded workouts · most recent first', [
     row([metric('Workouts received', amount(data.stats.workouts ?? 0)), metric('Recorded active time', duration(data.stats.totalExerciseSeconds ?? 0))], { marginBottom: 12 }),
     ...(entries.length ? entries.map((entry) => row([
-      text(entry.activityAt ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(entry.activityAt)) : '—', { width: 82, fontSize: 10, color: C.dim }),
+      text(entry.activityAt ? dateFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(entry.activityAt)) : '—', { width: 82, fontSize: 10, color: C.dim }),
       row([
         text(truncate(entry.title, 33), { fontSize: 11 }),
         row([h('div', { style: { display: 'flex', height: 3, width: `${(Number(entry.extra.durationMinutes) || 0) / maxMinutes * 100}%`, backgroundColor: C.teal, borderRadius: 2 } })], { width: 318, marginTop: 4, backgroundColor: C.panel }),

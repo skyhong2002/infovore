@@ -30,3 +30,13 @@ export function taipeiWindowStarts(now: Date): TaipeiWindowStarts {
     year: new Date(Date.UTC(year, 0, 1) - TAIPEI_OFFSET_MS),
   };
 }
+
+// Intl formatters are costly to build and pages format hundreds of dates, so
+// keep one per locale and option set.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+export function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}\u001f${JSON.stringify(options)}`;
+  let formatter = formatters.get(key);
+  if (!formatter) formatters.set(key, formatter = new Intl.DateTimeFormat(locale, options));
+  return formatter;
+}

@@ -1,16 +1,17 @@
 import { sleepAxis, sleepHour } from '../health/sleep.js';
 import type { HealthConnectExtra, SleepSession, SleepStage } from '../health/types.js';
 import { html, timeAmount } from './pages.js';
+import { dateFormat } from '../data/time.js';
 
 const stages: Array<{ key: SleepStage; label: string }> = [
   { key: 'deep', label: '深睡' }, { key: 'light', label: '淺睡' },
   { key: 'rem', label: 'REM' }, { key: 'awake', label: '清醒' },
   { key: 'asleep', label: '睡眠（未分期）' }, { key: 'unknown', label: '未提供階段' },
 ];
-const clock = (timestamp: string) => new Intl.DateTimeFormat('en-GB', {
+const clock = (timestamp: string) => dateFormat('en-GB', {
   timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 }).format(new Date(timestamp));
-const calendar = (timestamp: string) => new Intl.DateTimeFormat('zh-TW', {
+const calendar = (timestamp: string) => dateFormat('zh-TW', {
   timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric',
 }).format(new Date(timestamp));
 const duration = (seconds: number) => {

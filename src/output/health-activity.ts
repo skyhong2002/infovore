@@ -1,7 +1,8 @@
 import type { Activity } from '../data/types.js';
+import { dateFormat } from '../data/time.js';
 
 export function healthActivityMeta(activity: Activity): string {
-  const clock = (value: unknown) => typeof value === 'string' ? new Intl.DateTimeFormat('en-GB', {
+  const clock = (value: unknown) => typeof value === 'string' ? dateFormat('en-GB', {
     timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).format(new Date(value)) : '';
   const span = (seconds: unknown) => {

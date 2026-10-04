@@ -4,7 +4,7 @@ import type { PlatformOverview } from './overview.js';
 import { recordedCoverage, type CoverageDay } from '../data/coverage.js';
 import type { TimeSpentSummary, TimeWindows } from '../data/database.js';
 import { dayflowDay, type DayflowSnapshot } from '../dayflow/types.js';
-import { taipeiDay } from '../data/time.js';
+import { taipeiDay, dateFormat } from '../data/time.js';
 import type { Activity } from '../data/types.js';
 import { html, shell, sourceLabel, timeAmount } from './pages.js';
 import { healthActivityMeta } from './health-activity.js';
@@ -112,11 +112,11 @@ function formatDate(activity: Activity): { date: string; time: string; datetime:
   if (activity.occurredAtPrecision === 'label') return { date: raw, time: '', datetime: '' };
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return { date: raw, time: '', datetime: '' };
-  const date = new Intl.DateTimeFormat('en', {
+  const date = dateFormat('en', {
     timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric',
   }).format(parsed);
   const time = activity.occurredAtPrecision === 'exact'
-    ? new Intl.DateTimeFormat('en', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(parsed)
+    ? dateFormat('en', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(parsed)
     : '';
   return { date, time, datetime: parsed.toISOString() };
 }
@@ -126,7 +126,7 @@ function formatDate(activity: Activity): { date: string; time: string; datetime:
 function computaiMeta(activity: Activity): string {
   const e = activity.extra as Partial<WorkBlock>;
   if (!e.start || !e.end) return 'Claude Code and Codex · every machine';
-  const clock = (iso: string) => new Intl.DateTimeFormat('en', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+  const clock = (iso: string) => dateFormat('en', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
   return [`${clock(e.start)}–${clock(e.end)}`, `${e.sessions} session${e.sessions === 1 ? '' : 's'}`,
     (e.sources ?? []).map(agentName).join(', '), (e.projects ?? []).slice(0, 3).join(', ')].filter(Boolean).join(' · ');
 }

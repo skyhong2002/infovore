@@ -7,6 +7,7 @@ import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 import type { HealthConnectExtra, HealthDailySummary } from '../health/types.js';
 import { html, shell, timeAmount } from './pages.js';
 import { sleepSection } from './sleep.js';
+import { dateFormat } from '../data/time.js';
 
 export interface PlatformDefinition {
   source: string;
@@ -95,7 +96,7 @@ function label(value: string): string {
 function date(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat('en', {
+  return dateFormat('en', {
     timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric',
   }).format(parsed);
 }

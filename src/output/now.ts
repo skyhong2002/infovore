@@ -1,6 +1,7 @@
 import type { Activity } from '../data/types.js';
 import { h, renderCard, textFont, timeAgo, toDataUri, truncate } from './render.js';
 import { sourceLabel } from './pages.js';
+import { dateFormat } from '../data/time.js';
 
 // A cross-source "present view" card: what is in progress, what is coming up,
 // and the latest item from each platform. Reads only public Activity rows,
@@ -16,8 +17,8 @@ const C = { bg: '#18191f', panel: '#22242b', line: '#2c2e36', text: '#f4f5f7', d
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'flex', fontFamily: textFont(value, 'Inter'), ...style } }, value);
 
-const taipeiDate = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Taipei', month: 'short', day: 'numeric' });
-const taipeiClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const taipeiDate = dateFormat('en', { timeZone: 'Asia/Taipei', month: 'short', day: 'numeric' });
+const taipeiClock = dateFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 // Kitsu reports both anime and manga as `current`; say what the medium implies.
 function statusLabel(activity: Activity): string {
