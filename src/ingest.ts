@@ -1,5 +1,6 @@
 import { bodyLimit } from 'hono/body-limit';
 import { dayflowBatchSchema } from './dayflow/types.js';
+import { computaiReportSchema } from './computai/types.js';
 import { timingSafeEqual } from 'node:crypto';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -33,6 +34,20 @@ export function createIngestApp(repository: Repository): Hono {
       return c.json({ ok: true, ...repository.dayflow.ingest(batch) });
     } catch {
       return c.json({ error: 'Invalid Dayflow day batch' }, 400);
+    }
+  });
+  app.use('/api/ingest/computai/*', async (c, next) => {
+    if (!config.computai.token) return c.json({ error: 'ComputAI ingestion is not configured' }, 503);
+    if (!authorized(c.req.header('authorization'), config.computai.token)) return c.json({ error: 'Unauthorized' }, 401);
+    await next();
+  });
+  app.get('/api/ingest/computai/status', (c) => c.json({ status: 'ready', ...repository.computai.status() }));
+  app.post('/api/ingest/computai/reports', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    try {
+      const report = computaiReportSchema.parse(await c.req.json());
+      return c.json({ ok: true, ...repository.computai.ingest(report) });
+    } catch {
+      return c.json({ error: 'Invalid ComputAI report' }, 400);
     }
   });
   app.post('/api/ingest/events', async (c) => {

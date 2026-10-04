@@ -4,6 +4,7 @@ import { buildCloudTerms, buildWordCloudCard, type CloudEntry } from './output/c
 import { dayflowCloudTerms } from './dayflow/pools.js';
 import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
+import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js';
 import { dayflowDay, type DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
 import { recordedShare } from './data/coverage.js';
@@ -86,6 +87,8 @@ const cards: Record<string, CardDefinition> = {
   'health-sleep-stages': defineCard('health', buildHealthSleepStagesCard),
   'health-exercise': defineCard('health', buildHealthExerciseCard),
   'health-steps': defineCard('health', buildHealthStepsCard),
+  'ai-agents': defineCard('computai', buildAiAgentsCard),
+  'ai-agents-light': defineCard('computai', buildAiAgentsLightCard),
 };
 
 const repository = new Repository(config.databasePath);
@@ -185,6 +188,30 @@ app.use('*', async (c, next) => {
         })();
         try { await dayflowRender; } finally { dayflowRender = null; }
       }
+    }
+  }
+  await next();
+});
+
+// ComputAI pushes one rolling 30-day report from the Mac; re-render its cards
+// only when a newer report arrives.
+const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
+let computaiRevision = -1;
+let computaiRender: Promise<void> | null = null;
+app.use('*', async (c, next) => {
+  if (computaiEnabled && c.req.method === 'GET') {
+    if (computaiRender) await computaiRender;
+    const status = repository.computai.status();
+    if (status.revision !== computaiRevision) {
+      computaiRender = (async () => {
+        const snapshot = repository.computai.snapshot(config.ownerName);
+        restoreCache('data:computai', snapshot, status.lastSyncedAt ? Date.parse(status.lastSyncedAt) : 0);
+        const rendered = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === 'computai')
+          .map(async ([name, card]) => [name, await card.build(snapshot)] as const));
+        for (const [name, svg] of rendered) setCache(`svg:${name}`, svg);
+        computaiRevision = status.revision;
+      })();
+      try { await computaiRender; } finally { computaiRender = null; }
     }
   }
   await next();
@@ -398,6 +425,8 @@ function lastUpdatedLabel(): string | null {
   if (healthSyncedAt) timestamps.push(Date.parse(healthSyncedAt));
   const dayflowSyncedAt = dayflowEnabled ? repository.dayflow.status().lastSyncedAt : null;
   if (dayflowSyncedAt) timestamps.push(Date.parse(dayflowSyncedAt));
+  const computaiSyncedAt = computaiEnabled ? repository.computai.status().lastSyncedAt : null;
+  if (computaiSyncedAt) timestamps.push(Date.parse(computaiSyncedAt));
   return timestamps.length ? formatGmt8(Math.max(...timestamps)) : null;
 }
 
@@ -528,7 +557,8 @@ app.get('/cards', (c) => {
   const nowCard = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/now">Right now</a></h2><span>In progress, up next, and the latest item from each platform</span></div><div class="card-gallery-row"><a href="/card/now.svg?v=${version('now')}"><img src="/card/now.webp?v=${version('now')}" alt="Right now · in-progress media, upcoming events and latest activity" width="520" loading="lazy"></a></div><p><a href="/card/now.svg">SVG</a> · <a href="/card/now.png">PNG</a> · <a href="/card/now.webp">WebP</a></p></section>`;
   const wordCloud = `<section class="card-gallery-section" id="word-cloud"><div class="card-gallery-title"><h2><a href="/profile">Word cloud</a></h2><span>Artists, games, channels, films and more from the last ${WORD_CLOUD_DAYS} days, sized by attention</span></div><div class="card-gallery-row"><a href="/card/word-cloud.svg?v=${version('word-cloud')}"><img src="/card/word-cloud.webp?v=${version('word-cloud')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud.svg">SVG</a> · <a href="/card/word-cloud.png">PNG</a> · <a href="/card/word-cloud.webp">WebP</a></p></section>`
     + `<section class="card-gallery-section" id="word-cloud-plain"><div class="card-gallery-title"><h2><a href="/profile">Word cloud, words only</a></h2><span>The same ${WORD_CLOUD_DAYS} days without the frame, for embedding</span></div><div class="card-gallery-row"><a href="/card/word-cloud-plain.svg?v=${version('word-cloud-plain')}"><img src="/card/word-cloud-plain.webp?v=${version('word-cloud-plain')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days, words only" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud-plain.svg">SVG</a> · <a href="/card/word-cloud-plain.png">PNG</a> · <a href="/card/word-cloud-plain.webp">WebP</a></p></section>`;
-  const body = nowCard + wordCloud + rhythm + sections
+  const aiAgents = computaiEnabled ? `<section class="card-gallery-section" id="ai-agents"><div class="card-gallery-title"><h2>AI agents</h2><span>Tokens, agent hours and models over the last 30 days, reported by ComputAI · dark and light</span></div><div class="card-gallery-row">${['ai-agents', 'ai-agents-light'].map((n) => `<a href="/card/${n}.svg?v=${version(n)}"><img src="/card/${n}.webp?v=${version(n)}" alt="AI agents · tokens, agent hours and models over the last 30 days" width="520" loading="lazy"></a>`).join('\n')}</div><p><a href="/card/ai-agents.svg">SVG</a> · <a href="/card/ai-agents-light.svg">light SVG</a> · <a href="/card/ai-agents.png">PNG</a> · <a href="/card/ai-agents.webp">WebP</a></p></section>` : '';
+  const body = nowCard + wordCloud + rhythm + aiAgents + sections
     .map((s) => {
       const externalUrl = s.url ?? '#';
       // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,
@@ -568,6 +598,7 @@ app.get('/status', (c) => {
     sources.push({ source: 'health', lastFetched: status.lastSyncedAt, error: null, json: '/api/health.json' });
   }
   if (dayflowEnabled) sources.push({ source: 'dayflow', lastFetched: repository.dayflow.status().lastSyncedAt, error: null, json: '/api/dayflow.json' });
+  if (computaiEnabled) sources.push({ source: 'computai', lastFetched: repository.computai.status().lastSyncedAt, error: null, json: '/api/computai.json' });
   return c.json({
     owner: config.ownerName,
     refresh: {
@@ -575,7 +606,7 @@ app.get('/status', (c) => {
       nextScheduledAt: new Date(nextRunAt()).toISOString(),
     },
     database: { activities: repository.countPublicActivities(), latestRuns: repository.latestRuns() },
-    cards: sections.flatMap((s) => s.cards ?? []).map((n) => `/card/${n}.svg`),
+    cards: [...sections.flatMap((s) => s.cards ?? []), ...(computaiEnabled ? ['ai-agents', 'ai-agents-light'] : [])].map((n) => `/card/${n}.svg`),
     sources,
   });
 });
@@ -777,6 +808,11 @@ app.get('/healthz', (c) => {
     const synced = repository.dayflow.status().lastSyncedAt;
     const ageMs = synced ? now - Date.parse(synced) : null;
     sources.push({ source: 'dayflow', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+  }
+  if (computaiEnabled) {
+    const synced = repository.computai.status().lastSyncedAt;
+    const ageMs = synced ? now - Date.parse(synced) : null;
+    sources.push({ source: 'computai', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
   }
   const freshCount = sources.filter((source) => source.fresh).length;
   const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';

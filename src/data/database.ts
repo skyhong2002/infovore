@@ -1,5 +1,6 @@
 import { recordedCoverage, type RecordedInterval } from './coverage.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
+import { ComputaiStore, migrateComputai } from '../computai/store.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -206,6 +207,7 @@ function ledgerLifetimeSeconds(snapshot: SourceSnapshot<unknown>): number | null
 export class Repository {
   private readonly db: DatabaseSync;
   readonly dayflow: DayflowStore;
+  readonly computai: ComputaiStore;
 
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -213,6 +215,7 @@ export class Repository {
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.migrate();
     this.dayflow = new DayflowStore(this.db);
+    this.computai = new ComputaiStore(this.db);
   }
 
   close(): void { this.db.close(); }
@@ -288,6 +291,8 @@ export class Repository {
     if (afterDayflow.user_version < 11) this.migrateHealthOriginIndex();
     const afterHealthOriginIndex = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterHealthOriginIndex.user_version < 12) this.migrateYoutubeWatchIntervals();
+    const afterWatchIntervals = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterWatchIntervals.user_version < 13) migrateComputai(this.db);
   }
 
   // Clock intervals from urtube's private feed, kept to what coverage needs:

@@ -70,6 +70,7 @@ change.
 | Service | Method |
 |---|---|
 | Dayflow | macOS companion reads bundled MCP and pushes daily snapshots |
+| [ComputAI](https://github.com/Sean-Hawks/computai) | macOS companion pushes a rolling 30-day report of AI agent usage (aggregates only) |
 | [Backloggd](https://backloggd.com/u/skychopath/) | HTML scrape (no public API) |
 | [Kitsu](https://kitsu.app/users/skyhong2002) | Official JSON:API |
 | [stats.fm](https://stats.fm/skyhong2002) | Public API |
@@ -79,9 +80,9 @@ change.
 
 ## Cards
 
-Twenty-four cards in total — cross-source, combined and single-medium variants:
+Twenty-six cards in total — cross-source, combined and single-medium variants:
 `now` (in-progress media, upcoming events and the latest item from each platform — the one to embed in a profile README), `activity-rhythm` (seven days of recording coverage),
-`dayflow` / `dayflow-keywords` / `dayflow-categories` (computer time, keywords and categories), `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
+`dayflow` / `dayflow-keywords` / `dayflow-categories` (computer time, keywords and categories), `ai-agents` / `ai-agents-light` (a plain 30-day summary of AI agent tokens, hours and models, in GitHub's dark and light palettes), `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
 `simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
 `youtube` / `youtube-channels` / `youtube-topics`,
@@ -114,6 +115,7 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `POST /api/ingest/events` — authenticated private-ingest service (JSON)
 - `GET /api/ingest/health-connect/status` — authenticated Android sync status
 - `POST /api/ingest/health-connect` — authenticated private Health Connect batches
+- `POST /api/ingest/computai/reports` — authenticated ComputAI 30-day report
 - `POST /mcp` — stateless MCP Streamable HTTP endpoint
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
 
@@ -128,6 +130,17 @@ in the background. `/platforms/dayflow`, `/card/dayflow.*`, Home, Now, and
 The keyword card separates general recent terms from topics that stand out
 against the preceding 90 days. Full activity text and raw app lists stay private. Computer time is separate from media totals to avoid overlap.
 Set a dedicated `DAYFLOW_TOKEN`; see [setup and sync semantics](scripts/DAYFLOW.md).
+
+## macOS ComputAI sync
+
+[ComputAI](https://github.com/Sean-Hawks/computai) tracks Claude Code and Codex
+usage across several machines. A small companion pushes its rolling 30-day
+report every hour: tokens, agent hours, peak parallel sessions, prompt-cache
+share, model shares and tokens per day. Spend, plan value, rank and badges stay
+on the Mac, and the ingest schema drops any field it does not know. The report
+feeds `/card/ai-agents.*` (dark) and `/card/ai-agents-light.*`, meant to be paired
+with `<picture>` in a GitHub profile README.
+Set a dedicated `COMPUTAI_TOKEN`; see [setup](scripts/COMPUTAI.md).
 
 ## Android Health Connect sync
 

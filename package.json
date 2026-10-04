@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test DAYFLOW_TOKEN=test-dayflow-token-with-at-least-32-characters DATABASE_PATH=:memory: INGEST_TOKEN=test-token-with-at-least-32-characters PUBLIC_BASE_URL=http://localhost:3000 node --import tsx --test tests/**/*.test.*",
+    "test": "NODE_ENV=test DAYFLOW_TOKEN=test-dayflow-token-with-at-least-32-characters COMPUTAI_TOKEN=test-computai-token-with-at-least-32-characters DATABASE_PATH=:memory: INGEST_TOKEN=test-token-with-at-least-32-characters PUBLIC_BASE_URL=http://localhost:3000 node --import tsx --test tests/**/*.test.*",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
