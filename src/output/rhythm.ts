@@ -27,9 +27,13 @@ export function buildRhythmCard(owner: string, days: CoverageDay[]): Promise<str
   const total = days.reduce((sum, day) => sum + day.recordedSeconds, 0);
   return renderCard(row([
     row([text('INFOVORE', { color: '#a8c7fa', fontSize: 10, fontWeight: 700, letterSpacing: 2 }), text(truncate(owner, 32), { color: '#92949c', fontSize: 11 })], { justifyContent: 'space-between' }),
-    text('Activity rhythm', { fontSize: 30, fontWeight: 700, marginTop: 14 }),
-    text(`${days.at(-1)?.day ?? ''} — ${days[0]?.day ?? ''} · Taipei`, { fontSize: 11, color: '#92949c', marginTop: 7 }),
-    row([text(timeAmount(total), { fontSize: 35, fontWeight: 700 }), text('recorded / 168h', { fontSize: 12, color: '#92949c', marginLeft: 12, marginBottom: 4 })], { alignItems: 'flex-end', marginTop: 18 }),
+    row([
+      row([
+        text('Activity rhythm', { fontSize: 30, fontWeight: 700 }),
+        text(`${days.at(-1)?.day ?? ''} — ${days[0]?.day ?? ''} · Taipei`, { fontSize: 11, color: '#92949c', marginTop: 7 }),
+      ], { flexDirection: 'column' }),
+      row([text(timeAmount(total), { fontSize: 30, fontWeight: 700 }), text('recorded / 168h', { fontSize: 11, color: '#92949c', marginTop: 7 })], { flexDirection: 'column', alignItems: 'flex-end' }),
+    ], { justifyContent: 'space-between', marginTop: 14 }),
     row([0, 6, 12, 18, 24].map(hour => text(hour === 24 ? '24h' : String(hour).padStart(2, '0'), { fontSize: 10, color: '#92949c' })), { justifyContent: 'space-between', marginTop: 20, marginBottom: 2 }),
     ...days.map(day => row([
       row([text(day.day.slice(5), { fontSize: 11, color: '#b8bbc4' }), text(`${timeAmount(day.recordedSeconds)} / 24h`, { fontSize: 11, color: '#b8bbc4' })], { justifyContent: 'space-between', marginBottom: 6 }),
@@ -44,7 +48,5 @@ export function buildRhythmCard(owner: string, days: CoverageDay[]): Promise<str
     row([...Object.values(coverageSources), { label: 'Unrecorded', color: '#3a3c44' }].map(source => row([
       h('div', { style: { display: 'flex', width: 7, height: 7, backgroundColor: source.color, marginRight: 4 } }), text(source.label, { fontSize: 10, color: '#b8bbc4' }),
     ], { alignItems: 'center' })), { gap: 12, marginTop: 18 }),
-    text('Overlaps counted once · Today is still in progress', { color: '#92949c', fontSize: 10, marginTop: 14 }),
-    text('Dayflow active only · Sleep sessions · Music duration · YouTube watch time · AI agent work', { color: '#92949c', fontSize: 10, marginTop: 5 }),
   ], { width: 520, height: '100%', flexDirection: 'column', padding: 24, backgroundColor: '#18191f', color: '#f4f5f7', fontFamily: 'Inter' }), 520, 720);
 }
