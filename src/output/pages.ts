@@ -1,6 +1,7 @@
 import type { Activity } from '../data/types.js';
 import type { ActivityPage, WrappedSummary } from '../data/database.js';
 import { config } from '../config.js';
+import { PLAYING_WINDOW_DAYS, STALE_AFTER_DAYS } from '../data/status.js';
 import { healthActivityMeta } from './health-activity.js';
 import { baseStyles } from './styles.js';
 import { createHash } from 'node:crypto';
@@ -119,7 +120,22 @@ export function sourceLabel(source: string): string {
   return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', goodreads: 'Goodreads', youtube: 'YouTube', health: 'Health', dayflow: 'Dayflow', computai: 'ComputAI', events: 'Manual' } as Record<string, string>)[source] ?? source;
 }
 
-function activityCard(activity: Activity): string {
+// Coarse relative age for the present view: "today", "12 days ago", "4 months ago".
+export function relativeAge(iso: string | null, now = new Date()): string {
+  const parsed = Date.parse(iso ?? '');
+  if (!Number.isFinite(parsed)) return '';
+  const days = Math.floor((now.getTime() - parsed) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  if (days < 365) { const months = Math.round(days / 30); return `${months} ${months === 1 ? 'month' : 'months'} ago`; }
+  const years = Math.round(days / 365);
+  return `${years} ${years === 1 ? 'year' : 'years'} ago`;
+}
+
+type CardContext = 'current' | 'paused' | 'queued' | undefined;
+
+function activityCard(activity: Activity, context?: CardContext, now = new Date()): string {
   const when = activity.occurredAt ?? activity.firstSeenAt;
   if (activity.source === 'health') {
     const date = dateFormat('en', { timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(when));
@@ -131,8 +147,17 @@ function activityCard(activity: Activity): string {
   const date = /^\d{4}-\d{2}-\d{2}/.test(when)
     ? dateFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(when))
     : when;
-  const meta = [activity.source, activity.status, activity.extra.venue, date].filter(Boolean).join(' · ');
-  return `<article class="card entry" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted">${html(meta)}</div></div></article>`;
+  const progress = activity.extra.watchedEpisodes != null && activity.extra.totalEpisodes
+    ? `${activity.extra.watchedEpisodes}/${activity.extra.totalEpisodes} ep`
+    : activity.extra.progress ? `progress ${activity.extra.progress}` : '';
+  const next = activity.extra.nextToWatch ? `next ${activity.extra.nextToWatch}` : '';
+  const age = relativeAge(when, now);
+  const meta = context === 'current' || context === 'paused'
+    ? [sourceLabel(activity.source), progress, next, age ? `last progress ${age}` : date].filter(Boolean).join(' · ')
+    : context === 'queued'
+      ? [sourceLabel(activity.source), activity.extra.author ? `by ${activity.extra.author}` : '', age ? `added ${age}` : ''].filter(Boolean).join(' · ')
+      : [activity.source, activity.status, activity.extra.venue, date].filter(Boolean).join(' · ');
+  return `<article class="card entry${context ? ` entry-${context}` : ''}" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted">${html(meta)}</div></div></article>`;
 }
 
 
@@ -163,7 +188,7 @@ export function searchPage(ownerName: string, filters: SearchFilters, page: Acti
   const kindChips = kinds.length ? `<div class="search-filters" aria-label="Filter by kind"><a href="${params({ kind: '', offset: 0 })}"${filters.kind ? '' : ' aria-current="true"'}>All kinds</a>${kinds.map((kind) =>
     `<a href="${params({ kind, offset: 0 })}"${filters.kind === kind ? ' aria-current="true"' : ''}>${html(kind)}</a>`).join('')}</div>` : '';
   const results = page.data.length
-    ? `<div class="grid">${page.data.map(activityCard).join('')}</div>`
+    ? `<div class="grid">${page.data.map((activity) => activityCard(activity)).join('')}</div>`
     : `<div class="empty">${active ? 'Nothing matched. Try a shorter word, or clear a filter.' : 'Type something above, or pick a platform to browse.'}</div>`;
   const previous = page.offset > 0 ? `<a class="button" href="${params({ offset: Math.max(0, page.offset - page.limit) })}">← Newer</a>` : '<span></span>';
   const next = page.offset + page.limit < page.total ? `<a class="button" href="${params({ offset: page.offset + page.limit })}">Older →</a>` : '';
@@ -218,11 +243,28 @@ curl -s '${html(docs.baseUrl)}/api/time-spent.json' | jq '.sources[] | {source, 
   return shell(`${ownerName} · API`, `<div class="api-doc">${intro}${rules}${activities}${time}${mirrors}${cards}${service}${examples}</div>`, 'api');
 }
 
-export function nowPage(ownerName: string, current: Activity[], upcoming: Activity[], recent: Activity[]): string {
-  const section = (title: string, description: string, entries: Activity[]) => `<section class="content-section"><div class="section-heading"><div><h2>${title}</h2><p>${description}</p></div><span>${entries.length} entries</span></div>${entries.length ? `<div class="grid">${entries.map(activityCard).join('')}</div>` : '<div class="empty">Nothing here yet.</div>'}</section>`;
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Present view</div><h1>Now</h1><p>A short-term view of what ${html(ownerName)} is in the middle of, what is coming next, and what just happened.</p></div><div class="page-intro-aside">For the full personal overview, return home.</div></section>
+export interface NowExtras {
+  paused?: Activity[];
+  queued?: Activity[];
+  now?: Date;
+}
+
+export function nowPage(ownerName: string, current: Activity[], upcoming: Activity[], recent: Activity[], extras: NowExtras = {}): string {
+  const now = extras.now ?? new Date();
+  const paused = extras.paused ?? [];
+  const queued = extras.queued ?? [];
+  const section = (title: string, description: string, entries: Activity[], context?: CardContext, trailer = '') => `<section class="content-section"><div class="section-heading"><div><h2>${title}</h2><p>${description}</p></div><span>${entries.length} entries</span></div>${entries.length ? `<div class="grid">${entries.map((activity) => activityCard(activity, context, now)).join('')}</div>` : '<div class="empty">Nothing here yet.</div>'}${trailer}</section>`;
+  const pausedBlock = paused.length
+    ? `<details class="paused" id="paused"><summary class="details-toggle">Paused · ${paused.length} ${paused.length === 1 ? 'title' : 'titles'} still marked in progress but untouched for over ${STALE_AFTER_DAYS} days</summary><div class="grid">${paused.map((activity) => activityCard(activity, 'paused', now)).join('')}</div></details>`
+    : '';
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Present view</div><h1>Now</h1><p>A short-term view of what ${html(ownerName)} is in the middle of, what is lined up next, and what just happened.</p></div><div class="page-intro-aside">In progress means touched within the last ${STALE_AFTER_DAYS} days; games count as playing for ${PLAYING_WINDOW_DAYS} days after a session.</div></section>
     <div class="context-line"><a href="/">Home</a><span>→</span><strong>Now</strong><span>→</span><a href="/profile">Long-term archive</a></div>`;
-  return shell(`${ownerName} · now`, intro + section('Currently', 'Media with an active reading, watching, or playing status.', current) + section('Upcoming events', 'Ticketed and planned real-world activities.', upcoming) + section('Just happened', 'Recent media, sleep, exercise and daily steps. High-frequency sources are sampled.', recent), 'now');
+  return shell(`${ownerName} · now`, intro
+    + section('In progress', 'Playing, watching and reading right now, newest progress first.', current, 'current', pausedBlock)
+    + section('Up next', 'Watchlists, planned anime and manga, and the to-read shelf, newest additions first.', queued, 'queued')
+    + section('Upcoming events', 'Ticketed and planned real-world activities.', upcoming)
+    + section('Just happened', 'Recent media, sleep, exercise and daily steps. High-frequency sources are sampled.', recent), 'now',
+    '.paused{margin-top:14px}.paused>.details-toggle{border:1px solid var(--line);border-radius:var(--radius-sm);border-top:1px solid var(--line)}.paused[open]>.details-toggle{border-radius:var(--radius-sm) var(--radius-sm) 0 0}.paused>.grid{border:1px solid var(--line);border-top:0;border-radius:0 0 var(--radius-sm) var(--radius-sm);padding:12px}.entry-paused{opacity:.75}');
 }
 
 export function profilePage(ownerName: string, total: number, bySource: Record<string, number>, latest: Activity[]): string {
@@ -233,7 +275,7 @@ export function profilePage(ownerName: string, total: number, bySource: Record<s
     <div class="archive-actions"><a class="archive-action" href="/platforms"><strong>Browse by platform →</strong><span>Open the source-specific mirrors behind these totals.</span></a>
     <a class="archive-action" href="/wrapped/${year}"><strong>Open ${year} Wrapped →</strong><span>Turn the year's activity into a compact retrospective.</span></a></div>`;
   const overview = `<section><div class="section-heading"><div><div class="eyebrow">Coverage</div><h2>Activity by source</h2></div><span>${Object.keys(bySource).length} active sources</span></div><div class="metric-grid"><div class="metric-card"><span class="pill">All sources</span><span class="count">${total}</span></div>${stats}</div></section>`;
-  const latestSection = `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Archive edge</div><h2>Latest additions</h2></div><a href="/">Back to the infoboard →</a></div><div class="grid">${latest.map(activityCard).join('')}</div></section>`;
+  const latestSection = `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Archive edge</div><h2>Latest additions</h2></div><a href="/">Back to the infoboard →</a></div><div class="grid">${latest.map((activity) => activityCard(activity)).join('')}</div></section>`;
   return shell(`${ownerName} · archive`, intro + overview + latestSection, 'profile');
 }
 

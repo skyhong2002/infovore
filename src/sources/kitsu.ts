@@ -27,7 +27,8 @@ export function parseKitsuEntries(doc: any, kind: 'anime' | 'manga'): MediaEntry
       title: attrs.titles?.en || attrs.canonicalTitle || 'Unknown',
       image: attrs.posterImage?.small ?? '',
       status: entry.attributes?.status ?? '',
-      activityAt: entry.attributes?.progressedAt ?? '',
+      // Planned entries have no progress yet; date them from when they were added.
+      activityAt: entry.attributes?.progressedAt ?? entry.attributes?.createdAt ?? '',
       rating: ratingTwenty ? { value: ratingTwenty / 2, scale: 10 } : null,
       extra: { progress: entry.attributes?.progress ?? 0 },
     };
@@ -37,7 +38,7 @@ export function parseKitsuEntries(doc: any, kind: 'anime' | 'manga'): MediaEntry
 export async function fetchKitsu(): Promise<SourceSnapshot> {
   const { userId, slug } = config.kitsu;
 
-  const [userDoc, statsDoc, animeDoc, mangaDoc] = await Promise.all([
+  const [userDoc, statsDoc, animeDoc, mangaDoc, plannedAnimeDoc, plannedMangaDoc] = await Promise.all([
     getJson(`${API}/users/${userId}`),
     getJson(`${API}/users/${userId}/stats`),
     getJson(
@@ -45,6 +46,12 @@ export async function fetchKitsu(): Promise<SourceSnapshot> {
     ),
     getJson(
       `${API}/library-entries?filter[userId]=${userId}&filter[kind]=manga&filter[status]=current,completed,on_hold,dropped&page[limit]=10&sort=-progressedAt&include=manga`
+    ),
+    getJson(
+      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=anime&filter[status]=planned&page[limit]=10&sort=-createdAt&include=anime`
+    ),
+    getJson(
+      `${API}/library-entries?filter[userId]=${userId}&filter[kind]=manga&filter[status]=planned&page[limit]=10&sort=-createdAt&include=manga`
     ),
   ]);
 
@@ -73,7 +80,7 @@ export async function fetchKitsu(): Promise<SourceSnapshot> {
       // Raw lifetime seconds for the time ledger; hidden from stat tiles.
       animeSeconds: anime.time ?? 0,
     },
-    entries: [...parseKitsuEntries(animeDoc, 'anime'), ...parseKitsuEntries(mangaDoc, 'manga')],
+    entries: [...parseKitsuEntries(animeDoc, 'anime'), ...parseKitsuEntries(mangaDoc, 'manga'), ...parseKitsuEntries(plannedAnimeDoc, 'anime'), ...parseKitsuEntries(plannedMangaDoc, 'manga')],
     extra: {},
   };
 }

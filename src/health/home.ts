@@ -1,4 +1,5 @@
 import { activityFromEntry } from '../data/activity.js';
+import { isQueued } from '../data/status.js';
 import { taipeiDay, taipeiWindowStarts } from '../data/time.js';
 import type { Activity } from '../data/types.js';
 import type { TimeWindows } from '../data/database.js';
@@ -35,7 +36,7 @@ export function dashboardActivities(media: Activity[], health: HealthConnectSnap
   const items = [...media.filter((activity) => activity.source !== 'health'), ...(health ? healthHomepageActivities(health) : [])];
   const seen = new Set<string>();
   return items.filter((activity) => {
-    if (activity.visibility !== 'public' || seen.has(activity.id)) return false;
+    if (activity.visibility !== 'public' || seen.has(activity.id) || isQueued(activity.status)) return false;
     seen.add(activity.id);
     if (!activity.occurredAt) return true;
     if (activity.occurredAtPrecision === 'day') return taipeiDay(activity.occurredAt) <= taipeiDay(now);

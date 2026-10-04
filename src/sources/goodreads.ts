@@ -25,11 +25,12 @@ function field(item: string, tag: string): string {
   return m ? m[1].trim() : '';
 }
 
-export function parseGoodreadsRss(xml: string, limit: number, status: 'reading' | 'read'): MediaEntry[] {
+export function parseGoodreadsRss(xml: string, limit: number, status: 'reading' | 'read' | 'to-read'): MediaEntry[] {
   const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
   return items.slice(0, limit).map((it) => {
     const rating = Number(field(it, 'user_rating'));
-    const readAt = field(it, 'user_read_at') || field(it, 'pubDate');
+    // A queued book is dated from when it was shelved, not read.
+    const readAt = status === 'to-read' ? (field(it, 'user_date_added') || field(it, 'pubDate')) : (field(it, 'user_read_at') || field(it, 'pubDate'));
     const pages = Number(field(it, 'num_pages'));
     const extra: MediaEntry['extra'] = { author: field(it, 'author_name') };
     // Page count feeds the reading-time estimate in Repository.timeSpent().
@@ -50,10 +51,11 @@ export function parseGoodreadsRss(xml: string, limit: number, status: 'reading' 
 
 export async function fetchGoodreads(): Promise<SourceSnapshot> {
   const { userId } = config.goodreads;
-  const [profileHtml, readXml, currentXml] = await Promise.all([
+  const [profileHtml, readXml, currentXml, toReadXml] = await Promise.all([
     getText(`https://www.goodreads.com/user/show/${userId}`),
     getText(`https://www.goodreads.com/review/list_rss/${userId}?shelf=read`),
     getText(`https://www.goodreads.com/review/list_rss/${userId}?shelf=currently-reading`),
+    getText(`https://www.goodreads.com/review/list_rss/${userId}?shelf=to-read`),
   ]);
 
   const avatar = profileHtml.match(/<img[^>]*src="(https:\/\/images\.gr-assets\.com\/users\/[^"]+)"/)?.[1] ?? '';
@@ -76,7 +78,7 @@ export async function fetchGoodreads(): Promise<SourceSnapshot> {
       currentlyReadingCount: shelfCount('currently-reading'),
       toReadCount: shelfCount('to-read'),
     },
-    entries: [...parseGoodreadsRss(currentXml, 20, 'reading'), ...parseGoodreadsRss(readXml, 100, 'read')],
+    entries: [...parseGoodreadsRss(currentXml, 20, 'reading'), ...parseGoodreadsRss(readXml, 100, 'read'), ...parseGoodreadsRss(toReadXml, 20, 'to-read')],
     extra: {},
   };
 }

@@ -8,6 +8,7 @@ import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js'
 import type { ComputaiSnapshot } from './computai/types.js';
 import { dayflowDay, type DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
+import { isQueued, selectCurrent, selectQueued } from './data/status.js';
 import { recordedShare } from './data/coverage.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -267,7 +268,7 @@ app.use('*', async (c, next) => {
     if (nowCardRender) await nowCardRender;
     const now = new Date(Math.floor(Date.now() / 60000) * 60000);
     const { activities } = dashboardView(now);
-    const current = currentActivities(activities, 4);
+    const current = selectCurrent(activities, now, 4).current;
     const upcoming = upcomingActivities(now.toISOString(), 3);
     // Health, Dayflow and ComputAI have dedicated cards; keep this one to media and events.
     const recent = latestSourceActivities(activities.filter((a) => !['health', 'dayflow', 'computai'].includes(a.source))).slice(0, 5);
@@ -312,7 +313,7 @@ function currentCloudTerms(): CloudTerm[] {
       extras.push(...repository.healthExerciseSince(since)
         .map((exercise) => ({ source: 'health', kind: 'fitness' as const, label: exercise.title, count: exercise.sessions, seconds: exercise.seconds })));
     }
-    const terms = buildCloudTerms(repository.activitiesSince(since), youtube?.extra.topChannels ?? [], extras);
+    const terms = buildCloudTerms(repository.activitiesSince(since).filter((activity) => !isQueued(activity.status)), youtube?.extra.topChannels ?? [], extras);
     cloudTermsCache = { key: cacheKey, terms };
     return terms;
 }
@@ -707,7 +708,7 @@ app.get('/feed.json', (c) => c.json(repository.queryActivities({ limit: Number(c
 
 app.get('/feed.xml', (c) => {
   c.header('Content-Type', 'application/rss+xml; charset=UTF-8');
-  return c.body(activityRss(repository.listActivities(100), config.publicBaseUrl, config.ownerName));
+  return c.body(activityRss(repository.listActivities(120).filter((activity) => !isQueued(activity.status)).slice(0, 100), config.publicBaseUrl, config.ownerName));
 });
 
 app.get('/profile', (c) => c.html(profilePage(
@@ -730,12 +731,6 @@ function uniqueItems<T extends { source: string; sourceItemId: string | null; ti
   });
 }
 
-function currentActivities(items: ReturnType<Repository['listActivities']>, limit = 12) {
-  return uniqueItems(items).filter((item) =>
-    ['current', 'reading', 'watching', 'playing'].includes(item.status ?? '')
-  ).slice(0, limit);
-}
-
 function upcomingActivities(now: string, limit = 12) {
   return uniqueItems(repository.queryActivities({ kind: 'event', since: now, limit: 100 }).data)
     .sort((a, b) => Date.parse(a.occurredAt ?? '') - Date.parse(b.occurredAt ?? ''))
@@ -754,11 +749,12 @@ function latestSourceActivities(items: ReturnType<Repository['listActivities']>)
 app.get('/now', (c) => {
   const now = new Date();
   const { activities } = dashboardView(now);
-  const current = currentActivities(activities);
+  const { current, paused } = selectCurrent(activities, now);
   const upcoming = upcomingActivities(now.toISOString());
   const recent = selectHomepageActivities(activities, 24);
+  const queued = selectQueued(repository.listActivities(500));
   c.header('Cache-Control', 'no-cache');
-  return c.html(nowPage(config.ownerName, current, upcoming, recent));
+  return c.html(nowPage(config.ownerName, current, upcoming, recent, { paused, queued, now }));
 });
 
 function requestedYear(value: string | undefined): number {

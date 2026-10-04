@@ -718,6 +718,15 @@ export class Repository {
         );
         wasPresent ? updated++ : inserted++;
       }
+      // A source that starts reporting a status re-identifies the same moment
+      // (identity includes status); drop the older untyped twin so the archive
+      // does not list it twice.
+      this.db.prepare(`
+        DELETE FROM activities WHERE source=? AND status IS NULL AND source_item_id IS NOT NULL AND EXISTS (
+          SELECT 1 FROM activities typed WHERE typed.source=activities.source AND typed.source_item_id=activities.source_item_id
+            AND typed.occurred_at IS activities.occurred_at AND typed.status IS NOT NULL
+        )
+      `).run(snapshot.source);
       this.db.prepare(`
         INSERT INTO snapshots(source, payload_json, fetched_at, error, updated_at)
         VALUES (?, ?, ?, NULL, ?)
