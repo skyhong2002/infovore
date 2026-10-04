@@ -68,6 +68,8 @@ async function readLedger(path, from, to) {
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(path, { readOnly: true });
   try {
+    // ComputAI writes with a rollback journal; wait out its writes instead of failing.
+    db.exec('PRAGMA busy_timeout = 30000');
     const machineNames = Object.fromEntries(db.prepare('SELECT id, name FROM devices').all().map((d) => [d.id, d.name]));
     // A day of lead-in so a session that began before `from` keeps its true start.
     const rows = db.prepare(`SELECT source, session, subagent, device, project, ts, requests,
