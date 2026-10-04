@@ -101,8 +101,16 @@ export class ComputaiStore {
   }
 
   // Wall-clock time with any agent working, overlaps counted once, per window.
+  // It scans every segment, so Home reuses it until new segments arrive or the
+  // five-minute bucket moves.
+  private agentTimeCache: { key: string; windows: TimeWindows } | null = null;
   agentTime(now = new Date()): TimeWindows {
-    return recordedSleepWindows(this.segmentsSince('').map((s) => ({ start_at: s.start_at, end_at: s.end_at })), now);
+    const key = `${this.status().revision}:${Math.floor(+now / 300_000)}`;
+    if (this.agentTimeCache?.key !== key) {
+      const rows = this.db.prepare('SELECT start_at, end_at FROM computai_segments').all() as Array<{ start_at: string; end_at: string }>;
+      this.agentTimeCache = { key, windows: recordedSleepWindows(rows, now) };
+    }
+    return this.agentTimeCache.windows;
   }
 
   workBlocks(since: string): WorkBlock[] {
