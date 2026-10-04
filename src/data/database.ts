@@ -1164,6 +1164,17 @@ export class Repository {
     return { days: dayList, sources };
   }
 
+  // Public activities carrying one of the given statuses, newest first,
+  // regardless of how far back they sit in the timeline.
+  activitiesByStatus(statuses: string[], limit = 300): Activity[] {
+    if (!statuses.length) return [];
+    const rows = this.db.prepare(`
+      SELECT * FROM activities WHERE visibility='public' AND status IN (${statuses.map(() => '?').join(',')})
+      ORDER BY occurred_at DESC, first_seen_at DESC LIMIT ?
+    `).all(...statuses, Math.max(1, Math.min(1000, limit))) as Record<string, unknown>[];
+    return rows.map((row) => this.rowToActivity(row));
+  }
+
   // Public activities first collected on or after an instant.
   countNewSince(since: string): number {
     const row = this.db.prepare("SELECT COUNT(*) count FROM activities WHERE visibility='public' AND first_seen_at>=?").get(since) as { count: number };

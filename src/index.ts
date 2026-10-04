@@ -8,7 +8,7 @@ import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js'
 import type { ComputaiSnapshot } from './computai/types.js';
 import { dayflowDay, type DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
-import { isQueued, selectCurrent, selectQueued } from './data/status.js';
+import { IN_PROGRESS_STATUSES, PAUSED_STATUSES, QUEUED_STATUSES, isQueued, selectCurrent, selectQueued } from './data/status.js';
 import { recordedShare } from './data/coverage.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -268,7 +268,7 @@ app.use('*', async (c, next) => {
     if (nowCardRender) await nowCardRender;
     const now = new Date(Math.floor(Date.now() / 60000) * 60000);
     const { activities } = dashboardView(now);
-    const current = selectCurrent(activities, now, 4).current;
+    const current = selectCurrent([...activities, ...presentCandidates()], now, 4).current;
     const upcoming = upcomingActivities(now.toISOString(), 3);
     // Health, Dayflow and ComputAI have dedicated cards; keep this one to media and events.
     const recent = latestSourceActivities(activities.filter((a) => !['health', 'dayflow', 'computai'].includes(a.source))).slice(0, 5);
@@ -731,6 +731,12 @@ function uniqueItems<T extends { source: string; sourceItemId: string | null; ti
   });
 }
 
+// Items still flagged in progress upstream can sit far behind the newest 500
+// timeline rows, so fetch them by status rather than by recency.
+function presentCandidates() {
+  return repository.activitiesByStatus([...IN_PROGRESS_STATUSES, ...PAUSED_STATUSES]);
+}
+
 function upcomingActivities(now: string, limit = 12) {
   return uniqueItems(repository.queryActivities({ kind: 'event', since: now, limit: 100 }).data)
     .sort((a, b) => Date.parse(a.occurredAt ?? '') - Date.parse(b.occurredAt ?? ''))
@@ -749,10 +755,10 @@ function latestSourceActivities(items: ReturnType<Repository['listActivities']>)
 app.get('/now', (c) => {
   const now = new Date();
   const { activities } = dashboardView(now);
-  const { current, paused } = selectCurrent(activities, now);
+  const { current, paused } = selectCurrent([...activities, ...presentCandidates()], now);
   const upcoming = upcomingActivities(now.toISOString());
   const recent = selectHomepageActivities(activities, 24);
-  const queued = selectQueued(repository.listActivities(500));
+  const queued = selectQueued(repository.activitiesByStatus([...QUEUED_STATUSES]));
   c.header('Cache-Control', 'no-cache');
   return c.html(nowPage(config.ownerName, current, upcoming, recent, { paused, queued, now }));
 });

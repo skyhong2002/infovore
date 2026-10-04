@@ -1,4 +1,4 @@
-import { selectCurrent } from './data/status.js';
+import { IN_PROGRESS_STATUSES, PAUSED_STATUSES, selectCurrent } from './data/status.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import * as z from 'zod/v4';
@@ -43,7 +43,7 @@ export function createMcpServer(repository: Repository): McpServer {
 
   server.registerTool('get_current_media', {
     title: 'Current media', description: 'Get items currently being played, watched, or read.', inputSchema: {},
-  }, async () => result(selectCurrent(repository.listActivities(500), new Date(), 50).current));
+  }, async () => result(selectCurrent([...repository.listActivities(500), ...repository.activitiesByStatus([...IN_PROGRESS_STATUSES, ...PAUSED_STATUSES])], new Date(), 50).current));
 
   server.registerTool('get_upcoming_events', {
     title: 'Upcoming events', description: 'Get public upcoming events, without ticket, order, seat, or payment data.',
