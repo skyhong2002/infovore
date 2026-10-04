@@ -17,7 +17,9 @@ Only what `toReport` and `toSegments` in the script build:
   a 12-character hash of the session id, subagent flag, start, end, tokens and
   request count. A segment is consecutive requests in one session less than five
   minutes apart and ends one minute after its last request. Sessions ComputAI
-  pulled from other machines arrive without ids, so those split by project.
+  pulled from other machines carry its session hash from versions with
+  [Sean-Hawks/computai#4](https://github.com/Sean-Hawks/computai/pull/4); older
+  versions drop them, and those split by project instead.
 
 Spend, API-equivalent value, plan value, cache savings, rank, level, badges,
 prompts, full paths and raw session ids are never sent. Project folder names

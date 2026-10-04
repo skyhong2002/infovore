@@ -36,8 +36,9 @@ export function toReport(card, { deviceId, now = new Date() }) {
 
 const safe = (value) => String(value).replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 100) || 'unknown';
 
-// Rows ordered by source, device, session, subagent, project, ts. Sessions from
-// other machines arrive merged by ComputAI, so those split by project instead.
+// Rows ordered by source, device, session, subagent, project, ts. Other machines'
+// sessions arrive as ComputAI's hash, or blank from versions that dropped them;
+// blank ones split by project instead.
 export function toSegments(rows, { machineNames = {}, localMachine }) {
   const segments = [];
   let current = null;
@@ -50,7 +51,7 @@ export function toSegments(rows, { machineNames = {}, localMachine }) {
         source: row.source,
         machine: safe(row.device ? machineNames[row.device] ?? row.device : localMachine),
         project: basename(String(row.project ?? '')).slice(0, 200),
-        session: row.device === '' && row.session ? createHash('sha256').update(String(row.session)).digest('hex').slice(0, 12) : '',
+        session: row.session ? createHash('sha256').update(String(row.session)).digest('hex').slice(0, 12) : '',
         subagent: Boolean(row.subagent),
         start: row.ts, end: row.ts, tokens: 0, requests: 0,
       } };
