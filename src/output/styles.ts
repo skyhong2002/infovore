@@ -229,8 +229,9 @@ const responsive = `
 const widgets = `
 .spark{display:block;overflow:visible}
 .info{align-items:center;background:var(--surface-raised);border:1px solid var(--line-strong);border-radius:50%;color:var(--muted);cursor:help;display:inline-flex;font-family:var(--display);font-size:11px;font-style:italic;height:15px;justify-content:center;line-height:1;margin-left:5px;position:relative;vertical-align:1px;width:15px}
-.info::after{background:var(--text);border-radius:8px;color:var(--bg);content:attr(data-tip);font-family:var(--font);font-size:12px;font-style:normal;font-weight:400;left:50%;letter-spacing:0;line-height:1.45;max-width:min(300px,80vw);opacity:0;padding:8px 10px;pointer-events:none;position:absolute;text-align:left;text-transform:none;top:calc(100% + 8px);transform:translateX(-50%);transition:opacity .12s;white-space:normal;width:max-content;z-index:30}
+.info::after{background:var(--text);border-radius:8px;color:var(--bg);content:attr(data-tip);font-family:var(--font);font-size:12px;font-style:normal;font-weight:400;left:-8px;letter-spacing:0;line-height:1.45;max-width:min(300px,80vw);opacity:0;padding:8px 10px;pointer-events:none;position:absolute;text-align:left;text-transform:none;top:calc(100% + 8px);transition:opacity .12s;white-space:normal;width:max-content;z-index:30}
 .info:hover::after,.info:focus-visible::after{opacity:1}
+.home-metric:has(.info:hover),.home-metric:has(.info:focus-visible),.metric-card:has(.info:hover),.metric-card:has(.info:focus-visible){z-index:31}
 .info:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .delta{border-radius:999px;font-size:11.5px;font-variant-numeric:tabular-nums;font-weight:700;padding:2px 7px;white-space:nowrap}
 .delta.up{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}.delta.down{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}.delta.flat{background:var(--surface-raised);color:var(--quiet)}
