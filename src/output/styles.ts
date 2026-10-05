@@ -186,7 +186,7 @@ const time = `
 .time-strip{align-items:center;display:flex;flex-wrap:wrap;gap:8px;margin:-26px 0 40px}.time-strip .pill{margin-right:2px}
 .time-chip{border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);font-size:12px;padding:5px 11px;text-decoration:none}.time-chip:hover{border-color:var(--quiet);color:var(--text)}.time-chip strong{color:var(--text);margin-left:4px}
 .time-strip-more{color:var(--quiet);font-size:12px;margin-left:auto;text-decoration:none}.time-strip-more:hover{color:var(--text)}
-.time-table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto}
+.time-table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}
 .time-table{border-collapse:collapse;width:100%}
 .time-table th{background:var(--surface-raised);color:var(--quiet);font-size:10.5px;font-weight:700;letter-spacing:.08em;padding:11px 14px;text-align:right;text-transform:uppercase;white-space:nowrap}
 .time-table td{border-top:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums;padding:12px 14px;text-align:right;white-space:nowrap}
@@ -259,6 +259,7 @@ const widgets = `
 .cloud-legend i{border-radius:2px;display:inline-block;height:9px;margin-right:5px;vertical-align:-1px;width:9px}
 th[data-sort]{cursor:pointer;user-select:none}th[data-sort]:hover{color:var(--text)}th[data-sort][aria-sort]::after{content:" ↓";color:var(--accent)}th[data-sort][aria-sort=ascending]::after{content:" ↑"}
 .time-table .spark{margin-left:auto}
+.time-table .info::after{left:calc(100% + 8px);top:50%;transform:translateY(-50%);max-width:260px}
 .search-form{display:flex;gap:8px;margin:0 0 24px}
 .search-form input{background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;color:var(--text);flex:1;font:inherit;font-size:16px;min-width:0;padding:12px 16px}
 .search-form input:focus{border-color:var(--accent);outline:0}
