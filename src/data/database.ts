@@ -1216,6 +1216,20 @@ export class Repository {
     ], false);
   }
 
+  // Health Connect records counted the way the timeline shows them: one per
+  // sleep session, one per workout, one per day with steps (Taipei days).
+  healthActivityCounts(start = '0000', end = '9999'): { sleep: number; workouts: number; stepDays: number } {
+    const row = this.db.prepare(`
+      SELECT
+        COUNT(CASE WHEN data_type='sleep_session' THEN 1 END) sleep,
+        COUNT(CASE WHEN data_type='exercise_session' THEN 1 END) workouts,
+        COUNT(DISTINCT CASE WHEN data_type='steps' THEN date(start_at, '+8 hours') END) step_days
+      FROM (${PREFERRED_HEALTH_RECORDS}) records
+      WHERE data_type IN ('sleep_session', 'exercise_session', 'steps') AND start_at>=? AND start_at<?
+    `).get(start, end) as { sleep: number; workouts: number; step_days: number };
+    return { sleep: Number(row.sleep), workouts: Number(row.workouts), stepDays: Number(row.step_days) };
+  }
+
   // Calendar years that hold any dated public activity, newest first.
   activityYears(): number[] {
     return (this.db.prepare("SELECT DISTINCT substr(occurred_at, 1, 4) year FROM activities WHERE visibility='public' AND occurred_at GLOB '[12][0-9][0-9][0-9]-*' ORDER BY year DESC")

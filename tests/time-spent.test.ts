@@ -320,5 +320,6 @@ test('ComputAI period summary clips to the period and ranks projects by tokens',
   assert.equal(summary.sessions, 3);
   assert.equal(summary.machines, 2);
   assert.equal(summary.activeDays, 2);
+  assert.equal(summary.workBlocks, 2);
   assert.deepEqual(summary.projects.map((project) => project.name), ['urtube', 'infovore']);
 });

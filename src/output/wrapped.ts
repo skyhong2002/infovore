@@ -7,6 +7,7 @@ import { platformColors } from './rhythm.js';
 
 export interface WrappedExtras {
   time?: YearTime | null;
+  ingested?: unknown;
   agents?: AgentPeriod | null;
   // Years with any recorded activity, for the year switcher.
   years?: number[];
@@ -56,7 +57,7 @@ export function wrappedPage(ownerName: string, summary: WrappedSummary, extras: 
   const intro = `<section class="page-intro"><div><div class="eyebrow">Archive · annual view</div><h1>${summary.year} Wrapped</h1><p>A year-sized summary of ${html(ownerName)}'s cross-media activity and recorded time, derived from the same entries as the archive.</p></div><div class="page-intro-aside"><a href="/api/wrapped/${summary.year}.json">JSON</a></div></section>
     <div class="context-line"><a href="/">Home</a><span>→</span><a href="/profile">Archive</a><span>→</span><strong>${summary.year} Wrapped</strong></div>${switcher}`;
   const headline = `<div class="metric-grid">
-    ${stat('Activities', number(summary.totalActivities), summary.firstActivityAt ? `since ${summary.firstActivityAt.slice(5, 10).replace('-', '/')}` : '', 'Dated public entries this year. YouTube counts watches; every stats.fm stream is one entry.')}
+    ${stat('Activities', number(summary.totalActivities), summary.firstActivityAt ? `since ${summary.firstActivityAt.slice(5, 10).replace('-', '/')}` : '', 'Dated public entries this year: every stats.fm stream and YouTube watch is one; Health adds each sleep, workout and day of steps, Dayflow each recorded day, and ComputAI each AI agent work block.')}
     ${time ? stat('Recorded time', hours(time.total + (agents?.seconds ?? 0)), `${(time.sources.length + (agents?.seconds ? 1 : 0))} platforms`, 'Time per platform added up, so overlapping activity on two platforms counts twice.') : ''}
     ${agents?.seconds ? stat('AI agent time', hours(agents.seconds), `${compact(agents.tokens)} tokens`) : ''}
     ${stat('Average rating', summary.averageRating == null ? '—' : String(summary.averageRating), 'out of 10, across rated entries')}

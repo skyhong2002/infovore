@@ -37,6 +37,9 @@ export interface AgentPeriod {
   tokens: number;
   sessions: number;
   activeDays: number;
+  // Work blocks: runs of agent activity split by gaps longer than WORK_BLOCK_GAP_MS,
+  // the same unit the timeline shows as "AI agents" entries.
+  workBlocks: number;
   projects: Array<{ name: string; tokens: number }>;
   agents: Array<{ name: string; tokens: number }>;
   machines: number;
@@ -164,11 +167,18 @@ export class ComputaiStore {
       return [...totals].sort((a, b) => b[1] - a[1]).map(([name, tokens]) => ({ name, tokens }));
     };
     const days = new Set(clipped.map(([a]) => new Date(a + 8 * 3_600_000).toISOString().slice(0, 10)));
+    let workBlocks = 0;
+    let blockEnd = -Infinity;
+    for (const [from, to] of [...clipped].sort((a, b) => a[0] - b[0])) {
+      if (from > blockEnd + WORK_BLOCK_GAP_MS) workBlocks += 1;
+      blockEnd = Math.max(blockEnd, to);
+    }
     return {
       seconds: Math.round(unionMs(clipped) / 1000),
       tokens: rows.reduce((sum, row) => sum + row.tokens, 0),
       sessions: new Set(rows.map((row) => `${row.source}|${row.machine}|${row.session || row.project}`)).size,
       activeDays: days.size,
+      workBlocks,
       projects: rank((row) => row.project).slice(0, 5),
       agents: rank((row) => row.source),
       machines: rank((row) => row.machine).length,

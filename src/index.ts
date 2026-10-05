@@ -17,6 +17,7 @@ import { compress } from 'hono/compress';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
+import { taipeiDay } from './data/time.js';
 import { Repository, type DailyTimeSeries, type TimeSpentSummary, type TimeWindows } from './data/database.js';
 import { selectHomepageActivities } from './data/activity.js';
 import { nextIntervalAt } from './data/schedule.js';
@@ -527,7 +528,7 @@ app.get('/', (c) => {
   const recent = latestSourceActivities(combined);
   const profileSnapshot = getCache<SourceSnapshot>('data:statsfm')?.data;
   const sourceCounts = repository.countBySource();
-  const publicActivityCount = repository.countPublicActivities() + youtubeLifetimeWatches();
+  const publicActivityCount = repository.countPublicActivities() + youtubeLifetimeWatches() + ingestedAllTimeCounts().total;
   const connectedSources = sections.length + (sourceCounts.events ? 1 : 0);
   c.header('Cache-Control', 'no-cache');
   return c.html(homePage({
@@ -715,11 +716,11 @@ app.get('/feed.xml', (c) => {
 
 app.get('/profile', (c) => c.html(profilePage(
   config.ownerName,
-  repository.countPublicActivities() + youtubeLifetimeWatches(),
-  {
+  repository.countPublicActivities() + youtubeLifetimeWatches() + ingestedAllTimeCounts().total,
+  mergeCounts({
     ...repository.countBySource(),
     ...(youtubeLifetimeWatches() ? { youtube: youtubeLifetimeWatches() } : {}),
-  },
+  }, ingestedAllTimeCounts().bySource),
   repository.listActivities(60)
 )));
 
@@ -775,6 +776,48 @@ function requestedYear(value: string | undefined): number {
   return year;
 }
 
+// Health, Dayflow and ComputAI are ingested into their own tables rather than
+// the activities table, so counts of "activities" add them here, in the same
+// units the timeline shows: a sleep, a workout or a day of steps; a Dayflow
+// day; an AI agent work block.
+interface IngestedCounts { bySource: Record<string, number>; byKind: Record<string, number>; total: number }
+function ingestedActivityCounts(start: Date | null, end: Date | null): IngestedCounts {
+  const bySource: Record<string, number> = {};
+  const byKind: Record<string, number> = {};
+  const add = (source: string, kind: string, count: number) => {
+    if (count <= 0) return;
+    bySource[source] = (bySource[source] ?? 0) + count;
+    byKind[kind] = (byKind[kind] ?? 0) + count;
+  };
+  if (config.healthConnect.token && config.sourceEnabled('health')) {
+    const health = repository.healthActivityCounts(start?.toISOString(), end?.toISOString());
+    add('health', 'fitness', health.sleep + health.workouts + health.stepDays);
+  }
+  if (dayflowEnabled) add('dayflow', 'computer', repository.dayflow.dayCount(start ? taipeiDay(start) : undefined, end ? taipeiDay(end) : undefined));
+  if (computaiEnabled) add('computai', 'ai', repository.computai.periodSummary(start ?? new Date(0), end ?? new Date()).workBlocks);
+  return { bySource, byKind, total: Object.values(bySource).reduce((sum, count) => sum + count, 0) };
+}
+
+// All-time counts feed Home and Archive on every request; they only move when
+// one of the stores receives data, or at most hourly.
+let ingestedAllTime: { key: string; counts: IngestedCounts } | null = null;
+function ingestedAllTimeCounts(): IngestedCounts {
+  const key = [
+    Math.floor(Date.now() / HOUR),
+    config.healthConnect.token ? repository.healthConnectStatus().lastSyncedAt : '',
+    dayflowEnabled ? repository.dayflow.status().revision : '',
+    computaiEnabled ? repository.computai.status().revision : '',
+  ].join(':');
+  if (ingestedAllTime?.key !== key) ingestedAllTime = { key, counts: ingestedActivityCounts(null, null) };
+  return ingestedAllTime.counts;
+}
+
+function mergeCounts(base: Record<string, number>, extra: Record<string, number>): Record<string, number> {
+  const merged = { ...base };
+  for (const [key, count] of Object.entries(extra)) merged[key] = (merged[key] ?? 0) + count;
+  return Object.fromEntries(Object.entries(merged).sort((a, b) => b[1] - a[1]));
+}
+
 // Recorded time and ComputAI agent activity for one Taipei calendar year.
 function wrappedExtras(year: number, now = new Date()) {
   const start = new Date(Date.UTC(year, 0, 1) - 8 * 3_600_000);
@@ -783,14 +826,22 @@ function wrappedExtras(year: number, now = new Date()) {
     time: repository.yearTime(year, now),
     agents: computaiEnabled && +end > +start ? repository.computai.periodSummary(start, end) : null,
     years: repository.activityYears(),
+    ingested: +end > +start ? ingestedActivityCounts(start, new Date(Date.UTC(year + 1, 0, 1) - 8 * 3_600_000)) : null,
   };
+}
+
+function wrappedSummary(year: number, ingested: IngestedCounts | null) {
+  const summary = repository.wrapped(year);
+  if (!ingested?.total) return summary;
+  return { ...summary, totalActivities: summary.totalActivities + ingested.total,
+    bySource: mergeCounts(summary.bySource, ingested.bySource), byKind: mergeCounts(summary.byKind, ingested.byKind) };
 }
 
 app.get('/api/wrapped/:file{[0-9]{4}\\.json}', (c) => {
   try {
     const year = requestedYear(c.req.param('file').replace(/\.json$/, ''));
-    const { time, agents } = wrappedExtras(year);
-    return c.json({ ...repository.wrapped(year), time, agents });
+    const { time, agents, ingested } = wrappedExtras(year);
+    return c.json({ ...wrappedSummary(year, ingested), time, agents });
   }
   catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 400); }
 });
@@ -857,7 +908,8 @@ app.get('/wrapped/:year', (c) => {
   try {
     const year = requestedYear(c.req.param('year'));
     c.header('Cache-Control', 'no-cache');
-    return c.html(wrappedPage(config.ownerName, repository.wrapped(year), wrappedExtras(year)));
+    const extras = wrappedExtras(year);
+    return c.html(wrappedPage(config.ownerName, wrappedSummary(year, extras.ingested), extras));
   }
   catch (error) { return c.text(error instanceof Error ? error.message : String(error), 400); }
 });

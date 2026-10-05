@@ -32,6 +32,12 @@ export class DayflowStore {
     const row = this.db.prepare('SELECT MAX(received_at) lastSyncedAt, MIN(day) firstDay, MAX(day) lastDay, COUNT(DISTINCT day) days, COALESCE(SUM(revision), 0) revision FROM dayflow_days').get()!;
     return { lastSyncedAt: row.lastSyncedAt as string | null, firstDay: row.firstDay as string | null, lastDay: row.lastDay as string | null, days: Number(row.days), revision: Number(row.revision) };
   }
+  // Distinct recorded days in [fromDay, toDay), across devices.
+  dayCount(fromDay = '0000-00-00', toDay = '9999-99-99'): number {
+    const row = this.db.prepare('SELECT COUNT(DISTINCT day) days FROM dayflow_days WHERE day >= ? AND day < ?').get(fromDay, toDay) as { days: number };
+    return Number(row.days);
+  }
+
   batchesSince(day: string): DayflowBatch[] {
     const rows = this.db.prepare('SELECT payload_json FROM dayflow_days WHERE day >= ? ORDER BY day').all(day) as Array<{ payload_json: string }>;
     return rows.map((row) => JSON.parse(row.payload_json) as DayflowBatch);
