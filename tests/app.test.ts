@@ -245,7 +245,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.doesNotMatch(homeHtml, /Music streams/);
   assert.doesNotMatch(homeHtml, /stats\.fm profile/);
   assert.doesNotMatch(homeHtml, /Up next/);
-  assert.doesNotMatch(homeHtml, /In progress/);
+  assert.match(homeHtml, /<a class="home-metric home-metric-link" href="\/now"><span class="home-metric-label">In progress/);
   assert.doesNotMatch(homeHtml, />coming up</);
   assert.doesNotMatch(homeHtml, />in progress</);
   assert.doesNotMatch(homeHtml, />archive entries</);

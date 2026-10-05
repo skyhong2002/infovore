@@ -554,6 +554,7 @@ app.get('/', (c) => {
       return { week, previous: repository.countNewSince(new Date(now.getTime() - 14 * 86_400_000).toISOString()) - week };
     })(),
     cloudTerms: currentCloudTerms(),
+    inProgress: selectCurrent([...combined, ...presentCandidates()], now).current,
   }));
 });
 

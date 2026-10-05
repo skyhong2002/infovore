@@ -30,6 +30,8 @@ export interface HomepageData {
   // Public entries first collected in the last 7 days and the 7 before.
   newEntries?: { week: number; previous: number } | null;
   cloudTerms?: CloudTerm[] | null;
+  // Items in progress right now, by the same rule as the Now page.
+  inProgress?: Activity[] | null;
 }
 
 const homeStyles = `
@@ -47,12 +49,12 @@ const homeStyles = `
   .home-profile-status strong{color:var(--text);display:block;font-size:13.5px;margin:4px 0}
   .home-status-line{align-items:center;display:flex;gap:6px;justify-content:flex-end}
   .home-status-dot{background:var(--ok);border-radius:50%;box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent);height:7px;width:7px}
-  .home-metric-grid{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}
+  .home-metric-grid{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:10px}
   .home-metric{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:13px 16px;position:relative}
   .home-metric::before{background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:var(--radius-sm) var(--radius-sm) 0 0;content:"";height:3px;left:0;position:absolute;right:0;top:0;opacity:.8}
   .home-metric-label{color:var(--muted);display:block;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .home-metric-value{color:var(--text);display:block;font-size:26px;font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:-.03em;line-height:1.1;margin-top:6px}
-  .home-metric-note{color:var(--quiet);display:block;font-size:12px;margin-top:3px}
+  .home-metric-note{color:var(--quiet);display:block;font-size:12px;margin-top:3px}.home-metric-link{color:inherit;text-decoration:none;transition:border-color .15s}.home-metric-link:hover{border-color:var(--line-strong);color:inherit}.home-metric-names{color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.45;margin-top:6px;overflow:hidden}
   .home-metric-trend{align-items:center;display:flex;gap:10px;margin-top:8px;min-height:26px}
   .home-time-row{grid-template-columns:118px minmax(0,1fr) 60px 64px}.home-time-spark{display:block}.home-time-row:not(:has(.home-time-spark)){grid-template-columns:118px minmax(0,1fr) 60px}
   .home-section{margin-top:30px}
@@ -107,7 +109,7 @@ const homeStyles = `
   .home-recent-time{align-self:start;color:var(--quiet);font-size:11px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
   .home-footnote{color:var(--quiet);font-size:12px;line-height:1.5;margin:12px 0 0}
   @media(max-width:900px){.home-recent-list{grid-template-columns:1fr}.home-recent-item:nth-child(odd){border-right:0}.home-recent-item:nth-last-child(-n+2):nth-child(odd){border-bottom:1px solid var(--line)}}
-  @media(max-width:780px){.home-profile{align-items:flex-start;flex-direction:column;gap:10px;padding:16px}.home-profile-status{text-align:left}.home-status-line{justify-content:flex-start}.home-profile-links{justify-content:flex-start}.home-metric-grid{grid-template-columns:1fr}.home-dashboard-grid{grid-template-columns:1fr}}
+  @media(max-width:780px){.home-profile{align-items:flex-start;flex-direction:column;gap:10px;padding:16px}.home-profile-status{text-align:left}.home-status-line{justify-content:flex-start}.home-profile-links{justify-content:flex-start}.home-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home-dashboard-grid{grid-template-columns:1fr}}
   @media(max-width:520px){.home-profile-main{align-items:flex-start;gap:14px}.home-avatar,.home-avatar-placeholder{flex-basis:52px;height:52px;width:52px}.home-profile h1{font-size:34px}.home-metric-value{font-size:24px}.home-metric-trend{flex-wrap:wrap;gap:6px}.home-metric-trend .spark{width:100%}.home-section-head{align-items:flex-start;flex-direction:column;gap:5px}.home-section-head a{margin-top:4px}.home-time-row{grid-template-columns:84px minmax(0,1fr) 52px}.home-recent-item{gap:10px;grid-template-columns:44px minmax(0,1fr);padding-inline:14px}.home-recent-art,.home-recent-placeholder{height:44px;width:44px}.home-recent-time{grid-column:2;text-align:left}.home-recent-title{font-size:13.5px}.home-panel{padding:16px}}
 `;
 
@@ -149,6 +151,13 @@ function last28Days(): string {
 }
 
 
+
+// What is being played, watched or read right now; links to the Now page.
+function inProgressTile(items: Activity[]): string {
+  const names = items.slice(0, 3).map((item) => html(item.title)).join(' · ');
+  const more = items.length > 3 ? ` +${items.length - 3}` : '';
+  return `<a class="home-metric home-metric-link" href="/now"><span class="home-metric-label">In progress${info('Games logged in the last 14 days, plus shows, anime, manga and books with progress in the last 60 days. Older ones are listed as paused on the Now page.')}</span><strong class="home-metric-value">${items.length}</strong><span class="home-metric-note home-metric-names" title="${html(items.map((item) => item.title).join(' · '))}">${names ? `${names}${more}` : 'Nothing in progress'}</span></a>`;
+}
 
 function profileAvatar(data: HomepageData): string {
   if (data.avatar) return `<img class="home-avatar" src="${html(data.avatar)}" alt="${html(data.ownerName)}" loading="eager">`;
@@ -306,6 +315,7 @@ export function homePage(data: HomepageData): string {
     <section class="home-metric-grid" aria-label="Overview metrics">
       ${metric('Time recorded', shareLabel(data.recordedShare), 'of the last 28 days', { tip: 'Share of the last 28 days with any recording. Overlapping platforms count once; Dayflow idle time, daily totals and events without a duration are excluded.', series: recordedSeries, change: delta(sum(recordedSeries, 21, 28) / 7, sum(recordedSeries, 14, 21) / 7, (value) => `${timeAmount(value)}/day`) })}
       ${metric('Active days', `${activitySeries.filter(Boolean).length}/${activitySeries.length || 28}`, 'with any activity, last 28 days', { tip: 'Taipei days in the last 28 with at least one public activity. The trend counts activities per day; the change compares active days in the last 7 with the 7 before.', series: activitySeries, change: delta(activitySeries.slice(21).filter(Boolean).length, activitySeries.slice(14, 21).filter(Boolean).length, (value) => `${value} ${value === 1 ? 'day' : 'days'}`) })}
+      ${inProgressTile(data.inProgress ?? [])}
       ${metric('Public entries', String(data.publicActivityCount), 'in the archive', { tip: 'Public activities stored locally, plus lifetime YouTube watches mirrored from urtube. The change is entries first collected in the last 7 days versus the 7 before.', change: data.newEntries ? delta(data.newEntries.week, data.newEntries.previous, (value) => `${value} new`) : undefined })}
     </section>
     ${shareBar(timeEntries(window, data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime).entries, window.key, window.key === 'last28d' ? 'Last 28 days' : 'All time')}
