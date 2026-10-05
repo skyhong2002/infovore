@@ -759,7 +759,9 @@ app.get('/now', (c) => {
   const upcoming = upcomingActivities(now.toISOString());
   // Daily roll-ups (AI work blocks, computer days, health) are frequent; keep
   // a few each so media and games stay visible.
-  const recent = selectHomepageActivities(activities, 24, 0.15, 0.1, { sources: ['computai', 'dayflow', 'health'], perSource: 3 });
+  // One entry per title: a show's every episode or a game's every session is a
+  // separate moment in the archive, but here only the latest one matters.
+  const recent = selectHomepageActivities(uniqueItems(activities), 24, 0.15, 0.1, { sources: ['computai', 'dayflow', 'health'], perSource: 3 });
   const queued = selectQueued(repository.activitiesByStatus([...QUEUED_STATUSES]));
   c.header('Cache-Control', 'no-cache');
   return c.html(nowPage(config.ownerName, current, upcoming, recent, { paused, queued, now }));
