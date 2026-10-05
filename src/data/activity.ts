@@ -60,11 +60,18 @@ function activityTaipeiDay(activity: Activity): string {
  * Music and YouTube are high-frequency streams. Each gets a small display
  * budget and at most one newest entry per Taipei calendar day.
  */
+export interface CappedSources {
+  // Sources limited to `perSource` entries each when anything else is available.
+  sources: string[];
+  perSource: number;
+}
+
 export function selectHomepageActivities(
   activities: Activity[],
   limit = 40,
   musicShare = 0.1,
   youtubeShare = 0.1,
+  capped?: CappedSources,
 ): Activity[] {
   if (limit < 1) return [];
   const safeMusicShare = Math.max(0, Math.min(0.4, musicShare));
@@ -91,12 +98,14 @@ export function selectHomepageActivities(
   let regularCount = 0;
   // Daily health roll-ups and AI agent work blocks are frequent; each may take
   // at most a quarter of the list when anything else is available.
-  const capped = new Map<string, number>();
-  const cappedBudget = (source: string) => activities.some((activity) => activity.source !== source) ? Math.max(1, Math.floor(limit / 4)) : limit;
+  const cappedCounts = new Map<string, number>();
+  const cappedSources = new Set(capped?.sources ?? ['health', 'computai']);
+  const perSource = capped?.perSource ?? Math.max(1, Math.floor(limit / 4));
+  const cappedBudget = (source: string) => activities.some((activity) => activity.source !== source) ? perSource : limit;
 
   for (const activity of activities) {
-    const isCapped = activity.source === 'health' || activity.source === 'computai';
-    if (isCapped && (capped.get(activity.source) ?? 0) >= cappedBudget(activity.source)) continue;
+    const isCapped = cappedSources.has(activity.source);
+    if (isCapped && (cappedCounts.get(activity.source) ?? 0) >= cappedBudget(activity.source)) continue;
     if (isMusic(activity)) {
       const day = activityTaipeiDay(activity);
       if (musicCount >= musicBudget || seenMusicDays.has(day)) continue;
@@ -112,7 +121,7 @@ export function selectHomepageActivities(
       regularCount++;
     }
     selected.push(activity);
-    if (isCapped) capped.set(activity.source, (capped.get(activity.source) ?? 0) + 1);
+    if (isCapped) cappedCounts.set(activity.source, (cappedCounts.get(activity.source) ?? 0) + 1);
     if (selected.length >= limit) break;
   }
   return selected;

@@ -718,7 +718,7 @@ app.get('/profile', (c) => c.html(profilePage(
     ...repository.countBySource(),
     ...(youtubeLifetimeWatches() ? { youtube: youtubeLifetimeWatches() } : {}),
   },
-  repository.listActivities(12)
+  repository.listActivities(60)
 )));
 
 function uniqueItems<T extends { source: string; sourceItemId: string | null; title: string }>(items: T[]): T[] {
@@ -757,7 +757,9 @@ app.get('/now', (c) => {
   const { activities } = dashboardView(now);
   const { current, paused } = selectCurrent([...activities, ...presentCandidates()], now);
   const upcoming = upcomingActivities(now.toISOString());
-  const recent = selectHomepageActivities(activities, 24);
+  // Daily roll-ups (AI work blocks, computer days, health) are frequent; keep
+  // a few each so media and games stay visible.
+  const recent = selectHomepageActivities(activities, 24, 0.15, 0.1, { sources: ['computai', 'dayflow', 'health'], perSource: 3 });
   const queued = selectQueued(repository.activitiesByStatus([...QUEUED_STATUSES]));
   c.header('Cache-Control', 'no-cache');
   return c.html(nowPage(config.ownerName, current, upcoming, recent, { paused, queued, now }));

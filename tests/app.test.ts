@@ -230,12 +230,12 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   const home = await app.request('/');
   assert.equal(home.status, 200);
   const homeHtml = await home.text();
-  assert.match(homeHtml, /Recent activity/);
+  assert.match(homeHtml, /Latest from each platform/);
   assert.match(homeHtml, /Homepage Anime/);
   assert.match(homeHtml, /Kitsu/);
   assert.match(homeHtml, /href="\/platforms\/kitsu"/);
-  assert.match(homeHtml, /Personal lifelog dashboard/);
-  assert.match(homeHtml, /Platform overview/);
+  assert.match(homeHtml, /class="home-metric-label">Public entries/);
+  assert.match(homeHtml, /<h2>Platforms<\/h2>/);
   assert.match(homeHtml, /Time by platform/);
   assert.match(homeHtml, /Active days/);
   assert.match(homeHtml, /Activity rhythm/);
@@ -267,8 +267,9 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.equal(styles.headers.get('cache-control'), 'public, max-age=31536000, immutable');
   const css = await styles.text();
   assert.match(css, /img\[data-adaptive-media\]\{aspect-ratio:var\(--media-ratio,.75\)/);
-  assert.match(css, /\.platform-card-grid a,\.card-gallery-row a\{border-radius:12px;display:block;flex:0 1 520px/);
-  assert.match(css, /\.platform-card-grid img,\.card-gallery-row img\{display:block;height:auto;max-width:100%;width:520px\}/);
+  assert.match(css, /\.card-gallery-row a\{border-radius:12px;display:block;flex:0 1 520px/);
+  assert.match(css, /\.card-gallery-row img\{display:block;height:auto;max-width:100%;width:520px\}/);
+  assert.match(css, /\.platform-card-grid\{align-items:start;display:grid;/);
   assert.match(css, /\.card-gallery-row\{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px\}/);
   for (const font of ['Figtree-Regular', 'Figtree-Bold', 'InstrumentSerif-Regular']) {
     const response = await app.request(`/fonts/${font}.ttf`);
@@ -406,7 +407,7 @@ test('platform index and dedicated mirrors render source-native content', async 
   assert.match(mirrorHtml, /Top albums this week/);
   assert.match(mirrorHtml, /Top artists this week/);
   assert.match(mirrorHtml, /weekly streams/);
-  assert.match(mirrorHtml, /<h2>Cards<\/h2>/);
+  assert.match(mirrorHtml, /<h2>Share cards<\/h2>/);
   assert.match(mirrorHtml, /src="\/card\/statsfm\.webp\?v=/);
   assert.match(mirrorHtml, /src="\/card\/statsfm-albums\.webp\?v=/);
   assert.match(mirrorHtml, /src="\/card\/statsfm-artists\.webp\?v=/);

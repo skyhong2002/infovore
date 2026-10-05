@@ -243,8 +243,7 @@ export function platformIndexPage(ownerName: string, platforms: PlatformSummary[
   }).join('');
   const intro = `<section class="page-intro"><div><div class="eyebrow">Source view</div><h1>Platform mirrors</h1>
     <p>A local, read-only copy of what infovore collects for ${html(ownerName)} from every connected account—kept separate here, then surfaced on the personal homepage.</p></div>
-    <div class="page-intro-aside">Open a platform to see its native entries, summary, and shareable cards.</div></section>
-    <div class="context-line"><a href="/">Home</a><span>→</span><strong>Platforms</strong><span>→</span><a href="/cards">All cards</a></div>`;
+    <div class="page-intro-aside">Open a platform to see its native entries, summary, and shareable cards.</div></section>`;
   return shell(`${ownerName} · platforms`, `${intro}${platformNav()}<div class="platform-index">${cards}</div>`, 'platforms');
 }
 
@@ -280,7 +279,7 @@ export function platformPage(
     topicChips('Topics · last 28 days', extra.topics),
   ].join('');
   const cards = definition.cards?.length
-    ? `<section><div class="platform-section-heading"><h2>Cards</h2><span>${definition.cards.length} available</span></div>
+    ? `<section><div class="platform-section-heading"><h2>Share cards</h2><span>${definition.cards.length} available · click for the full-size SVG</span></div>
       <div class="platform-card-grid">${definition.cards.map((name) => {
         const suffix = cardVersions[name] ? `?v=${html(cardVersions[name])}` : '';
         return `<a href="/card/${html(name)}.svg${suffix}"><img src="/card/${html(name)}.webp${suffix}" alt="${html(definition.title)} ${html(name)} card" loading="lazy"></a>`;
@@ -312,6 +311,6 @@ export function platformPage(
       <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : 'Stored manually'}</div>
     </section>
-    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${cards}${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}</div>${aside}</div>`;
+    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}${cards}</div>${aside}</div>`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms');
 }

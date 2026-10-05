@@ -35,7 +35,7 @@ test('Dayflow joins platform highlights, time rows and recent activity without a
     assert.doesNotMatch(tile.text(), /Computer activity/);
     assert.equal(page('garmin').length, 0);
     assert.match(page('[data-source="dayflow"]').text(), /Dayflow · active.*1h/);
-    assert.equal(page('#recent a').first().attr('href'), '/profile');
+    assert.equal(page('#recent a').first().attr('href'), '/now');
     assert.equal(page('#recent .home-recent-title').attr('href'), '/platforms/dayflow');
     assert.match(page('#recent .home-keywords').text(), /<Garmin>/);
     assert.equal(page('[data-hour]').length, 0, 'daily summaries must not invent hourly events');

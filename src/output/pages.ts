@@ -3,6 +3,7 @@ import type { ActivityPage, WrappedSummary } from '../data/database.js';
 import { config } from '../config.js';
 import { PLAYING_WINDOW_DAYS, STALE_AFTER_DAYS } from '../data/status.js';
 import { healthActivityMeta } from './health-activity.js';
+import { activityMeta } from './activity-meta.js';
 import { baseStyles } from './styles.js';
 import { createHash } from 'node:crypto';
 import { dateFormat } from '../data/time.js';
@@ -152,12 +153,13 @@ function activityCard(activity: Activity, context?: CardContext, now = new Date(
     : activity.extra.progress ? `progress ${activity.extra.progress}` : '';
   const next = activity.extra.nextToWatch ? `next ${activity.extra.nextToWatch}` : '';
   const age = relativeAge(when, now);
+  // `meta` is HTML-escaped piecewise: activityMeta() already returns safe markup.
   const meta = context === 'current' || context === 'paused'
-    ? [sourceLabel(activity.source), progress, next, age ? `last progress ${age}` : date].filter(Boolean).join(' · ')
+    ? [sourceLabel(activity.source), progress, next, age ? `last progress ${age}` : date].filter(Boolean).map(html).join(' · ')
     : context === 'queued'
-      ? [sourceLabel(activity.source), activity.extra.author ? `by ${activity.extra.author}` : '', age ? `added ${age}` : ''].filter(Boolean).join(' · ')
-      : [activity.source, activity.status, activity.extra.venue, date].filter(Boolean).join(' · ');
-  return `<article class="card entry${context ? ` entry-${context}` : ''}" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted">${html(meta)}</div></div></article>`;
+      ? [sourceLabel(activity.source), activity.extra.author ? `by ${activity.extra.author}` : '', age ? `added ${age}` : ''].filter(Boolean).map(html).join(' · ')
+      : [html(sourceLabel(activity.source)), activityMeta(activity), html(date)].filter(Boolean).join(' · ');
+  return `<article class="card entry${context ? ` entry-${context}` : ''}" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted entry-meta" title="${meta}">${meta}</div></div></article>`;
 }
 
 
@@ -179,8 +181,7 @@ export function searchPage(ownerName: string, filters: SearchFilters, page: Acti
     return `/search${text ? `?${text}` : ''}`;
   };
   const active = Boolean(filters.query || filters.source || filters.kind);
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Archive search</div><h1>Search</h1><p>Find anything ${html(ownerName)} has watched, read, played, heard or attended — titles, artists, channels, venues and tags across every connected platform.</p></div><div class="page-intro-aside">${page.total ? `${page.total.toLocaleString('en')} matching public entries.` : 'Public entries only; raw health and daily computer records stay out of the index.'}</div></section>
-    <div class="context-line"><a href="/">Home</a><span>→</span><a href="/profile">Archive</a><span>→</span><strong>Search</strong></div>`;
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Archive search</div><h1>Search</h1><p>Find anything ${html(ownerName)} has watched, read, played, heard or attended — titles, artists, channels, venues and tags across every connected platform.</p></div><div class="page-intro-aside">${page.total ? `${page.total.toLocaleString('en')} matching public entries.` : 'Public entries only; raw health and daily computer records stay out of the index.'}</div></section>`;
   const form = `<form class="search-form" action="/search" role="search"><input type="search" name="q" value="${html(filters.query)}" placeholder="Try an artist, a game, a book, a channel…" aria-label="Search the archive" autofocus>${filters.source ? `<input type="hidden" name="source" value="${html(filters.source)}">` : ''}${filters.kind ? `<input type="hidden" name="kind" value="${html(filters.kind)}">` : ''}<button type="submit">Search</button></form>`;
   const sources = Object.entries(bySource).sort((a, b) => b[1] - a[1]);
   const sourceChips = `<div class="search-filters" aria-label="Filter by platform"><a href="${params({ source: '', offset: 0 })}"${filters.source ? '' : ' aria-current="true"'}>All platforms</a>${sources.map(([source, count]) =>
@@ -204,8 +205,7 @@ export interface ApiDocs {
 
 export function apiPage(ownerName: string, docs: ApiDocs): string {
   const row = (path: string, description: string, params = '') => `<tr><td><code>${html(path)}</code></td><td>${description}${params ? `<br><span class="muted">${params}</span>` : ''}</td></tr>`;
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Data access</div><h1>API</h1><p>Everything on this site is also available as JSON, RSS and image cards. Read-only, no key, no rate limit beyond good manners.</p></div><div class="page-intro-aside">Base URL <code>${html(docs.baseUrl)}</code></div></section>
-    <div class="context-line"><a href="/">Home</a><span>→</span><strong>API</strong><span>→</span><a href="/status">Status</a></div>`;
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Data access</div><h1>API</h1><p>Everything on this site is also available as JSON, RSS and image cards. Read-only, no key, no rate limit beyond good manners.</p></div><div class="page-intro-aside">Base URL <code>${html(docs.baseUrl)}</code></div></section>`;
   const rules = `<section class="card"><p class="muted">All endpoints are <code>GET</code> and return UTF-8 JSON unless noted. Times are ISO 8601 in UTC; "a day" means a Taipei (UTC+8) calendar day. Only <em>public</em> activities are exposed: raw health samples, private events and Dayflow screen text never leave the server. Responses are not cached by the server, but the data behind them refreshes hourly, so please do not poll faster than that. Content belongs to the original platforms; credit "${html(ownerName)} · infovore" when you reuse it.</p></section>`;
   const activities = `<h2>Activities</h2><table>
     <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
@@ -257,12 +257,11 @@ export function nowPage(ownerName: string, current: Activity[], upcoming: Activi
   const pausedBlock = paused.length
     ? `<details class="paused" id="paused"><summary class="details-toggle">Paused · ${paused.length} ${paused.length === 1 ? 'title' : 'titles'} still marked in progress but untouched for over ${STALE_AFTER_DAYS} days</summary><div class="grid">${paused.map((activity) => activityCard(activity, 'paused', now)).join('')}</div></details>`
     : '';
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Present view</div><h1>Now</h1><p>A short-term view of what ${html(ownerName)} is in the middle of, what is lined up next, and what just happened.</p></div><div class="page-intro-aside">In progress means touched within the last ${STALE_AFTER_DAYS} days; games count as playing for ${PLAYING_WINDOW_DAYS} days after a session.</div></section>
-    <div class="context-line"><a href="/">Home</a><span>→</span><strong>Now</strong><span>→</span><a href="/profile">Long-term archive</a></div>`;
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Present view</div><h1>Now</h1><p>A short-term view of what ${html(ownerName)} is in the middle of, what is lined up next, and what just happened.</p></div><div class="page-intro-aside">In progress = touched within ${STALE_AFTER_DAYS} days; games count for ${PLAYING_WINDOW_DAYS} days after a session.</div></section>`;
   return shell(`${ownerName} · now`, intro
     + section('In progress', 'Playing, watching and reading right now, newest progress first.', current, 'current', pausedBlock)
     + section('Up next', 'Watchlists, planned anime and manga, and the to-read shelf, newest additions first.', queued, 'queued')
-    + section('Upcoming events', 'Ticketed and planned real-world activities.', upcoming)
+    + (upcoming.length ? section('Upcoming events', 'Ticketed and planned real-world activities.', upcoming) : '')
     + section('Just happened', 'Recent media, sleep, exercise and daily steps. High-frequency sources are sampled.', recent), 'now',
     '.paused{margin-top:14px}.paused>.details-toggle{border:1px solid var(--line);border-radius:var(--radius-sm);border-top:1px solid var(--line)}.paused[open]>.details-toggle{border-radius:var(--radius-sm) var(--radius-sm) 0 0}.paused>.grid{border:1px solid var(--line);border-top:0;border-radius:0 0 var(--radius-sm) var(--radius-sm);padding:12px}.entry-paused{opacity:.75}');
 }
@@ -271,11 +270,17 @@ export function profilePage(ownerName: string, total: number, bySource: Record<s
   const stats = Object.entries(bySource).map(([source, count]) => `<a class="metric-card" href="/platforms/${html(source)}"><span class="pill">${html(sourceLabel(source))}</span><span class="count">${count}</span></a>`).join('');
   const year = new Date().getUTCFullYear();
   const intro = `<section class="page-intro"><div><div class="eyebrow">Long-term view</div><h1>The archive</h1><p>Every durable entry collected for ${html(ownerName)}, summarized across sources without losing the original platform context.</p></div><div class="page-intro-aside">${total} public activities and counting.</div></section>
-    <div class="context-line"><a href="/">Home</a><span>→</span><strong>Archive</strong><span>→</span><a href="/wrapped/${year}">${year} Wrapped</a></div>
     <div class="archive-actions"><a class="archive-action" href="/platforms"><strong>Browse by platform →</strong><span>Open the source-specific mirrors behind these totals.</span></a>
     <a class="archive-action" href="/wrapped/${year}"><strong>Open ${year} Wrapped →</strong><span>Turn the year's activity into a compact retrospective.</span></a></div>`;
   const overview = `<section><div class="section-heading"><div><div class="eyebrow">Coverage</div><h2>Activity by source</h2></div><span>${Object.keys(bySource).length} active sources</span></div><div class="metric-grid"><div class="metric-card"><span class="pill">All sources</span><span class="count">${total}</span></div>${stats}</div></section>`;
-  const latestSection = `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Archive edge</div><h2>Latest additions</h2></div><a href="/">Back to the infoboard →</a></div><div class="grid">${latest.map((activity) => activityCard(activity)).join('')}</div></section>`;
+  const seen = new Set<string>();
+  const distinct = latest.filter((activity) => {
+    const key = `${activity.source}:${activity.sourceItemId ?? activity.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 12);
+  const latestSection = `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Archive edge</div><h2>Latest additions</h2></div><a href="/search">Search everything →</a></div><div class="grid">${distinct.map((activity) => activityCard(activity)).join('')}</div></section>`;
   return shell(`${ownerName} · archive`, intro + overview + latestSection, 'profile');
 }
 
