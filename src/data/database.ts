@@ -6,7 +6,7 @@ import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { activityFromEntry } from './activity.js';
-import { taipeiDay, taipeiWindowStarts } from './time.js';
+import { TAIPEI_OFFSET_MS, taipeiDay, taipeiWindowStarts } from './time.js';
 import { sleepDays } from '../health/sleep.js';
 import { recordedSleepWindows } from '../health/home.js';
 import type { Activity, SourceSnapshot } from './types.js';
@@ -92,6 +92,16 @@ export interface SourceTimeSpent {
 export interface DailyTimeSeries {
   days: string[];
   sources: Record<string, number[]>;
+}
+
+export interface YearTime {
+  year: number;
+  // Seconds per platform for the Taipei calendar year, largest first.
+  sources: Array<{ source: string; method: TimeMethod; seconds: number }>;
+  total: number;
+  // False for past years when stats.fm's year total is only known from
+  // locally synced streams (its remote year figure covers the current year).
+  complete: boolean;
 }
 
 export interface TimeSpentSummary {
@@ -1173,6 +1183,43 @@ export class Repository {
       ORDER BY occurred_at DESC, first_seen_at DESC LIMIT ?
     `).all(...statuses, Math.max(1, Math.min(1000, limit))) as Record<string, unknown>[];
     return rows.map((row) => this.rowToActivity(row));
+  }
+
+  // Recorded time per platform within one Taipei calendar year. The current
+  // year reuses timeSpent()'s year window so it matches the Time page; past
+  // years sum the same per-source data between the year's bounds.
+  yearTime(year: number, now = new Date()): YearTime {
+    const start = new Date(Date.UTC(year, 0, 1) - TAIPEI_OFFSET_MS);
+    const end = new Date(Date.UTC(year + 1, 0, 1) - TAIPEI_OFFSET_MS);
+    const finish = (sources: YearTime['sources'], complete: boolean): YearTime => {
+      const kept = sources.filter((entry) => entry.seconds > 0).sort((a, b) => b.seconds - a.seconds);
+      return { year, sources: kept, total: kept.reduce((total, entry) => total + entry.seconds, 0), complete };
+    };
+    if (+now >= +start && +now < +end) {
+      return finish(this.timeSpent(now).sources.map((entry) => ({ source: entry.source, method: entry.method, seconds: entry.windows.year })), true);
+    }
+    if (+now < +start) return finish([], true);
+    const between = (innerSql: string, ...params: string[]) => Math.round(Number((this.db.prepare(`
+      SELECT COALESCE(SUM(seconds), 0) seconds FROM (${innerSql}) WHERE occurred_at>=? AND occurred_at<?
+    `).get(...params, start.toISOString(), end.toISOString()) as { seconds: number }).seconds));
+    const ledger = this.db.prepare('SELECT COALESCE(SUM(seconds), 0) seconds FROM time_ledger WHERE source=? AND day>=? AND day<?');
+    const fromLedger = (source: string) => Math.round(Number((ledger.get(source, `${year}-01-01`, `${year + 1}-01-01`) as { seconds: number }).seconds));
+    return finish([
+      { source: 'statsfm', method: 'measured', seconds: between(STATSFM_SECONDS_SQL) },
+      { source: 'events', method: 'estimated', seconds: between(EVENTS_SECONDS_SQL, now.toISOString()) },
+      { source: 'health', method: 'measured', seconds: between(HEALTH_SECONDS_SQL) },
+      { source: 'goodreads', method: 'estimated', seconds: between(GOODREADS_SECONDS_SQL) },
+      { source: 'simkl', method: 'estimated', seconds: fromLedger('simkl') },
+      { source: 'kitsu', method: 'estimated', seconds: fromLedger('kitsu') },
+      { source: 'backloggd', method: 'measured', seconds: fromLedger('backloggd') },
+      { source: 'youtube', method: 'estimated', seconds: fromLedger('youtube') },
+    ], false);
+  }
+
+  // Calendar years that hold any dated public activity, newest first.
+  activityYears(): number[] {
+    return (this.db.prepare("SELECT DISTINCT substr(occurred_at, 1, 4) year FROM activities WHERE visibility='public' AND occurred_at GLOB '[12][0-9][0-9][0-9]-*' ORDER BY year DESC")
+      .all() as Array<{ year: string }>).map((row) => Number(row.year)).filter((year) => year >= 2000 && year <= 2200);
   }
 
   // Public activities first collected on or after an instant.

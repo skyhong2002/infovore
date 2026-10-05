@@ -284,14 +284,3 @@ export function profilePage(ownerName: string, total: number, bySource: Record<s
   return shell(`${ownerName} · archive`, intro + overview + latestSection, 'profile');
 }
 
-export function wrappedPage(ownerName: string, summary: WrappedSummary): string {
-  const max = Math.max(1, ...Object.values(summary.byKind));
-  const kinds = Object.entries(summary.byKind).map(([kind, count]) => `<div class="card"><div><span class="pill">${html(kind)}</span> <strong>${count}</strong></div><div class="bar"><span style="width:${Math.round(count / max * 100)}%"></span></div></div>`).join('');
-  const titles = summary.topTitles.map((item) => `<div class="card"><span class="pill">${html(item.kind)}</span><h3>${html(item.title)}</h3><div class="muted">${item.count} activities</div></div>`).join('');
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Archive · annual view</div><h1>${summary.year} Wrapped</h1><p>A year-sized summary of ${html(ownerName)}'s cross-media activity, derived from the same entries in the archive.</p></div><div class="page-intro-aside">A reflection layer—not a separate collection.</div></section>
-    <div class="context-line"><a href="/">Home</a><span>→</span><a href="/profile">Archive</a><span>→</span><strong>${summary.year} Wrapped</strong></div>`;
-  const headline = `<div class="metric-grid"><div class="metric-card"><span class="pill">Activities</span><span class="count">${summary.totalActivities}</span></div><div class="metric-card"><span class="pill">Average rating</span><span class="count">${summary.averageRating ?? '—'}</span></div></div>`;
-  const media = `<section class="content-section"><div class="section-heading"><h2>Across media</h2></div>${kinds ? `<div class="grid">${kinds}</div>` : '<div class="empty">No dated activity has been collected for this year yet.</div>'}</section>`;
-  const top = `<section class="content-section"><div class="section-heading"><h2>Most active titles</h2></div>${titles ? `<div class="grid">${titles}</div>` : '<div class="empty">No titles to rank yet.</div>'}</section>`;
-  return shell(`${ownerName} · ${summary.year} Wrapped`, intro + headline + media + top, 'profile');
-}

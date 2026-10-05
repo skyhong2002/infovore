@@ -291,3 +291,34 @@ test('ComputAI daily agent time merges parallel sessions and splits at Taipei mi
   const series = repository.computai.agentDaily(now, 3);
   assert.deepEqual(series, [1800, 1800, 5400]);
 });
+
+test('yearTime bounds past years to the Taipei calendar year and marks them incomplete', () => {
+  const repository = new Repository(':memory:');
+  const db = (repository as unknown as { db: { prepare: (sql: string) => { run: (...args: unknown[]) => void } } }).db;
+  const ledger = db.prepare("INSERT INTO time_ledger(day, source, seconds, method, detail_json, updated_at) VALUES (?, 'backloggd', ?, 'measured', '{}', '2026-01-01T00:00:00Z')");
+  ledger.run('2024-12-31', 3600);
+  ledger.run('2025-03-01', 7200);
+  ledger.run('2025-12-31', 1800);
+  ledger.run('2026-01-01', 900);
+  const past = repository.yearTime(2025, new Date('2026-10-05T04:00:00Z'));
+  assert.equal(past.complete, false);
+  assert.deepEqual(past.sources, [{ source: 'backloggd', method: 'measured', seconds: 9000 }]);
+  assert.equal(past.total, 9000);
+  assert.deepEqual(repository.yearTime(2027, new Date('2026-10-05T04:00:00Z')).sources, []);
+});
+
+test('ComputAI period summary clips to the period and ranks projects by tokens', () => {
+  const repository = new Repository(':memory:');
+  const db = (repository as unknown as { db: { prepare: (sql: string) => { run: (...args: unknown[]) => void } } }).db;
+  const insert = db.prepare("INSERT INTO computai_segments (device_id, source, machine, project, session, subagent, start_at, end_at, tokens, requests) VALUES ('d', ?, ?, ?, ?, 0, ?, ?, ?, 1)");
+  insert.run('claude', 'mini', 'infovore', 'a', '2025-12-31T15:00:00Z', '2025-12-31T17:00:00Z', 500); // straddles 2026-01-01 00:00 Taipei
+  insert.run('codex', 'deck', 'urtube', 'b', '2026-03-01T01:00:00Z', '2026-03-01T02:00:00Z', 2000);
+  insert.run('claude', 'deck', 'urtube', 'c', '2026-03-01T01:30:00Z', '2026-03-01T02:30:00Z', 1000);
+  const summary = repository.computai.periodSummary(new Date('2025-12-31T16:00:00Z'), new Date('2026-12-31T16:00:00Z'));
+  assert.equal(summary.seconds, 3600 + 5400);
+  assert.equal(summary.tokens, 3500);
+  assert.equal(summary.sessions, 3);
+  assert.equal(summary.machines, 2);
+  assert.equal(summary.activeDays, 2);
+  assert.deepEqual(summary.projects.map((project) => project.name), ['urtube', 'infovore']);
+});

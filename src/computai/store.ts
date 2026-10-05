@@ -32,6 +32,16 @@ export function migrateComputaiSegments(db: DatabaseSync): void {
     COMMIT;`);
 }
 
+export interface AgentPeriod {
+  seconds: number;
+  tokens: number;
+  sessions: number;
+  activeDays: number;
+  projects: Array<{ name: string; tokens: number }>;
+  agents: Array<{ name: string; tokens: number }>;
+  machines: number;
+}
+
 interface SegmentRow { source: string; machine: string; project: string; session: string; start_at: string; end_at: string; tokens: number }
 
 // Total length of a set of intervals, counting overlaps once.
@@ -139,6 +149,30 @@ export class ComputaiStore {
       }
     }
     return series.map(Math.round);
+  }
+
+  // Agent activity between two instants: wall-clock seconds (parallel
+  // sessions once), tokens, distinct sessions, and the heaviest projects,
+  // agents and machines by tokens.
+  periodSummary(start: Date, end: Date): AgentPeriod {
+    const rows = this.db.prepare('SELECT source, machine, project, session, start_at, end_at, tokens FROM computai_segments WHERE end_at >= ? AND start_at < ? ORDER BY start_at')
+      .all(start.toISOString(), end.toISOString()) as unknown as SegmentRow[];
+    const clipped = rows.map((row) => [Math.max(+start, Date.parse(row.start_at)), Math.min(+end, Date.parse(row.end_at))] as [number, number]).filter(([a, b]) => b > a);
+    const rank = (key: (row: SegmentRow) => string) => {
+      const totals = new Map<string, number>();
+      for (const row of rows) if (key(row)) totals.set(key(row), (totals.get(key(row)) ?? 0) + row.tokens);
+      return [...totals].sort((a, b) => b[1] - a[1]).map(([name, tokens]) => ({ name, tokens }));
+    };
+    const days = new Set(clipped.map(([a]) => new Date(a + 8 * 3_600_000).toISOString().slice(0, 10)));
+    return {
+      seconds: Math.round(unionMs(clipped) / 1000),
+      tokens: rows.reduce((sum, row) => sum + row.tokens, 0),
+      sessions: new Set(rows.map((row) => `${row.source}|${row.machine}|${row.session || row.project}`)).size,
+      activeDays: days.size,
+      projects: rank((row) => row.project).slice(0, 5),
+      agents: rank((row) => row.source),
+      machines: rank((row) => row.machine).length,
+    };
   }
 
   workBlocks(since: string): WorkBlock[] {

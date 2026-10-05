@@ -29,7 +29,8 @@ import { fetchGoodreads } from './sources/goodreads.js';
 import { fetchYoutube, syncYoutubeIntervals, type YoutubeExtra } from './sources/youtube.js';
 import { rasterize } from './output/render.js';
 import { activityRss } from './output/feed.js';
-import { apiPage, html, nowPage, profilePage, searchPage, shell, stylesVersion, wrappedPage } from './output/pages.js';
+import { apiPage, html, nowPage, profilePage, searchPage, shell, stylesVersion } from './output/pages.js';
+import { wrappedPage } from './output/wrapped.js';
 import { baseStyles } from './output/styles.js';
 import { homePage } from './output/home.js';
 import { dashboardActivities } from './health/home.js';
@@ -774,8 +775,23 @@ function requestedYear(value: string | undefined): number {
   return year;
 }
 
+// Recorded time and ComputAI agent activity for one Taipei calendar year.
+function wrappedExtras(year: number, now = new Date()) {
+  const start = new Date(Date.UTC(year, 0, 1) - 8 * 3_600_000);
+  const end = new Date(Math.min(+now, Date.UTC(year + 1, 0, 1) - 8 * 3_600_000));
+  return {
+    time: repository.yearTime(year, now),
+    agents: computaiEnabled && +end > +start ? repository.computai.periodSummary(start, end) : null,
+    years: repository.activityYears(),
+  };
+}
+
 app.get('/api/wrapped/:file{[0-9]{4}\\.json}', (c) => {
-  try { return c.json(repository.wrapped(requestedYear(c.req.param('file').replace(/\.json$/, '')))); }
+  try {
+    const year = requestedYear(c.req.param('file').replace(/\.json$/, ''));
+    const { time, agents } = wrappedExtras(year);
+    return c.json({ ...repository.wrapped(year), time, agents });
+  }
   catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 400); }
 });
 
@@ -838,7 +854,11 @@ app.get('/api/health.json', (c) => {
 
 app.get('/wrapped', (c) => c.redirect(`/wrapped/${new Date().getUTCFullYear()}`));
 app.get('/wrapped/:year', (c) => {
-  try { return c.html(wrappedPage(config.ownerName, repository.wrapped(requestedYear(c.req.param('year'))))); }
+  try {
+    const year = requestedYear(c.req.param('year'));
+    c.header('Cache-Control', 'no-cache');
+    return c.html(wrappedPage(config.ownerName, repository.wrapped(year), wrappedExtras(year)));
+  }
   catch (error) { return c.text(error instanceof Error ? error.message : String(error), 400); }
 });
 
