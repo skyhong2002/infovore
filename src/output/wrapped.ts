@@ -39,7 +39,7 @@ function agentSection(agents: AgentPeriod): string {
   const maxTokens = Math.max(1, ...agents.projects.map((project) => project.tokens));
   const projects = agents.projects.map((project) => `<div class="wrapped-row wrapped-row-simple"><span>${html(project.name)}</span><div class="bar"><span style="width:${Math.max(1, Math.round(project.tokens / maxTokens * 100))}%;background:${platformColors.computai}"></span></div><strong>${compact(project.tokens)}</strong></div>`).join('');
   const totalTokens = agents.agents.reduce((total, agent) => total + agent.tokens, 0) || 1;
-  const split = agents.agents.map((agent) => `${html(agentName(agent.name))} ${Math.round(agent.tokens / totalTokens * 100)}%`).join(' · ');
+  const split = agents.agents.filter((agent) => agent.tokens / totalTokens >= 0.01).map((agent) => `${html(agentName(agent.name))} ${Math.round(agent.tokens / totalTokens * 100)}%`).join(' · ');
   return `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">ComputAI</div><h2>AI agents</h2></div><a href="/platforms/computai">Open ComputAI →</a></div>
     <div class="metric-grid">
       ${stat('Agent time', hours(agents.seconds), `on ${agents.activeDays} days`, 'Wall-clock time with any Claude Code or Codex session producing output, on every machine; parallel sessions count once.')}
