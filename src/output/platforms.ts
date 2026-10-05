@@ -69,6 +69,7 @@ export const timeNotes: Record<string, string> = {
   goodreads: 'Estimated from page counts at a ~30 pages/hour pace, attributed to the day each book was finished.',
   events: 'Estimated from each attended event’s scheduled start–end time, defaulting to 2 h when no end time was recorded.',
   youtube: 'Per-day estimates mirrored from urtube — extension-measured seconds where available, otherwise saved progress and video length; every sync replaces the whole daily series.',
+  computai: 'Measured wall-clock time with any Claude Code or Codex session producing output, on every machine; parallel sessions count once.',
   health: 'Measured from Health Connect exercise-session start and end times. Raw biometric samples remain outside the public timeline and feeds.',
 };
 

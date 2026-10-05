@@ -276,3 +276,18 @@ test('summary totals aggregate sources and keep a measured-only figure', () => {
   assert.deepEqual(summary.sources.map((entry) => entry.source), ['simkl', 'statsfm']);
   repository.close();
 });
+
+test('ComputAI daily agent time merges parallel sessions and splits at Taipei midnight', async () => {
+  const repository = new Repository(':memory:');
+  const now = new Date('2026-10-05T04:00:00Z'); // 12:00 Taipei
+  const at = (iso: string) => new Date(iso).toISOString();
+  const db = (repository as unknown as { db: { prepare: (sql: string) => { run: (...args: unknown[]) => void } } }).db;
+  const insert = db.prepare("INSERT INTO computai_segments (device_id, source, machine, project, session, subagent, start_at, end_at, tokens, requests) VALUES ('d', ?, ?, ?, ?, 0, ?, ?, ?, 1)");
+  // Two overlapping sessions on Oct 5 (Taipei): 09:00–10:00 and 09:30–10:30 → 1.5 h once merged.
+  insert.run('claude', 'm', 'p', 'a', at('2026-10-05T01:00:00Z'), at('2026-10-05T02:00:00Z'), 1);
+  insert.run('codex', 'm', 'p', 'b', at('2026-10-05T01:30:00Z'), at('2026-10-05T02:30:00Z'), 1);
+  // One session crossing Taipei midnight Oct 3→4: 23:30–00:30 → 30 min each side.
+  insert.run('claude', 'm', 'p', 'c', at('2026-10-03T15:30:00Z'), at('2026-10-03T16:30:00Z'), 1);
+  const series = repository.computai.agentDaily(now, 3);
+  assert.deepEqual(series, [1800, 1800, 5400]);
+});

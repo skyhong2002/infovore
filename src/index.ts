@@ -17,7 +17,7 @@ import { compress } from 'hono/compress';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
-import { Repository } from './data/database.js';
+import { Repository, type DailyTimeSeries, type TimeSpentSummary, type TimeWindows } from './data/database.js';
 import { selectHomepageActivities } from './data/activity.js';
 import { nextIntervalAt } from './data/schedule.js';
 import type { SourceSnapshot } from './data/types.js';
@@ -632,8 +632,8 @@ app.get('/platforms/:source', (c) => {
   if (!cached?.data) return c.text('Platform has not completed its first sync yet', 503);
   c.header('Cache-Control', 'no-cache');
   const cardVersions = Object.fromEntries((definition.cards ?? []).map((name) => [name, version(name)]));
-  const timeSpent = ['statsfm', 'simkl', 'kitsu', 'backloggd', 'goodreads', 'youtube'].includes(source)
-    ? repository.timeSpent().sources.find((entry) => entry.source === source) ?? null
+  const timeSpent = ['statsfm', 'simkl', 'kitsu', 'backloggd', 'goodreads', 'youtube', 'computai'].includes(source)
+    ? timeSpentWithAgents().summary.sources.find((entry) => entry.source === source) ?? null
     : null;
   return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions, timeSpent));
 });
@@ -795,12 +795,33 @@ app.get('/api', (c) => c.html(apiPage(config.ownerName, {
   cards: sections.flatMap((s) => s.cards ?? []),
 })));
 
+// The per-platform time ledger plus ComputAI agent time, which lives in its
+// own store. Home adds agent time to its own panel, so this merge stays here
+// rather than in Repository.timeSpent().
+function timeSpentWithAgents(now = new Date()): { summary: TimeSpentSummary; daily: DailyTimeSeries } {
+  const summary = repository.timeSpent(now);
+  const daily = repository.dailyTime(now);
+  if (!computaiEnabled) return { summary, daily };
+  const windows = repository.computai.agentTime(now);
+  if (!windows.allTime) return { summary, daily };
+  const total = { ...summary.total };
+  for (const key of Object.keys(total) as Array<keyof TimeWindows>) total[key] += windows[key];
+  return {
+    summary: { ...summary, sources: [...summary.sources, { source: 'computai', method: 'measured' as const, windows }].sort((a, b) => b.windows.allTime - a.windows.allTime), total },
+    daily: { ...daily, sources: { ...daily.sources, computai: repository.computai.agentDaily(now, daily.days.length || 28) } },
+  };
+}
+
 app.get('/stats', (c) => {
   c.header('Cache-Control', 'no-cache');
-  return c.html(statsPage(config.ownerName, repository.timeSpent(), repository.dailyTime()));
+  const { summary, daily } = timeSpentWithAgents();
+  return c.html(statsPage(config.ownerName, summary, daily));
 });
 
-app.get('/api/time-spent.json', (c) => c.json({ ...repository.timeSpent(), daily: repository.dailyTime() }));
+app.get('/api/time-spent.json', (c) => {
+  const { summary, daily } = timeSpentWithAgents();
+  return c.json({ ...summary, daily });
+});
 
 app.get('/api/dayflow.json', (c) => {
   if (!dayflowEnabled) return c.json({ error: 'Dayflow is not configured' }, 404);

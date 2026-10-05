@@ -1,3 +1,4 @@
+import { taipeiWindowStarts } from '../data/time.js';
 import type { DatabaseSync } from 'node:sqlite';
 import type { TimeWindows } from '../data/database.js';
 import { recordedSleepWindows } from '../health/home.js';
@@ -111,6 +112,33 @@ export class ComputaiStore {
       this.agentTimeCache = { key, windows: recordedSleepWindows(rows, now) };
     }
     return this.agentTimeCache.windows;
+  }
+
+  // Agent wall-clock seconds per Taipei day for the last `days` days, oldest
+  // first: segments merged so parallel sessions count once, then split at
+  // Taipei midnights.
+  agentDaily(now = new Date(), days = 28): number[] {
+    const start = +taipeiWindowStarts(now).day - (days - 1) * 86_400_000;
+    const merged: Array<[number, number]> = [];
+    for (const s of this.segmentsSince(new Date(start).toISOString())) {
+      const from = Math.max(start, Date.parse(s.start_at));
+      const to = Math.min(+now, Date.parse(s.end_at));
+      if (!(to > from)) continue;
+      const last = merged.at(-1);
+      if (last && from <= last[1]) last[1] = Math.max(last[1], to);
+      else merged.push([from, to]);
+    }
+    const series = new Array<number>(days).fill(0);
+    for (let [from, to] of merged) {
+      while (from < to) {
+        const index = Math.floor((from - start) / 86_400_000);
+        const dayEnd = start + (index + 1) * 86_400_000;
+        const end = Math.min(to, dayEnd);
+        if (index >= 0 && index < days) series[index] += (end - from) / 1000;
+        from = end;
+      }
+    }
+    return series.map(Math.round);
   }
 
   workBlocks(since: string): WorkBlock[] {
