@@ -216,6 +216,26 @@ test('event ingestion requires auth and never exposes private events', async () 
   assert.equal(timeline.total, 1);
   assert.equal(timeline.data[0].title, 'Future Concert');
   assert.deepEqual((timeline as any).data[0].extra.tags, ['音樂會']);
+  for (const path of [
+    '/api/activities.json?limit=not-a-number',
+    '/feed.json?limit=not-a-number',
+    '/api/activities.json?offset=NaN',
+    '/api/activities.json?offset=Infinity',
+  ]) {
+    const response = await app.request(path);
+    assert.equal(response.status, 200, path);
+    assert.match(response.headers.get('content-type') ?? '', /application\/json/, path);
+    const page = await response.json() as { limit: number; offset: number; data: Array<{ title: string }> };
+    assert.equal(page.limit, 100, path);
+    assert.equal(page.offset, 0, path);
+    assert.ok(page.data.some((activity) => activity.title === 'Future Concert'), path);
+    assert.ok(page.data.every((activity) => activity.title !== 'Private Ticket'), path);
+  }
+  const search = await app.request('/search?q=Concert&offset=Infinity');
+  assert.equal(search.status, 200);
+  const searchHtml = await search.text();
+  assert.match(searchHtml, /Future Concert/);
+  assert.doesNotMatch(searchHtml, /Private Ticket/);
   const feed = await (await app.request('/feed.xml')).text();
   assert.match(feed, /Future Concert/);
   assert.doesNotMatch(feed, /Private Ticket/);

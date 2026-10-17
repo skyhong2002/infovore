@@ -246,6 +246,36 @@ test('query filters, privacy, pagination and Wrapped use persisted history', () 
   repository.close();
 });
 
+test('pagination normalizes invalid numbers without exposing private activities', () => {
+  const repository = new Repository(':memory:');
+  try {
+    repository.ingestEntries([
+      { source: 'events', sourceItemId: 'page-old', visibility: 'public', kind: 'event', title: 'Pagination Old', image: '', status: 'attended', activityAt: '2026-05-01T12:00:00Z', rating: null, extra: {} },
+      { source: 'events', sourceItemId: 'page-new', visibility: 'public', kind: 'event', title: 'Pagination New', image: '', status: 'attended', activityAt: '2026-05-02T12:00:00Z', rating: null, extra: {} },
+      { source: 'events', sourceItemId: 'page-private', visibility: 'private', kind: 'event', title: 'Pagination Private', image: '', status: 'attended', activityAt: '2026-05-03T12:00:00Z', rating: null, extra: {} },
+    ]);
+    const cases = [
+      { label: 'defaults', query: {}, limit: 100, offset: 0, titles: ['Pagination New', 'Pagination Old'] },
+      ...[NaN, Infinity, -Infinity].map((value) => ({ label: `invalid limit ${value}`, query: { limit: value }, limit: 100, offset: 0, titles: ['Pagination New', 'Pagination Old'] })),
+      ...[NaN, Infinity, -Infinity].map((value) => ({ label: `invalid offset ${value}`, query: { offset: value }, limit: 100, offset: 0, titles: ['Pagination New', 'Pagination Old'] })),
+      { label: 'lower bounds', query: { limit: 0, offset: -10 }, limit: 1, offset: 0, titles: ['Pagination New'] },
+      { label: 'negative limit', query: { limit: -2 }, limit: 1, offset: 0, titles: ['Pagination New'] },
+      { label: 'fractional values', query: { limit: 1.9, offset: 1.9 }, limit: 1, offset: 1, titles: ['Pagination Old'] },
+      { label: 'limit upper bound', query: { limit: 1000 }, limit: 500, offset: 0, titles: ['Pagination New', 'Pagination Old'] },
+      { label: 'huge finite values', query: { limit: Number.MAX_VALUE, offset: Number.MAX_VALUE }, limit: 500, offset: Number.MAX_SAFE_INTEGER, titles: [] },
+    ];
+    for (const entry of cases) {
+      const page = repository.queryActivities({ source: 'events', query: 'Pagination', ...entry.query });
+      assert.equal(page.limit, entry.limit, entry.label);
+      assert.equal(page.offset, entry.offset, entry.label);
+      assert.equal(page.total, 2, entry.label);
+      assert.deepEqual(page.data.map((activity) => activity.title), entry.titles, entry.label);
+    }
+  } finally {
+    repository.close();
+  }
+});
+
 test('manual event edits update status and occurrence instead of duplicating', () => {
   const repository = new Repository(':memory:');
   const event = {

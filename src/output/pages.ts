@@ -209,8 +209,8 @@ export function apiPage(ownerName: string, docs: ApiDocs): string {
   const rules = `<section class="card"><p class="muted">All endpoints are <code>GET</code> and return UTF-8 JSON unless noted. Times are ISO 8601 in UTC; "a day" means a Taipei (UTC+8) calendar day. Only <em>public</em> activities are exposed: raw health samples, private events and Dayflow screen text never leave the server. Responses are not cached by the server, but the data behind them refreshes hourly, so please do not poll faster than that. Content belongs to the original platforms; credit "${html(ownerName)} · infovore" when you reuse it.</p></section>`;
   const activities = `<h2>Activities</h2><table>
     <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
-    ${row('/api/activities.json', 'A page of public activities, newest first, as <code>{ data, total, limit, offset }</code>.', 'Query: <code>q</code> text match on title and metadata · <code>source</code> platform id · <code>kind</code> media kind · <code>status</code> · <code>since</code>/<code>until</code> ISO instants · <code>limit</code> (1–500, default 100) · <code>offset</code>')}
-    ${row('/feed.json', 'The latest 100 activities in the same shape.', 'Query: <code>limit</code>')}
+    ${row('/api/activities.json', 'A page of public activities, newest first, as <code>{ data, total, limit, offset }</code>.', 'Query: <code>q</code> text match on title and metadata · <code>source</code> platform id · <code>kind</code> media kind · <code>status</code> · <code>since</code>/<code>until</code> ISO instants · <code>limit</code> (1–500, default 100) · <code>offset</code> (0–9,007,199,254,740,991, default 0). Finite values are rounded down and clamped; non-numeric or infinite values use the defaults.')}
+    ${row('/feed.json', 'The latest 100 activities in the same shape.', 'Query: <code>limit</code>, with the same normalization as activities')}
     ${row('/feed.xml', 'RSS 2.0 feed of the latest 100 activities.')}
     ${row('/api/wrapped/<year>.json', 'A year-in-review summary: totals by source and kind, most active titles, average rating.', 'Years 2000–2200')}
     </tbody></table>`;

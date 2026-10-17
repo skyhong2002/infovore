@@ -874,8 +874,12 @@ export class Repository {
   }
 
   queryActivities(query: ActivityQuery = {}): ActivityPage {
-    const limit = Math.max(1, Math.min(500, Math.floor(query.limit ?? 100)));
-    const offset = Math.max(0, Math.floor(query.offset ?? 0));
+    const limitValue = query.limit ?? 100;
+    const offsetValue = query.offset ?? 0;
+    const limit = Number.isFinite(limitValue)
+      ? Math.max(1, Math.min(500, Math.floor(limitValue))) : 100;
+    const offset = Number.isFinite(offsetValue)
+      ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(offsetValue))) : 0;
     const where = ["visibility='public'"];
     const params: Array<string | number> = [];
     const add = (sql: string, value: string) => { where.push(sql); params.push(value); };
