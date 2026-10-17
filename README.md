@@ -94,6 +94,12 @@ sleep stages remain unknown; efficiency is not a Garmin sleep score. Step
 history shows the latest positive recorded days, not missing days as zero.
 All five variants refresh together after Android sync, including direct embeds.
 
+Encoded PNG/WebP responses share a least-recently-used cache of at most 64
+entries and 32 MiB of encoded bytes. Old content hashes are evicted as snapshots
+change; oversized responses are served without caching. This bounds retained
+encodings, not active rendering work or total process memory. Eviction preserves
+the existing content-derived ETags and HTTP cache policy.
+
 Each card is served as **svg** (vector), **png**, or **webp** — the previews
 above use webp (≈10× smaller than the SVG), so this page loads fast.
 

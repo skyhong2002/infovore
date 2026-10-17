@@ -29,6 +29,7 @@ import { fetchSimkl } from './sources/simkl.js';
 import { fetchGoodreads } from './sources/goodreads.js';
 import { fetchYoutube, syncYoutubeIntervals, type YoutubeExtra } from './sources/youtube.js';
 import { rasterize } from './output/render.js';
+import { RasterCache } from './output/raster-cache.js';
 import { activityRss } from './output/feed.js';
 import { apiPage, html, nowPage, profilePage, searchPage, shell, stylesVersion } from './output/pages.js';
 import { wrappedPage } from './output/wrapped.js';
@@ -949,8 +950,8 @@ const MIME: Record<string, string> = {
 };
 
 // Cache rasterized (png/webp) card bodies keyed by content, so we only encode
-// once per unique card render + scale.
-const rasterCache = new Map<string, Buffer>();
+// once per hot card render + scale. Bound old content hashes across refreshes.
+const rasterCache = new RasterCache();
 
 app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
   const file = c.req.param('file');
