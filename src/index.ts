@@ -20,7 +20,7 @@ import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js
 import { taipeiDay } from './data/time.js';
 import { Repository, type DailyTimeSeries, type TimeSpentSummary, type TimeWindows } from './data/database.js';
 import { selectHomepageActivities } from './data/activity.js';
-import { nextIntervalAt } from './data/schedule.js';
+import { nextIntervalAt, refreshAndSchedule } from './data/schedule.js';
 import type { SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
@@ -163,12 +163,49 @@ async function refreshAll(): Promise<void> {
 const app = new Hono();
 // HTML and SVG cards are large and highly compressible; Traefik does not compress.
 app.use('*', compress());
+const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
+const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
+
+// Health inspects sync metadata only. Register it before snapshot/card
+// middleware so a probe neither starts nor waits for unrelated rendering.
+app.get('/healthz', (c) => {
+  const now = Date.now();
+  const maxAgeMs = config.maxSourceAgeHours * 60 * 60 * 1000;
+  const sources: Array<{
+    source: string;
+    fresh: boolean;
+    ageMs: number | null;
+    error: string | null;
+  }> = activeSources.map((name) => {
+    const entry = getCache(`data:${name}`);
+    const ageMs = entry ? now - entry.fetchedAt : null;
+    return { source: name, fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: entry?.error ?? null };
+  });
+  if (config.healthConnect.token && config.sourceEnabled('health')) {
+    const lastSyncedAt = repository.healthConnectStatus().lastSyncedAt;
+    const ageMs = lastSyncedAt ? now - Date.parse(lastSyncedAt) : null;
+    sources.push({ source: 'health', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+  }
+  if (dayflowEnabled) {
+    const synced = repository.dayflow.status().lastSyncedAt;
+    const ageMs = synced ? now - Date.parse(synced) : null;
+    sources.push({ source: 'dayflow', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+  }
+  if (computaiEnabled) {
+    const synced = repository.computai.status().lastSyncedAt;
+    const ageMs = synced ? now - Date.parse(synced) : null;
+    sources.push({ source: 'computai', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+  }
+  const freshCount = sources.filter((source) => source.fresh).length;
+  const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';
+  return c.json({ status, maxSourceAgeHours: config.maxSourceAgeHours, sources }, status === 'unhealthy' ? 503 : 200);
+});
+
 // Cards that clip "in progress" spans at the current time are keyed on a
 // coarse clock so a visit every minute does not re-render them every minute.
 const QUARTER_HOUR = 15 * 60_000;
 const HOUR = 60 * 60_000;
 const roundedNow = (step: number) => new Date(Math.floor(Date.now() / step) * step);
-const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
 // New Dayflow data rebuilds the snapshot before the request continues. When
 // only the clock moved (today's in-progress totals), it rebuilds at most every
 // five minutes, after the response, so no visitor waits for it.
@@ -217,7 +254,6 @@ app.use('*', async (c, next) => {
 
 // ComputAI pushes one rolling 30-day report from the Mac; re-render its cards
 // only when a newer report arrives.
-const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
 let computaiRevision = -1;
 let computaiRender: Promise<void> | null = null;
 app.use('*', async (c, next) => {
@@ -986,39 +1022,6 @@ app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
   return c.body(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
 });
 
-app.get('/healthz', (c) => {
-  const now = Date.now();
-  const maxAgeMs = config.maxSourceAgeHours * 60 * 60 * 1000;
-  const sources: Array<{
-    source: string;
-    fresh: boolean;
-    ageMs: number | null;
-    error: string | null;
-  }> = activeSources.map((name) => {
-    const entry = getCache(`data:${name}`);
-    const ageMs = entry ? now - entry.fetchedAt : null;
-    return { source: name, fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: entry?.error ?? null };
-  });
-  if (config.healthConnect.token && config.sourceEnabled('health')) {
-    const lastSyncedAt = repository.healthConnectStatus().lastSyncedAt;
-    const ageMs = lastSyncedAt ? now - Date.parse(lastSyncedAt) : null;
-    sources.push({ source: 'health', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
-  }
-  if (dayflowEnabled) {
-    const synced = repository.dayflow.status().lastSyncedAt;
-    const ageMs = synced ? now - Date.parse(synced) : null;
-    sources.push({ source: 'dayflow', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
-  }
-  if (computaiEnabled) {
-    const synced = repository.computai.status().lastSyncedAt;
-    const ageMs = synced ? now - Date.parse(synced) : null;
-    sources.push({ source: 'computai', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
-  }
-  const freshCount = sources.filter((source) => source.fresh).length;
-  const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';
-  return c.json({ status, maxSourceAgeHours: config.maxSourceAgeHours, sources }, status === 'unhealthy' ? 503 : 200);
-});
-
 if (process.env.NODE_ENV !== 'test') {
   serve({ fetch: app.fetch, port: config.port }, (info) => {
     console.log(`listening on :${info.port}`);
@@ -1032,22 +1035,14 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-// Refresh immediately on startup, then at the next interval boundary. The
-// recursive timeout is scheduled after the current refresh finishes so slow
-// upstreams can never cause overlapping cycles.
 function nextRunAt(): number {
   return nextIntervalAt(Date.now(), config.refreshIntervalMinutes);
 }
 
-function scheduleNextRefresh(): void {
-  setTimeout(() => {
-    refreshAll().finally(scheduleNextRefresh);
-  }, nextRunAt() - Date.now());
-}
-
+// Refresh immediately; only arm the next boundary after this cycle settles.
+// Per-source retry timers remain independent of the full refresh cycle.
 if (process.env.NODE_ENV !== 'test') {
-  refreshAll();
-  scheduleNextRefresh();
+  void refreshAndSchedule(refreshAll, config.refreshIntervalMinutes);
 }
 
 export { app, repository };
