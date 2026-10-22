@@ -5,7 +5,7 @@ import { parseGoodreadsRss } from '../src/sources/goodreads.js';
 import { parseKitsuEntries } from '../src/sources/kitsu.js';
 import { parseSimklEntries } from '../src/sources/simkl.js';
 import { normalizeStatsfm } from '../src/sources/statsfm.js';
-import { normalizeYoutube } from '../src/sources/youtube.js';
+import { fetchYoutube, normalizeYoutube } from '../src/sources/youtube.js';
 import { enrichPublicEvent, normalizeEvent, parseEventMetadata } from '../src/sources/events.js';
 
 
@@ -47,10 +47,42 @@ test('urtube summary fixture mirrors 28-day aggregates and the lifetime daily se
   assert.equal(snapshot.extra.recent.range, '28d');
   assert.equal(snapshot.extra.lifetime.watchEvents, 40652);
   assert.equal(snapshot.extra.topChannels[0].name, 'Theo - t3.gg');
+  assert.deepEqual(snapshot.extra.topics, urtubeSummary('28d').topics);
+  assert.deepEqual(snapshot.extra.keywords, urtubeSummary('28d').keywords);
   assert.deepEqual(snapshot.extra.daily, [{ day: '2026-08-06', watches: 6, estimatedWatchSeconds: 1140 }]);
   assert.equal('hourly' in snapshot.extra, false);
   assert.equal('progressCoverage' in snapshot.extra.recent, false);
   assert.throws(() => normalizeYoutube({ error: 'not found' }, urtubeSummary('all'), options));
+});
+
+test('urtube fetch uses the summary projection without losing topics, keywords or lifetime days', async (t) => {
+  const ranges: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    assert.equal(url.searchParams.get('detail'), 'summary');
+    const range = url.searchParams.get('range');
+    assert.ok(range === '28d' || range === 'all');
+    ranges.push(range);
+    // Summary mode omits only the expensive deep dashboard projections.
+    return Response.json({ ...urtubeSummary(range), channelRace: [], topicTrend: [] });
+  });
+  const snapshot = await fetchYoutube();
+  assert.deepEqual(ranges.sort(), ['28d', 'all']);
+  assert.equal(snapshot.extra.recent.watchEvents, 403);
+  assert.equal(snapshot.extra.lifetime.watchEvents, 40652);
+  assert.deepEqual(snapshot.extra.topics, urtubeSummary('28d').topics);
+  assert.deepEqual(snapshot.extra.keywords, urtubeSummary('28d').keywords);
+  assert.deepEqual(snapshot.extra.topChannels, urtubeSummary('28d').topChannels);
+  assert.deepEqual(snapshot.extra.topVideos, urtubeSummary('28d').topVideos);
+  assert.deepEqual(snapshot.extra.daily, urtubeSummary('all').daily);
+});
+
+test('urtube fetch still fails the source when one summary window is unavailable', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const range = new URL(String(input)).searchParams.get('range');
+    return range === 'all' ? new Response('Unavailable', { status: 503 }) : Response.json(urtubeSummary('28d'));
+  });
+  await assert.rejects(fetchYoutube(), /youtube: HTTP 503/);
 });
 
 test('Backloggd profile fixture normalizes a recent game', () => {

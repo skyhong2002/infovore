@@ -151,7 +151,9 @@ export function normalizeYoutube(
 
 async function getSummary(range: '28d' | 'all'): Promise<unknown> {
   const { baseUrl, handle } = config.urtube;
-  const url = `${baseUrl}/u/${encodeURIComponent(handle)}/summary.json?range=${range}`;
+  // This projection keeps topics/keywords and the time ledger, but skips
+  // UrTube's channel race and topic trend work that this mirror never reads.
+  const url = `${baseUrl}/u/${encodeURIComponent(handle)}/summary.json?range=${range}&detail=summary`;
   const res = await fetch(url, {
     headers: { Accept: 'application/json', 'User-Agent': config.userAgent },
     signal: AbortSignal.timeout(20000),
