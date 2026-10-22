@@ -313,6 +313,49 @@ test('latest source activities reach beyond the global page and exclude private 
   } finally { repository.close(); }
 });
 
+test('latest source lookup preserves precision, timestamp ties and public-only eligibility', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'infovore-latest-'));
+  const path = join(dir, 'data.sqlite');
+  const repository = new Repository(path);
+  const writer = new DatabaseSync(path);
+  try {
+    assert.deepEqual(repository.latestPublicActivitiesBySource(), []);
+    const insert = writer.prepare(`INSERT INTO activities
+      (id, dedupe_key, source, source_item_id, type, media_kind, title, image, status,
+       occurred_at, occurred_precision, visibility, extra_json, first_seen_at, last_seen_at)
+      VALUES (?, ?, ?, ?, 'media.completed', 'book', ?, '', 'completed', ?, ?, ?, ?, ?, ?)`);
+    const add = (source: string, id: string, at: string | null, precision = 'exact',
+      visibility = 'public', firstSeen = '2026-09-05T00:00:00.000Z') => {
+      insert.run(id, id, source, id, id, at, precision, visibility, JSON.stringify({ payload: 'x'.repeat(4096) }), firstSeen, firstSeen);
+    };
+    add('a-dated', 'dated', '2026-09-05T10:00:00.000Z');
+    add('a-dated', 'label-newer', 'Yesterday', 'label');
+    add('a-dated', 'future-exact', '2026-09-06T00:00:00.001Z');
+    add('a-dated', 'today', '2026-09-06', 'day');
+    add('a-dated', 'tomorrow', '2026-09-07', 'day');
+    add('b-first-seen', 'first-old', '2026-09-05T10:00:00.000Z');
+    add('b-first-seen', 'first-new', '2026-09-05T10:00:00.000Z', 'exact', 'public', '2026-09-05T01:00:00.000Z');
+    add('c-id-tie', 'tie-a', '2026-09-05T10:00:00.000Z');
+    add('c-id-tie', 'tie-z', '2026-09-05T10:00:00.000Z');
+    add('d-fallback', 'unknown', null, 'unknown');
+    add('d-fallback', 'label', 'Jul 7', 'label');
+    add('e-visibility', 'public', '2026-09-04T00:00:00.000Z');
+    add('e-visibility', 'private', '2026-09-05T00:00:00.000Z', 'exact', 'private');
+    add('e-visibility', 'summary', '2026-09-06T00:00:00.000Z', 'exact', 'summary');
+    add('f-only-future', 'only-future', '2027-01-01T00:00:00.000Z');
+    add('g-only-private', 'only-private', null, 'unknown', 'private');
+    add('h-only-unknown', 'only-unknown', null, 'unknown');
+    const now = new Date('2026-09-06T00:00:00.000Z');
+    assert.deepEqual(repository.latestPublicActivitiesBySource(now).map(a => a.sourceItemId),
+      ['today', 'first-new', 'tie-z', 'label', 'public', 'only-unknown']);
+    assert.ok(repository.latestPublicActivitiesBySource(now).every(a => a.extra.payload === 'x'.repeat(4096)));
+    // Same minute, external ingest changes eligibility: invalidate cached IDs.
+    writer.prepare("UPDATE activities SET visibility='private' WHERE id='tie-z'").run();
+    assert.equal(repository.latestPublicActivitiesBySource(now).find(a => a.source === 'c-id-tie')?.sourceItemId, 'tie-a');
+    assert.equal(repository.latestPublicActivitiesBySource(new Date('2026-09-07T00:00:00.000Z'))[0].sourceItemId, 'tomorrow');
+  } finally { writer.close(); repository.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('cached reads see writes from another connection, like the ingest container', () => {
   const dir = mkdtempSync(join(tmpdir(), 'infovore-cache-'));
   const reader = new Repository(join(dir, 'db.sqlite'));

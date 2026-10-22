@@ -870,19 +870,24 @@ export class Repository {
 
   latestPublicActivitiesBySource(now = new Date()): Activity[] {
     return this.cached(`latestBySource:${minute(now)}`, () => {
+      // Enumerate sources from the existing covering index. Each correlated
+      // lookup keeps only its best ID (LIMIT 1), then reads that row's payload.
+      // Ranking SELECT * with a window function sorted every historical image,
+      // title and extra_json before discarding all but one row per source.
       const rows = this.db.prepare(`
-        SELECT * FROM (
-          SELECT *, ROW_NUMBER() OVER (
-            PARTITION BY source
-            ORDER BY CASE WHEN occurred_precision IN ('exact', 'day') THEN 0 ELSE 1 END,
-                     occurred_at DESC, first_seen_at DESC, id DESC
-          ) AS source_rank
-          FROM activities
-          WHERE visibility = 'public'
+        SELECT activity.*
+        FROM (SELECT DISTINCT source FROM activities) sources
+        CROSS JOIN activities activity ON activity.id = (
+          SELECT candidate.id FROM activities candidate
+          WHERE candidate.source = sources.source AND visibility = 'public'
             AND (occurred_at IS NULL OR occurred_precision NOT IN ('exact', 'day')
               OR (occurred_precision = 'exact' AND occurred_at <= ?)
               OR (occurred_precision = 'day' AND substr(occurred_at, 1, 10) <= ?))
-        ) WHERE source_rank = 1
+          ORDER BY CASE WHEN occurred_precision IN ('exact', 'day') THEN 0 ELSE 1 END,
+                   occurred_at DESC, first_seen_at DESC, id DESC
+          LIMIT 1
+        )
+        ORDER BY sources.source
       `).all(now.toISOString(), taipeiDay(now)) as Record<string, unknown>[];
       return rows.map(row => this.rowToActivity(row));
     });
