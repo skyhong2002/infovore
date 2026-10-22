@@ -214,6 +214,71 @@ clock time and measured or estimated seconds, which puts YouTube into the
 activity rhythm and the recorded-time share on the overview. Only the event
 id, timestamp, precision and seconds are stored; titles and video ids are not.
 
+### Availability boundary
+
+`npm start`, `npm run dev` and the Docker CMD enter through `src/server.ts`.
+The public HTTP gateway imports no database or rendering modules. One isolated
+application child owns the existing Repository, routes, source refreshes,
+persistence and rendering, and listens only on an ephemeral loopback port.
+`src/index.ts` exports the application for tests; it is no longer a standalone
+server entrypoint. The separate ingest service and shared WAL format are unchanged.
+
+- `/healthz` reads only the gateway's in-memory metadata observation. The app
+  publishes metadata every second, without overlapping reads or queuing IPC
+  updates. An observation older than **3 seconds**, a failed metadata read,
+  absent startup observation or exited child yields **503 unhealthy**. Source
+  ages keep advancing between observations; the existing source age limit and
+  `degraded` semantics are not relaxed. `metadata` describes observation age and
+  errors; `backend` describes admission capacity, independently of source ages.
+- Public canonical `GET /` and `HEAD /` serve one last-good **real HTML** page
+  in gateway memory, not a database/render per visitor. Backend readiness starts
+  regeneration; a **60-second** clock refresh observes subsequent data/clock
+  changes, and cache misses may retry with a **5-second** cooldown after settlement.
+  There is one actual generation, no waiting queue, and it uses the same bounded
+  backend admission pool. A header/body deadline marks a refresh error but never
+  releases the running generation; a late genuine success is still captured.
+  Startup without a successful page, or a page older than **15 minutes**, yields
+  explicit **503**, never fabricated data. Auth/cookie, query, range and conditional
+  variants bypass the shared snapshot and retain the existing proxy behavior.
+  Each uncompressed page and its asynchronously generated gzip representation is
+  capped at **2 MiB**; a bounded candidate may coexist during replacement. Non-200,
+  empty, oversized, encoded, private, cookie-setting or unsupported-Vary responses
+  do not replace the last-good page. `X-Home-Generated-At` records the **start** of
+  the backend read; `Age` advances monotonically. `X-Home-Stale` and `X-Home-Error`
+  disclose clock age and refresh/metadata failure without changing the HTML's true
+  source-sync labels. The last-good page does **not** make `/healthz` healthy.
+  Cache state is intentionally ephemeral: a gateway restart must seed a new page.
+- Other routes stream through unchanged (including gzip, binary cards, Host,
+  request bodies and MCP). Admission is bounded to **16 actual in-flight
+  responses**, with no application waiting queue. A **3-second response-header
+  deadline** yields an explicit 503; it does **not** cancel/retry a SQLite
+  operation or free its slot before the real response finishes. Saturated
+  admission also makes health unhealthy, even if metadata is fresh. Response
+  bodies are streamed rather than buffered; an already-started body cannot be
+  replaced by a JSON 503 if its producer later stalls.
+- Anubis PoW uses one JavaScript worker, a 15-second deadline and no waiting
+  queue. Identical work shares its promise; different concurrent work is rejected.
+  Nonce order, SHA-256 and exhaustion (`null`) are preserved. Timeout/crash reject
+  through the existing refresh failure/retry path, after worker termination.
+  Failed termination keeps admission closed rather than spawning another worker.
+- A blocked app is **not** killed or replaced on a timer: its DB operation may
+  still be active. The gateway remains responsive and reports stale/unavailable
+  state until the operation recovers or an operator intervenes. A confirmed
+  child exit makes the production entrypoint exit nonzero, allowing the existing
+  Compose restart policy to start one new owner. This is availability isolation,
+  not a fix for shared-host disk contention or an indefinitely pending upstream
+  refresh; the completion-based hourly scheduler remains non-overlapping.
+
+`npm run check` includes parent-process socket probes during a synthetic SQLite
+stall and impossible PoW, bounded admission/deadline/cleanup/crash tests, and
+health startup/staleness/error/recovery cases. Test-file concurrency is limited
+to two so CPU-heavy render tests do not overwhelm shared CI hosts. The image
+smoke in `scripts/availability-runtime-smoke.mjs` runs from the repository root
+with `node --import tsx`; use only an isolated Node 22 image, no production
+volumes or credentials, and disable external networking. It exercises the exact
+`npx tsx src/server.ts` startup, production-only dependencies, worker loading,
+loopback HTTP, gzip/binary responses, JSON APIs and MCP using synthetic data.
+
 ### Behind a reverse proxy
 
 For TLS + a custom domain via [Traefik](https://traefik.io) (e.g. a

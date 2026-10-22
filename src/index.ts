@@ -14,13 +14,12 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import { compress } from 'hono/compress';
-import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
 import { taipeiDay } from './data/time.js';
 import { Repository, type DailyTimeSeries, type TimeSpentSummary, type TimeWindows } from './data/database.js';
 import { selectHomepageActivities } from './data/activity.js';
-import { nextIntervalAt, refreshAndSchedule } from './data/schedule.js';
+import { nextIntervalAt } from './data/schedule.js';
 import type { SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
@@ -1022,27 +1021,9 @@ app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
   return c.body(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
 });
 
-if (process.env.NODE_ENV !== 'test') {
-  serve({ fetch: app.fetch, port: config.port }, (info) => {
-    console.log(`listening on :${info.port}`);
-    // Fill the snapshot, coverage and card caches before the first visitor
-    // after a deploy has to wait for them.
-    void (async () => {
-      for (const path of ['/', '/cards', '/now', '/platforms']) {
-        try { await (await app.request(path)).arrayBuffer(); } catch (err) { console.error(`[warm] ${path} failed:`, err); }
-      }
-    })();
-  });
-}
-
 function nextRunAt(): number {
   return nextIntervalAt(Date.now(), config.refreshIntervalMinutes);
 }
 
-// Refresh immediately; only arm the next boundary after this cycle settles.
-// Per-source retry timers remain independent of the full refresh cycle.
-if (process.env.NODE_ENV !== 'test') {
-  void refreshAndSchedule(refreshAll, config.refreshIntervalMinutes);
-}
-
-export { app, repository };
+// Production lifecycle is owned by app-backend.ts, behind server.ts's gateway.
+export { app, repository, refreshAll };

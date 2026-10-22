@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { solvePow } from './anubis-pow.js';
 import { config } from '../config.js';
 
 // Anubis (github.com/TecharoHQ/anubis) is a proof-of-work anti-bot gate.
@@ -72,18 +72,6 @@ function parseChallenge(html: string): AnubisChallenge | null {
   }
 }
 
-// Mirror of the reference worker: count leading zero hex chars of
-// sha256(randomData + nonce).
-function solvePow(randomData: string, difficulty: number, maxIters = 5_000_000): { hash: string; nonce: number } | null {
-  for (let nonce = 0; nonce < maxIters; nonce++) {
-    const hash = createHash('sha256').update(randomData + nonce).digest('hex');
-    let zeros = 0;
-    while (zeros < hash.length && hash[zeros] === '0') zeros++;
-    if (zeros >= difficulty) return { hash, nonce };
-  }
-  return null;
-}
-
 // Given a challenge page's HTML and the response it came on, solve the PoW
 // and obtain the auth cookie. Returns true on success (jar now holds auth).
 export async function solveAnubis(
@@ -99,7 +87,7 @@ export async function solveAnubis(
   const { id, randomData } = challenge.challenge;
 
   const start = Date.now();
-  const solution = solvePow(randomData, difficulty);
+  const solution = await solvePow(randomData, difficulty);
   if (!solution) return false;
   const elapsed = Date.now() - start;
 
