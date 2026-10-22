@@ -256,7 +256,7 @@ function ledgerLifetimeSeconds(snapshot: SourceSnapshot<unknown>): number | null
 const minute = (now: Date) => Math.floor(+now / 60_000);
 const cachedReadPhases: Record<string, ReadPhase> = {
   list: 'activities_list', since: 'activities_since', coverage: 'coverage', latestBySource: 'latest_public',
-  countPublic: 'public_count', countBySource: 'source_counts', healthStatus: 'health_status', sleepTime: 'sleep_time',
+  countPublic: 'public_count', countBySource: 'source_counts', sleepTime: 'sleep_time',
 };
 
 export class Repository {
@@ -1268,9 +1268,7 @@ export class Repository {
       // Every supported Health insert/update/delete appends a unique sync in
       // the same transaction. Its ID also distinguishes batches with equal
       // received_at timestamps; unrelated ingest commits do not invalidate it.
-      const latest = this.db.prepare('SELECT sync_id FROM health_connect_syncs ORDER BY rowid DESC LIMIT 1')
-        .get() as { sync_id: string } | undefined;
-      const revision = latest?.sync_id ?? null;
+      const revision = this.healthConnectRevision();
       if (revision !== this.healthCountsRevision || this.healthCountsMemo.size >= 32) {
         this.healthCountsMemo.clear();
         this.healthCountsRevision = revision;
@@ -1512,23 +1510,41 @@ export class Repository {
     return Number(row.count);
   }
 
+  private healthConnectRevision(): string | null {
+    const latest = this.db.prepare('SELECT sync_id FROM health_connect_syncs ORDER BY rowid DESC LIMIT 1')
+      .get() as { sync_id: string } | undefined;
+    return latest?.sync_id ?? null;
+  }
+
+  private healthStatusMemo: { revision: string | null; status: HealthConnectStatus } | null = null;
   healthConnectStatus(): HealthConnectStatus {
-    return this.cached('healthStatus', () => {
-      const latest = this.db.prepare(`
-        SELECT device_id, received_at FROM health_connect_syncs
-        ORDER BY received_at DESC LIMIT 1
-      `).get() as { device_id: string; received_at: string } | undefined;
-      const typeRows = this.db.prepare(`
-        SELECT data_type, COUNT(*) count FROM health_connect_records
-        GROUP BY data_type ORDER BY data_type
-      `).all() as Array<{ data_type: string; count: number }>;
-      return {
-        totalStored: this.healthConnectCount(),
-        lastSyncedAt: latest?.received_at ?? null,
-        lastDeviceId: latest?.device_id ?? null,
-        recordsByType: Object.fromEntries(typeRows.map((row) => [row.data_type, Number(row.count)])),
-      };
+    return measureRead('health_status', () => {
+      // Only Health commits affect these totals and metadata. Activity/source
+      // persistence and unrelated ingestion must not rescan the Health table.
+      const revision = this.healthConnectRevision();
+      if (this.healthStatusMemo?.revision !== revision) {
+        this.healthStatusMemo = { revision, status: this.readHealthConnectStatus() };
+      }
+      const status = this.healthStatusMemo.status;
+      return { ...status, recordsByType: { ...status.recordsByType } };
     });
+  }
+
+  private readHealthConnectStatus(): HealthConnectStatus {
+    const latest = this.db.prepare(`
+      SELECT device_id, received_at FROM health_connect_syncs
+      ORDER BY received_at DESC LIMIT 1
+    `).get() as { device_id: string; received_at: string } | undefined;
+    const typeRows = this.db.prepare(`
+      SELECT data_type, COUNT(*) count FROM health_connect_records
+      GROUP BY data_type ORDER BY data_type
+    `).all() as Array<{ data_type: string; count: number }>;
+    return {
+      totalStored: this.healthConnectCount(),
+      lastSyncedAt: latest?.received_at ?? null,
+      lastDeviceId: latest?.device_id ?? null,
+      recordsByType: Object.fromEntries(typeRows.map((row) => [row.data_type, Number(row.count)])),
+    };
   }
 
   // The snapshot aggregates every health record, so it is memoised until the
