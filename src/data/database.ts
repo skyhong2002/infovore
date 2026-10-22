@@ -750,7 +750,7 @@ export class Repository {
       this.db.exec('COMMIT');
       return { inserted, updated };
     } catch (error) {
-      this.db.exec('ROLLBACK');
+      this.rollbackKeeping();
       throw error;
     }
   }
@@ -767,9 +767,24 @@ export class Repository {
       `).run(source, error, completedAt);
       this.db.exec('COMMIT');
     } catch (dbError) {
-      this.db.exec('ROLLBACK');
+      this.rollbackKeeping();
       throw dbError;
     }
+  }
+
+  // A failing ROLLBACK (e.g. no transaction left after a failed COMMIT) must
+  // not replace the error that caused it.
+  private rollbackKeeping(): void {
+    try { this.db.exec('ROLLBACK'); } catch { /* keep the original error */ }
+  }
+
+  // Runs still marked running when the app starts belong to a process that
+  // stopped mid-refresh; nothing will ever complete them.
+  abandonRunningSyncs(completedAt = new Date().toISOString()): number {
+    const result = this.db.prepare(
+      `UPDATE sync_runs SET completed_at=?, status='error', error='abandoned: process stopped before completion' WHERE status='running'`
+    ).run(completedAt);
+    return Number(result.changes);
   }
 
   loadSnapshots(): Array<{ snapshot: SourceSnapshot<unknown>; fetchedAt: string; error: string | null }> {

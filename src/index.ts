@@ -19,7 +19,7 @@ import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js
 import { taipeiDay } from './data/time.js';
 import { Repository, type DailyTimeSeries, type TimeSpentSummary, type TimeWindows } from './data/database.js';
 import { selectHomepageActivities } from './data/activity.js';
-import { nextIntervalAt } from './data/schedule.js';
+import { scheduleState, withDeadline } from './data/schedule.js';
 import type { SourceSnapshot } from './data/types.js';
 import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
@@ -120,33 +120,61 @@ if (config.healthConnect.token) {
   await renderCards('health', repository.healthConnectSnapshot(config.ownerName));
 }
 
-async function refreshSource(name: string, isRetry = false): Promise<void> {
-  const syncId = repository.startSync(name);
+// One refresh per source at a time. A refresh still pending after the deadline
+// is failed and released; if it ever resumes, it is ignored instead of
+// overwriting a newer run.
+const SOURCE_DEADLINE_MS = 10 * 60_000;
+const runningSources = new Map<string, number>();
+
+async function refreshSource(name: string, isRetry = false, deadlineMs = SOURCE_DEADLINE_MS): Promise<void> {
+  if (runningSources.has(name)) {
+    console.warn(`[refresh] ${name} skipped: previous run still in progress`);
+    return;
+  }
+  runningSources.set(name, Date.now());
+  let syncId: number | null = null;
+  let settled = false;
   try {
-    const data = await fetchers[name]();
-    const persisted = repository.finishSync(syncId, data);
-    repository.recordTimeLedger(data);
-    setCache(`data:${name}`, data);
-    await renderCards(name, data);
-    console.log(`[refresh] ${name} ok (${persisted.inserted} new, ${persisted.updated} seen)`);
-    if (name === 'youtube') {
-      // Coverage intervals ride along with the summary refresh but must not
-      // fail the public mirror when the private feed is unavailable.
-      try {
-        const stored = await syncYoutubeIntervals(repository);
-        if (stored !== null) console.log(`[refresh] youtube intervals ok (${stored} rows)`);
-      } catch (err) {
-        console.error(`[refresh] youtube intervals failed: ${err instanceof Error ? err.message : String(err)}`);
+    syncId = repository.startSync(name);
+    const id = syncId;
+    await withDeadline((async () => {
+      const data = await fetchers[name]();
+      if (settled) return;
+      const persisted = repository.finishSync(id, data);
+      settled = true;
+      repository.recordTimeLedger(data);
+      setCache(`data:${name}`, data);
+      await renderCards(name, data);
+      console.log(`[refresh] ${name} ok (${persisted.inserted} new, ${persisted.updated} seen)`);
+      if (name === 'youtube') {
+        // Coverage intervals ride along with the summary refresh but must not
+        // fail the public mirror when the private feed is unavailable.
+        try {
+          const stored = await syncYoutubeIntervals(repository);
+          if (stored !== null) console.log(`[refresh] youtube intervals ok (${stored} rows)`);
+        } catch (err) {
+          console.error(`[refresh] youtube intervals failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
-    }
+    })(), deadlineMs, `${name} refresh`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    repository.failSync(syncId, name, msg);
-    setCacheError(`data:${name}`, msg);
     console.error(`[refresh] ${name} failed: ${msg}`);
-    if (!isRetry) {
-      setTimeout(() => refreshSource(name, true), 2 * 60 * 1000);
+    // Data already persisted means only post-processing failed; the run stands.
+    if (!settled) {
+      settled = true;
+      setCacheError(`data:${name}`, msg);
+      try {
+        if (syncId !== null) repository.failSync(syncId, name, msg);
+      } catch (dbErr) {
+        console.error(`[refresh] ${name} could not record failure: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`);
+      }
+      if (!isRetry) {
+        setTimeout(() => void refreshSource(name, true, deadlineMs), 2 * 60 * 1000);
+      }
     }
+  } finally {
+    runningSources.delete(name);
   }
 }
 
@@ -726,7 +754,12 @@ app.get('/status', (c) => {
     owner: config.ownerName,
     refresh: {
       intervalMinutes: config.refreshIntervalMinutes,
-      nextScheduledAt: new Date(nextRunAt()).toISOString(),
+      // The boundary a timer is actually armed for; null while a cycle runs
+      // or before the scheduler starts.
+      nextScheduledAt: isoOrNull(scheduleState.armedFor),
+      cycleStartedAt: isoOrNull(scheduleState.cycleStartedAt),
+      cycleCompletedAt: isoOrNull(scheduleState.cycleCompletedAt),
+      running: [...runningSources].map(([source, startedAt]) => ({ source, startedAt: new Date(startedAt).toISOString() })),
     },
     database: { activities: repository.countPublicActivities(), latestRuns: repository.latestRuns() },
     cards: sections.flatMap((s) => s.cards ?? []).map((n) => `/card/${n}.svg`),
@@ -1021,9 +1054,9 @@ app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
   return c.body(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
 });
 
-function nextRunAt(): number {
-  return nextIntervalAt(Date.now(), config.refreshIntervalMinutes);
+function isoOrNull(ms: number | null): string | null {
+  return ms === null ? null : new Date(ms).toISOString();
 }
 
 // Production lifecycle is owned by app-backend.ts, behind server.ts's gateway.
-export { app, repository, refreshAll };
+export { app, repository, refreshAll, refreshSource, fetchers };

@@ -340,9 +340,11 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.match(wrappedHtml, /2099 Wrapped/);
   assert.match(wrappedHtml, /Archive · annual view/);
   assert.match(wrappedHtml, /href="\/profile" aria-current="page">Archive/);
-  const status = await (await app.request('/status')).json() as { refresh: { intervalMinutes: number; nextScheduledAt: string } };
+  const status = await (await app.request('/status')).json() as { refresh: { intervalMinutes: number; nextScheduledAt: string | null; running: unknown[] } };
   assert.equal(status.refresh.intervalMinutes, 60);
-  assert.match(status.refresh.nextScheduledAt, /^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/);
+  // Tests never start the scheduler, so no timer is armed.
+  assert.equal(status.refresh.nextScheduledAt, null);
+  assert.deepEqual(status.refresh.running, []);
 });
 
 test('YouTube platform pages render only the urtube mirror', async () => {

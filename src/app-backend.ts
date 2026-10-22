@@ -1,4 +1,4 @@
-import { app, refreshAll } from './index.js';
+import { app, refreshAll, repository } from './index.js';
 import { config } from './config.js';
 import { refreshAndSchedule } from './data/schedule.js';
 import { startBackend } from './backend.js';
@@ -12,5 +12,11 @@ void (async () => {
     catch (error) { console.error(`[warm] ${path} failed:`, error); }
   }
 })();
-void refreshAndSchedule(refreshAll, config.refreshIntervalMinutes);
+// This process is the only refresh owner, so any run still marked running was
+// left behind by a previous one.
+const abandoned = repository.abandonRunningSyncs();
+if (abandoned) console.warn(`[refresh] marked ${abandoned} unfinished run(s) from a previous process as abandoned`);
+refreshAndSchedule(refreshAll, config.refreshIntervalMinutes).catch((error) => {
+  console.error(`[refresh] cycle failed: ${error instanceof Error ? error.message : String(error)}`);
+});
 process.on('disconnect', () => { backend.close(); process.exit(0); });

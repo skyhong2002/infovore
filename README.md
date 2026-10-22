@@ -266,8 +266,14 @@ server entrypoint. The separate ingest service and shared WAL format are unchang
   state until the operation recovers or an operator intervenes. A confirmed
   child exit makes the production entrypoint exit nonzero, allowing the existing
   Compose restart policy to start one new owner. This is availability isolation,
-  not a fix for shared-host disk contention or an indefinitely pending upstream
-  refresh; the completion-based hourly scheduler remains non-overlapping.
+  not a fix for shared-host disk contention.
+- Source refreshes run at most once per source at a time. A refresh still
+  pending after **10 minutes** is recorded as failed (and retried once after two
+  minutes); a late answer from it is ignored. A whole cycle is abandoned after
+  one interval, so a hung upstream can never stop later hourly boundaries. On
+  startup, runs a previous process left `running` are marked abandoned.
+  `/status` reports the boundary the timer is actually armed for, the latest
+  cycle's start/end and the sources currently refreshing.
 
 `npm run check` includes parent-process socket probes during a synthetic SQLite
 stall and impossible PoW, bounded admission/deadline/cleanup/crash tests, and
