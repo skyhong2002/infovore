@@ -1,4 +1,5 @@
 import { taipeiWindowStarts } from '../data/time.js';
+import { measureRead } from '../data/read-timing.js';
 import type { DatabaseSync } from 'node:sqlite';
 import type { TimeWindows } from '../data/database.js';
 import { recordedSleepWindows } from '../health/home.js';
@@ -121,8 +122,10 @@ export class ComputaiStore {
   agentTime(now = new Date()): TimeWindows {
     const key = `${this.status().revision}:${Math.floor(+now / 300_000)}`;
     if (this.agentTimeCache?.key !== key) {
-      const rows = this.db.prepare('SELECT start_at, end_at FROM computai_segments').all() as Array<{ start_at: string; end_at: string }>;
-      this.agentTimeCache = { key, windows: recordedSleepWindows(rows, now) };
+      this.agentTimeCache = { key, windows: measureRead('agent_time', () => {
+        const rows = this.db.prepare('SELECT start_at, end_at FROM computai_segments').all() as Array<{ start_at: string; end_at: string }>;
+        return recordedSleepWindows(rows, now);
+      }) };
     }
     return this.agentTimeCache.windows;
   }
@@ -210,6 +213,10 @@ export class ComputaiStore {
   }
 
   snapshot(owner: string, now = new Date()): ComputaiSnapshot {
+    return measureRead('computai_snapshot', () => this.buildSnapshot(owner, now));
+  }
+
+  private buildSnapshot(owner: string, now: Date): ComputaiSnapshot {
     const row = this.db.prepare('SELECT payload_json FROM computai_reports ORDER BY observed_at DESC LIMIT 1').get() as { payload_json: string } | undefined;
     const report = row ? JSON.parse(row.payload_json) as ComputaiReport : null;
     const { deviceId: _device, schemaVersion: _version, ...open } = report ?? ({} as ComputaiReport);

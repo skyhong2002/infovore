@@ -1,4 +1,5 @@
 import { recordedCoverage, type RecordedInterval } from './coverage.js';
+import { measureRead, type ReadPhase } from './read-timing.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
 import { ComputaiStore, migrateComputai, migrateComputaiSegments } from '../computai/store.js';
 import { mkdirSync } from 'node:fs';
@@ -246,6 +247,10 @@ function ledgerLifetimeSeconds(snapshot: SourceSnapshot<unknown>): number | null
 }
 
 const minute = (now: Date) => Math.floor(+now / 60_000);
+const cachedReadPhases: Record<string, ReadPhase> = {
+  list: 'activities_list', since: 'activities_since', coverage: 'coverage', latestBySource: 'latest_public',
+  countPublic: 'public_count', countBySource: 'source_counts', healthStatus: 'health_status', sleepTime: 'sleep_time',
+};
 
 export class Repository {
   private readonly db: DatabaseSync;
@@ -270,6 +275,9 @@ export class Repository {
   private readCache = new Map<string, unknown>();
   private readCacheVersion = '';
   private cached<T>(key: string, compute: () => T): T {
+    return measureRead(cachedReadPhases[key.split(':', 1)[0]] ?? 'repository_read', () => this.readCached(key, compute));
+  }
+  private readCached<T>(key: string, compute: () => T): T {
     const data = this.db.prepare('PRAGMA data_version').get() as { data_version: number };
     const own = this.db.prepare('SELECT total_changes() changes').get() as { changes: number };
     const version = `${data.data_version}:${own.changes}`;
@@ -1168,6 +1176,10 @@ export class Repository {
   // per source, from the same subqueries as timeSpent(). Day-granular ledger
   // sources map directly; instant-based sources bucket by Taipei date.
   dailyTime(now = new Date(), days = 28): DailyTimeSeries {
+    return measureRead('daily_time', () => this.readDailyTime(now, days));
+  }
+
+  private readDailyTime(now: Date, days: number): DailyTimeSeries {
     const start = new Date(+taipeiWindowStarts(now).day - (days - 1) * 86_400_000);
     const dayList = Array.from({ length: days }, (_, index) => taipeiDay(new Date(+start + index * 86_400_000)));
     const index = new Map(dayList.map((day, position) => [day, position]));
@@ -1243,6 +1255,10 @@ export class Repository {
   // Health Connect records counted the way the timeline shows them: one per
   // sleep session, one per workout, one per day with steps (Taipei days).
   healthActivityCounts(start = '0000', end = '9999'): { sleep: number; workouts: number; stepDays: number } {
+    return measureRead('health_activity_counts', () => this.readHealthActivityCounts(start, end));
+  }
+
+  private readHealthActivityCounts(start: string, end: string): { sleep: number; workouts: number; stepDays: number } {
     const row = this.db.prepare(`
       SELECT
         COUNT(CASE WHEN data_type='sleep_session' THEN 1 END) sleep,
@@ -1262,11 +1278,17 @@ export class Repository {
 
   // Public activities first collected on or after an instant.
   countNewSince(since: string): number {
-    const row = this.db.prepare("SELECT COUNT(*) count FROM activities WHERE visibility='public' AND first_seen_at>=?").get(since) as { count: number };
-    return Number(row.count);
+    return measureRead('new_entry_count', () => {
+      const row = this.db.prepare("SELECT COUNT(*) count FROM activities WHERE visibility='public' AND first_seen_at>=?").get(since) as { count: number };
+      return Number(row.count);
+    });
   }
 
   timeSpent(now = new Date()): TimeSpentSummary {
+    return measureRead('time_spent', () => this.readTimeSpent(now));
+  }
+
+  private readTimeSpent(now: Date): TimeSpentSummary {
     const starts = taipeiWindowStarts(now);
     const cutoffs = {
       last24h: new Date(now.getTime() - 86_400_000).toISOString(),
@@ -1494,7 +1516,7 @@ export class Repository {
   healthConnectSnapshot(ownerName: string, now = new Date()): HealthConnectSnapshot {
     const key = `${ownerName}\u001f${this.healthConnectLastSyncedAt()}\u001f${taipeiDay(now)}`;
     if (this.healthSnapshotMemo?.key === key) return this.healthSnapshotMemo.snapshot;
-    const snapshot = this.buildHealthConnectSnapshot(ownerName, now);
+    const snapshot = measureRead('health_snapshot', () => this.buildHealthConnectSnapshot(ownerName, now));
     this.healthSnapshotMemo = { key, snapshot };
     return snapshot;
   }

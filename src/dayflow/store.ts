@@ -1,4 +1,5 @@
 import { keywordPools } from './pools.js';
+import { measureRead } from '../data/read-timing.js';
 import { dayflowKeywords } from './keywords.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { dayflowBatchSchema, dayflowDay, type DayflowBatch, type DayflowCategory, type DayflowDay, type DayflowSnapshot } from './types.js';
@@ -93,6 +94,10 @@ export class DayflowStore {
   }
 
   snapshot(owner: string, now = new Date()): DayflowSnapshot {
+    return measureRead('dayflow_snapshot', () => this.buildSnapshot(owner, now));
+  }
+
+  private buildSnapshot(owner: string, now: Date): DayflowSnapshot {
     const byDay = new Map<string, DayflowBatch[]>();
     for (const batch of this.loadBatches()) {
       if (batch.day > dayflowDay(now)) continue;

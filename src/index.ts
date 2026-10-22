@@ -1,4 +1,5 @@
 import { buildRhythmCard } from './output/rhythm.js';
+import { measureRead } from './data/read-timing.js';
 import { buildNowCard } from './output/now.js';
 import { buildCloudTerms, buildWordCloudCard, type CloudEntry, type CloudTerm } from './output/cloud.js';
 import { dayflowCloudTerms } from './dayflow/pools.js';
@@ -140,9 +141,9 @@ async function refreshSource(name: string, isRetry = false, deadlineMs = SOURCE_
     await withDeadline((async () => {
       const data = await fetchers[name]();
       if (settled) return;
-      const persisted = repository.finishSync(id, data);
+      const persisted = measureRead('source_persistence', () => repository.finishSync(id, data));
       settled = true;
-      repository.recordTimeLedger(data);
+      measureRead('time_ledger', () => repository.recordTimeLedger(data));
       setCache(`data:${name}`, data);
       await renderCards(name, data);
       console.log(`[refresh] ${name} ok (${persisted.inserted} new, ${persisted.updated} seen)`);
@@ -360,6 +361,9 @@ let wordCloudRender: Promise<void> | null = null;
 // Terms for the rolling word cloud, cached per hour and Dayflow revision.
 let cloudTermsCache: { key: string; terms: CloudTerm[] } | null = null;
 function currentCloudTerms(): CloudTerm[] {
+    return measureRead('cloud_terms', readCloudTerms);
+}
+function readCloudTerms(): CloudTerm[] {
     const now = roundedNow(HOUR);
     const cacheKey = `${+now}:${dayflowEnabled ? repository.dayflow.status().revision : ''}:${repository.countPublicActivities()}`;
     if (cloudTermsCache?.key === cacheKey) return cloudTermsCache.terms;
@@ -585,7 +589,7 @@ function dashboardView(now: Date) {
 // The overview metric is the share of the last 28 days with any recording; the
 // rhythm panel shows the first week of the same coverage.
 const HOME_COVERAGE_DAYS = 28;
-app.get('/', (c) => {
+app.get('/', (c) => measureRead('homepage', () => {
   const now = new Date();
   const { healthSnapshot, activities: combined } = dashboardView(now);
   const coverage = repository.activityCoverage(now, { dayflow: dayflowEnabled, health: Boolean(healthSnapshot), computai: computaiEnabled }, HOME_COVERAGE_DAYS);
@@ -622,7 +626,7 @@ app.get('/', (c) => {
     cloudTerms: currentCloudTerms(),
     inProgress: selectCurrent([...combined, ...presentCandidates()], now).current,
   }));
-});
+}));
 
 function manualEventsSnapshot(): SourceSnapshot {
   const page = repository.queryActivities({ source: 'events', limit: 500 });
