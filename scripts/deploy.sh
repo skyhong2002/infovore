@@ -7,10 +7,12 @@
 # 2. Start one candidate container from it (docker-compose.candidate.yml): same
 #    Traefik labels and data volume, reads only, no refreshes, no ingest. Its
 #    healthcheck admits it to Traefik only after it is fully ready.
-# 3. Only while the candidate serves alongside production, recreate the
-#    production containers; the new one is likewise admitted only when ready.
-# 4. Remove the candidate.
-# Production is never stopped before a ready replacement is serving. If the
+# 3. Only while the candidate serves alongside production, drain production
+#    out of Traefik and recreate it; the new one is likewise admitted only when
+#    ready.
+# 4. Drain the candidate out of Traefik and remove it.
+# Production is never stopped before a ready replacement is serving, and no
+# container is stopped while Traefik still routes to it. If the
 # candidate never gets ready it is removed and production is untouched; if the
 # new production container does not get ready the candidate keeps serving and
 # the rollback commands are printed.
@@ -43,6 +45,25 @@ ready() {
   log "$1 ready"
 }
 
+# Take a container out of Traefik before stopping it, so no request is cut. The
+# drain file fails scripts/container-health.sh; replacing its ready marker with
+# a directory also fails the first ready-once version (c83a93f), which predates
+# the drain file. Docker then marks it unhealthy (3 failed probes) and Traefik
+# drops it; wait out Traefik's provider throttle before the caller stops it.
+drain() {
+  docker exec "$1" sh -c 'touch /tmp/infovore-drain && rm -rf /tmp/infovore-ready && mkdir /tmp/infovore-ready' \
+    || { log "$1: cannot drain; stopping it may cut in-flight requests"; return 0; }
+  for _ in $(seq 1 90); do
+    [ "$(docker inspect -f '{{.State.Health.Status}}' "$1")" = unhealthy ] && { sleep 5; log "$1 drained"; return 0; }
+    sleep 2
+  done
+  log "$1 did not leave Traefik in 180 s; stopping it may cut in-flight requests"
+}
+
+traefik_labels() {
+  docker inspect -f '{{range $k, $v := .Config.Labels}}{{$k}}={{$v}}{{println}}{{end}}' "$1" | grep '^traefik\.' | sort
+}
+
 # The candidate is one extra web app (~0.4 GiB), not a second stack.
 available=$(awk '/^MemAvailable/ { print int($2 / 1024) }' /proc/meminfo)
 [ "$available" -ge 1200 ] || { log "only ${available} MiB available; not starting a candidate"; exit 1; }
@@ -56,6 +77,15 @@ compose build
 
 INFOVORE_DATA_VOLUME=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' infovore)
 export INFOVORE_DATA_VOLUME
+# Traefik merges identical router/service definitions from both containers but
+# drops a router defined differently by two of them, which would take the site
+# down. A change to the Traefik labels therefore cannot roll out this way.
+candidate up --no-start --no-build infovore
+if [ "$(traefik_labels infovore-candidate)" != "$(traefik_labels infovore)" ]; then
+  candidate down
+  log 'Traefik labels changed; a candidate would conflict with production. Deploy the plain way.'
+  exit 1
+fi
 candidate up -d --no-build infovore
 if ! ready infovore-candidate; then
   candidate down
@@ -63,6 +93,7 @@ if ! ready infovore-candidate; then
   exit 1
 fi
 
+drain infovore
 compose up -d --no-build
 if ! ready infovore; then
   log 'new production container is not ready; the candidate keeps serving. To roll back:'
@@ -70,5 +101,6 @@ if ! ready infovore; then
   log "  then, once infovore is healthy: INFOVORE_DATA_VOLUME=$INFOVORE_DATA_VOLUME docker compose -p infovore-candidate -f docker-compose.yml -f docker-compose.traefik.yml -f docker-compose.candidate.yml down"
   exit 1
 fi
+drain infovore-candidate
 candidate down
 log "deployed $current"

@@ -10,8 +10,13 @@
 # upstream keeps the gateway's explicit 503s and last-good homepage reachable
 # instead of turning into an edge 404. The marker holds PID 1's start time, so a
 # restarted container has to qualify again.
+#
+# scripts/deploy.sh drains a container before stopping it by creating the drain
+# file: the check then fails, Docker marks the container unhealthy and Traefik
+# stops routing to it, so stopping it cuts no requests.
 base="http://127.0.0.1:${PORT:-3000}"
 marker="${INFOVORE_READY_FILE:-/tmp/infovore-ready}"
+[ -e "${INFOVORE_DRAIN_FILE:-/tmp/infovore-drain}" ] && exit 1
 # Field 22 of /proc/1/stat, counted after the parenthesised command name.
 boot=$(sed 's/.*) //' /proc/1/stat | cut -d' ' -f20)
 if [ "$(cat "$marker" 2>/dev/null)" = "$boot" ]; then

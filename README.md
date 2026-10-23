@@ -319,14 +319,23 @@ volume, `INFOVORE_ROLE=candidate`). The candidate serves reads only. It runs no
 refreshes, leaves sync runs alone and starts no ingest service. Traefik
 load-balances it with production once its healthcheck reports ready; the script
 also checks `/healthz`, `/`, `/now` and `/stats` inside the container. Only then
-is production recreated. The new production container is admitted by the same
-rule, checked the same way, and the candidate is removed. If the candidate never
+is production drained and recreated. The new production container is admitted
+by the same rule and checked the same way; then the candidate is drained and
+removed. Draining makes a container's healthcheck fail (`/tmp/infovore-drain`),
+so Docker marks it unhealthy and Traefik stops routing to it **before** it is
+stopped. Stopping a container Traefik still routes to cut requests (502s and
+hung connections) in the first candidate rollout. Before starting a candidate,
+the script also refuses to run when the new Traefik labels differ from
+production's: Traefik drops a router that two containers define differently. If
+the script is interrupted after draining production, the candidate keeps
+serving until production is recreated. If the candidate never
 gets ready it is removed and production is untouched. If the new production
 container does not get ready, the candidate keeps serving and the script prints
 the rollback commands (the previous image is tagged `infovore:rollback-<time>`).
 The script needs about 1.2 GiB of available memory for the extra web app, and it
-serializes on `/tmp/infovore-deploy.lock`. Requests in flight on a container
-that is being stopped can still be cut.
+serializes on `/tmp/infovore-deploy.lock`. While only one backend serves (the
+candidate during production's warm-up), the existing 3-second gateway deadline
+can still answer an occasional request with an explicit 503, as in steady state.
 
 ### Behind a reverse proxy
 

@@ -15,8 +15,9 @@ EXPOSE 3000
 
 # Ready once, then live: see scripts/container-health.sh. The long start period
 # keeps 2-second probes until the first full readiness (cold starts take ~80 s);
-# the ingest service overrides this in docker-compose.yml.
-HEALTHCHECK --interval=30s --timeout=15s --start-period=600s --start-interval=2s --retries=3 \
+# the 10-second interval lets a drained container leave Traefik in ~30 s. The
+# ingest service overrides this in docker-compose.yml.
+HEALTHCHECK --interval=10s --timeout=15s --start-period=600s --start-interval=2s --retries=3 \
   CMD sh scripts/container-health.sh
 
 CMD ["npx", "tsx", "src/server.ts"]

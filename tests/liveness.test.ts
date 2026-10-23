@@ -22,7 +22,7 @@ test('the web image healthcheck runs the ready-once script; ingest keeps its con
   assert.match(ingest, /test: \["CMD-SHELL", "wget -qO- http:\/\/127\.0\.0\.1:3001\/healthz \|\| exit 1"\]/);
 });
 
-test('container healthcheck admits traffic only after full readiness, then tracks liveness until a restart', async (t) => {
+test('container healthcheck admits traffic only after full readiness, then tracks liveness until drained or restarted', async (t) => {
   const status: Record<string, number> = { '/livez': 200, '/healthz': 503, '/': 503, '/now': 503 };
   const server = createServer((req, res) => { res.statusCode = status[req.url ?? ''] ?? 404; res.end(); });
   server.listen(0, '127.0.0.1');
@@ -30,7 +30,8 @@ test('container healthcheck admits traffic only after full readiness, then track
   const dir = await mkdtemp(join(tmpdir(), 'infovore-health-'));
   t.after(() => { server.close(); return rm(dir, { recursive: true, force: true }); });
   const marker = join(dir, 'ready');
-  const env = { ...process.env, PORT: String((server.address() as { port: number }).port), INFOVORE_READY_FILE: marker };
+  const drain = join(dir, 'drain');
+  const env = { ...process.env, PORT: String((server.address() as { port: number }).port), INFOVORE_READY_FILE: marker, INFOVORE_DRAIN_FILE: drain };
   const probe = () => new Promise<number>((resolve) => {
     execFile('sh', [fileURLToPath(new URL('../scripts/container-health.sh', import.meta.url))], { env }, (error) => resolve(error ? 1 : 0));
   });
@@ -45,9 +46,14 @@ test('container healthcheck admits traffic only after full readiness, then track
   // Once ready, a stall or stale upstream must not remove it from routing...
   status['/healthz'] = 503; status['/'] = 503; status['/now'] = 503;
   assert.equal(await probe(), 0);
-  // ...but a dead gateway does.
+  // ...but a dead gateway does, and so does a deploy draining it out of Traefik.
   status['/livez'] = 503;
   assert.equal(await probe(), 1);
+  status['/livez'] = 200;
+  assert.equal(await probe(), 0);
+  await writeFile(drain, '');
+  assert.equal(await probe(), 1, 'a drained container must leave Traefik even though it is alive');
+  await rm(drain);
   // A marker from an earlier process (container restart) does not count.
   status['/livez'] = 200;
   await writeFile(marker, 'some-earlier-boot\n');
