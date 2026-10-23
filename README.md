@@ -325,7 +325,9 @@ by the same rule and checked the same way; then the candidate is drained and
 removed. Draining makes a container's healthcheck fail (`/tmp/infovore-drain`),
 so Docker marks it unhealthy and Traefik stops routing to it **before** it is
 stopped. Stopping a container Traefik still routes to cut requests (502s and
-hung connections) in the first candidate rollout. Before starting a candidate,
+hung connections) in the first candidate rollout. Draining fails closed: a
+container that cannot be shown to have left Traefik within 180 s is not
+stopped, and the script exits with commands to undo the drain or retry. Before starting a candidate,
 the script also refuses to run when the new Traefik labels differ from
 production's: Traefik drops a router that two containers define differently. If
 the script is interrupted after draining production, the candidate keeps

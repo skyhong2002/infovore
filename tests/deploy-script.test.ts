@@ -14,7 +14,7 @@ if [ -n "\${STUB_FAIL:-}" ]; then case "$*" in *"$STUB_FAIL"*) exit 1;; esac; fi
 case "$1" in
   inspect)
     case "$3" in
-      *Health.Status*) if [ -e "$STUB_DIR/drained-$4" ]; then echo unhealthy; else echo healthy; fi;;
+      *Health.Status*) if [ -e "$STUB_DIR/drained-$4" ] && [ "$4" != "\${STUB_NEVER_UNHEALTHY:-}" ]; then echo unhealthy; else echo healthy; fi;;
       *State.Running*) echo true;;
       *.Image*) echo sha256:running;;
       *Mounts*) echo statusskyhongtw_infovore-data;;
@@ -108,4 +108,28 @@ test('low memory refuses to start a candidate', async (t) => {
   assert.equal(low.code, 1);
   assert.match(low.output, /MiB available; not starting a candidate/);
   assert.equal(low.calls.some((call) => call.startsWith('compose')), false);
+});
+
+test('production that cannot be drained is never stopped; both containers keep serving', async (t) => {
+  for (const env of [{ STUB_FAIL: 'exec infovore sh -c touch' }, { STUB_NEVER_UNHEALTHY: 'infovore' }]) {
+    const run = await deploy(t, env);
+    const label = JSON.stringify(env);
+    assert.equal(run.code, 1, label);
+    assert.equal(run.index('--force-recreate'), -1, `${label}: production not recreated`);
+    assert.equal(run.calls.some((call) => call.endsWith(' down')), false, `${label}: candidate not removed`);
+    assert.match(run.output, /production could not be drained, so it was not stopped/, label);
+    assert.match(run.output, /docker exec infovore sh -c 'rm -f \/tmp\/infovore-drain/, label);
+  }
+});
+
+test('a candidate that cannot be drained is never removed; it keeps serving with the new production', async (t) => {
+  for (const env of [{ STUB_FAIL: 'exec infovore-candidate sh -c touch' }, { STUB_NEVER_UNHEALTHY: 'infovore-candidate' }]) {
+    const run = await deploy(t, env);
+    const label = JSON.stringify(env);
+    assert.equal(run.code, 1, label);
+    assert.ok(run.index('--force-recreate') >= 0, `${label}: production was replaced first`);
+    assert.equal(run.calls.some((call) => call.endsWith(' down')), false, `${label}: candidate not removed`);
+    assert.match(run.output, /the candidate could not be drained, so it was not removed/, label);
+    assert.match(run.output, /wait until 'docker inspect -f \{\{\.State\.Health\.Status\}\} infovore-candidate' is unhealthy/, label);
+  }
 });

@@ -48,14 +48,27 @@ ready() {
 # a directory also fails the first ready-once version (c83a93f), which predates
 # the drain file. Docker then marks it unhealthy (3 failed probes) and Traefik
 # drops it; wait out Traefik's provider throttle before the caller stops it.
+# Fails closed: if the container cannot be shown to have left Traefik, the
+# caller must not stop it.
 drain() {
   docker exec "$1" sh -c 'touch /tmp/infovore-drain && rm -rf /tmp/infovore-ready && mkdir /tmp/infovore-ready' \
-    || { log "$1: cannot drain; stopping it may cut in-flight requests"; return 0; }
+    || { log "$1: could not start draining it"; return 1; }
   for _ in $(seq 1 90); do
     [ "$(docker inspect -f '{{.State.Health.Status}}' "$1")" = unhealthy ] && { sleep 5; log "$1 drained"; return 0; }
     sleep 2
   done
-  log "$1 did not leave Traefik in 180 s; stopping it may cut in-flight requests"
+  log "$1 did not leave Traefik in 180 s"
+  return 1
+}
+
+# Undo a (possibly partial) drain: the next probes re-qualify it as ready.
+undrain_hint() {
+  log "  docker exec $1 sh -c 'rm -f /tmp/infovore-drain; rmdir /tmp/infovore-ready 2>/dev/null; true'"
+}
+# Remove the candidate only once Traefik no longer routes to it.
+candidate_removal_hint() {
+  log "  docker exec infovore-candidate touch /tmp/infovore-drain, wait until 'docker inspect -f {{.State.Health.Status}} infovore-candidate' is unhealthy, then:"
+  log "  INFOVORE_DATA_VOLUME=$INFOVORE_DATA_VOLUME docker compose -p infovore-candidate -f docker-compose.yml -f docker-compose.traefik.yml -f docker-compose.candidate.yml down"
 }
 
 traefik_labels() {
@@ -97,15 +110,28 @@ if ! candidate up -d --no-build infovore || ! ready infovore-candidate; then
   exit 1
 fi
 
-drain infovore
+if ! drain infovore; then
+  log 'production could not be drained, so it was not stopped; production and the candidate both keep serving.'
+  log 'Undo the drain on production, then remove the candidate:'
+  undrain_hint infovore
+  candidate_removal_hint
+  exit 1
+fi
 # Recreate even if the image did not change: the drained container stays out
 # of Traefik until it is replaced.
 if ! compose up -d --no-build --force-recreate || ! ready infovore; then
   log 'new production container is not ready; the candidate keeps serving. To roll back:'
   log "  docker tag $rollback infovore:latest && git checkout ORIG_HEAD && docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --no-build"
-  log "  then, once infovore is healthy: INFOVORE_DATA_VOLUME=$INFOVORE_DATA_VOLUME docker compose -p infovore-candidate -f docker-compose.yml -f docker-compose.traefik.yml -f docker-compose.candidate.yml down"
+  log '  then, once infovore is healthy:'
+  candidate_removal_hint
   exit 1
 fi
-drain infovore-candidate
+if ! drain infovore-candidate; then
+  log 'the candidate could not be drained, so it was not removed; it keeps serving alongside the new production container.'
+  log 'Undo its drain, or retry the removal later:'
+  undrain_hint infovore-candidate
+  candidate_removal_hint
+  exit 1
+fi
 candidate down
 log "deployed $current"
