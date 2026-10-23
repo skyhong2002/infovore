@@ -27,7 +27,7 @@ exec 9>/tmp/infovore-deploy.lock
 flock -w 600 9 || { log 'another deploy holds /tmp/infovore-deploy.lock'; exit 1; }
 
 # Healthy means the container has once been fully ready (see
-# scripts/container-health.sh); confirm the same pages through it directly.
+# scripts/container-health.sh); confirm it again with the same check.
 ready() {
   for _ in $(seq 1 300); do
     [ "$(docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null)" = healthy ] && break
@@ -35,14 +35,12 @@ ready() {
     sleep 2
   done
   [ "$(docker inspect -f '{{.State.Health.Status}}' "$1")" = healthy ] || { log "$1 never became ready"; return 1; }
-  for path in /healthz / /now /stats; do
-    for attempt in 1 2 3; do
-      docker exec "$1" wget -qO /dev/null -T 10 "http://127.0.0.1:3000$path" && break
-      [ "$attempt" = 3 ] && { log "$1: $path failed"; return 1; }
-      sleep 5
-    done
+  for attempt in 1 2 3; do
+    docker exec "$1" sh scripts/container-health.sh --ready && { log "$1 ready"; return 0; }
+    sleep 5
   done
-  log "$1 ready"
+  log "$1 failed its readiness check"
+  return 1
 }
 
 # Take a container out of Traefik before stopping it, so no request is cut. The
@@ -65,7 +63,7 @@ traefik_labels() {
 }
 
 # The candidate is one extra web app (~0.4 GiB), not a second stack.
-available=$(awk '/^MemAvailable/ { print int($2 / 1024) }' /proc/meminfo)
+available=$(awk '/^MemAvailable/ { print int($2 / 1024) }' "${INFOVORE_MEMINFO:-/proc/meminfo}")
 [ "$available" -ge 1200 ] || { log "only ${available} MiB available; not starting a candidate"; exit 1; }
 [ "$(docker inspect -f '{{.State.Health.Status}}' infovore)" = healthy ] || { log 'production is not healthy; deploy the plain way'; exit 1; }
 
@@ -80,22 +78,29 @@ export INFOVORE_DATA_VOLUME
 # Traefik merges identical router/service definitions from both containers but
 # drops a router defined differently by two of them, which would take the site
 # down. A change to the Traefik labels therefore cannot roll out this way.
-candidate up --no-start --no-build infovore
-if [ "$(traefik_labels infovore-candidate)" != "$(traefik_labels infovore)" ]; then
+# Failures from here on touch only the candidate project, or leave a ready
+# candidate serving; nothing else on the host is stopped or removed.
+if ! candidate up --no-start --no-build infovore; then
+  candidate down || true
+  log 'could not create the candidate; production untouched'
+  exit 1
+fi
+production_labels=$(traefik_labels infovore || true)
+if [ -z "$production_labels" ] || [ "$(traefik_labels infovore-candidate)" != "$production_labels" ]; then
   candidate down
   log 'Traefik labels changed; a candidate would conflict with production. Deploy the plain way.'
   exit 1
 fi
-candidate up -d --no-build infovore
-if ! ready infovore-candidate; then
-  candidate down
+if ! candidate up -d --no-build infovore || ! ready infovore-candidate; then
+  candidate down || true
   log 'candidate removed; production untouched'
   exit 1
 fi
 
 drain infovore
-compose up -d --no-build
-if ! ready infovore; then
+# Recreate even if the image did not change: the drained container stays out
+# of Traefik until it is replaced.
+if ! compose up -d --no-build --force-recreate || ! ready infovore; then
   log 'new production container is not ready; the candidate keeps serving. To roll back:'
   log "  docker tag $rollback infovore:latest && git checkout ORIG_HEAD && docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --no-build"
   log "  then, once infovore is healthy: INFOVORE_DATA_VOLUME=$INFOVORE_DATA_VOLUME docker compose -p infovore-candidate -f docker-compose.yml -f docker-compose.traefik.yml -f docker-compose.candidate.yml down"

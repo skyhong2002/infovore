@@ -23,7 +23,7 @@ test('the web image healthcheck runs the ready-once script; ingest keeps its con
 });
 
 test('container healthcheck admits traffic only after full readiness, then tracks liveness until drained or restarted', async (t) => {
-  const status: Record<string, number> = { '/livez': 200, '/healthz': 503, '/': 503, '/now': 503 };
+  const status: Record<string, number> = { '/livez': 200, '/healthz': 503, '/': 503, '/now': 503, '/stats': 503 };
   const server = createServer((req, res) => { res.statusCode = status[req.url ?? ''] ?? 404; res.end(); });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -32,8 +32,8 @@ test('container healthcheck admits traffic only after full readiness, then track
   const marker = join(dir, 'ready');
   const drain = join(dir, 'drain');
   const env = { ...process.env, PORT: String((server.address() as { port: number }).port), INFOVORE_READY_FILE: marker, INFOVORE_DRAIN_FILE: drain };
-  const probe = () => new Promise<number>((resolve) => {
-    execFile('sh', [fileURLToPath(new URL('../scripts/container-health.sh', import.meta.url))], { env }, (error) => resolve(error ? 1 : 0));
+  const probe = (...args: string[]) => new Promise<number>((resolve) => {
+    execFile('sh', [fileURLToPath(new URL('../scripts/container-health.sh', import.meta.url)), ...args], { env }, (error) => resolve(error ? 1 : 0));
   });
   // Alive but not ready: the gateway answers, the backend or homepage does not.
   assert.equal(await probe(), 1);
@@ -42,9 +42,14 @@ test('container healthcheck admits traffic only after full readiness, then track
   status['/'] = 200;
   assert.equal(await probe(), 1, 'a backend-rendered page must answer too');
   status['/now'] = 200;
+  assert.equal(await probe(), 1, 'every page the deploy verifies must answer before admission');
+  assert.equal(await probe('--ready'), 1, 'deploy verification uses the same paths');
+  status['/stats'] = 200;
+  assert.equal(await probe('--ready'), 0);
+  assert.equal(await readFile(marker, 'utf8').catch(() => null), null, '--ready never admits by itself');
   assert.equal(await probe(), 0);
   // Once ready, a stall or stale upstream must not remove it from routing...
-  status['/healthz'] = 503; status['/'] = 503; status['/now'] = 503;
+  status['/healthz'] = 503; status['/'] = 503; status['/now'] = 503; status['/stats'] = 503;
   assert.equal(await probe(), 0);
   // ...but a dead gateway does, and so does a deploy draining it out of Traefik.
   status['/livez'] = 503;

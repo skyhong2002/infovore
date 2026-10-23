@@ -279,8 +279,9 @@ server entrypoint. The separate ingest service and shared WAL format are unchang
 - The container healthcheck (`scripts/container-health.sh`) is **ready once,
   then live**. Traefik routes only to healthy containers. A container reports
   unhealthy, so receives no traffic, until it has once been fully ready:
-  `/healthz` healthy or degraded, a real homepage snapshot, and `/now` rendered by
-  the backend. From then on it probes only gateway liveness (`GET /livez`), so a
+  `/healthz` healthy or degraded, a real homepage snapshot, and `/now` and
+  `/stats` rendered by the backend. `scripts/deploy.sh` verifies readiness with
+  the same script (`--ready`), so admission and deploy checks cannot disagree. From then on it probes only gateway liveness (`GET /livez`), so a
   later backend stall or stale upstream keeps the gateway's explicit 503s and
   last-good homepage reachable instead of becoming Traefik's 404 for the whole
   host. The marker is tied to PID 1's start time; a restarted container must
@@ -318,7 +319,7 @@ image (`docker-compose.candidate.yml`: identical Traefik labels, the same data
 volume, `INFOVORE_ROLE=candidate`). The candidate serves reads only. It runs no
 refreshes, leaves sync runs alone and starts no ingest service. Traefik
 load-balances it with production once its healthcheck reports ready; the script
-also checks `/healthz`, `/`, `/now` and `/stats` inside the container. Only then
+repeats the same readiness check inside the container. Only then
 is production drained and recreated. The new production container is admitted
 by the same rule and checked the same way; then the candidate is drained and
 removed. Draining makes a container's healthcheck fail (`/tmp/infovore-drain`),
@@ -328,7 +329,10 @@ hung connections) in the first candidate rollout. Before starting a candidate,
 the script also refuses to run when the new Traefik labels differ from
 production's: Traefik drops a router that two containers define differently. If
 the script is interrupted after draining production, the candidate keeps
-serving until production is recreated. If the candidate never
+serving until production is recreated. Production is recreated even when the
+image is unchanged, because a drained container stays out of Traefik. A
+candidate that cannot be created, started or made ready is removed (only the
+`infovore-candidate` project is touched) and production is never drained. If the candidate never
 gets ready it is removed and production is untouched. If the new production
 container does not get ready, the candidate keeps serving and the script prints
 the rollback commands (the previous image is tagged `infovore:rollback-<time>`).
