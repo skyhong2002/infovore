@@ -98,12 +98,19 @@ const themeInit = `<script>(()=>{let t=null;try{t=localStorage.getItem('infovore
 const themeToggleScript = `<script>document.getElementById('theme-toggle').addEventListener('click',()=>{const r=document.documentElement;const n=r.dataset.theme==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('infovore-theme',n)}catch{}})</script>`;
 const themeToggle = `<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle colour theme" title="Toggle theme"><svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>`;
 
-export function shell(title: string, body: string, active: PageKey, extraStyles = ''): string {
+// A stable public page names its own path as canonical (always on the public
+// base URL, never the request host); query-driven pages such as search opt out
+// of indexing instead.
+export interface PageMeta { path?: string; noindex?: boolean }
+
+export function shell(title: string, body: string, active: PageKey, extraStyles = '', meta: PageMeta = {}): string {
   const nav = navigation.map((item) =>
     `<a href="${item.href}"${item.key === active ? ' aria-current="page"' : ''}>${item.label}</a>`
   ).join('');
   const description = "Sky's personal infoboard for everything watched, read, played, heard, attended, and moved.";
+  const canonical = meta.path ? `${config.publicBaseUrl}${meta.path}` : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="${description}">
+  ${canonical ? `<link rel="canonical" href="${html(canonical)}"><meta property="og:url" content="${html(canonical)}">` : ''}${meta.noindex ? '<meta name="robots" content="noindex, follow">' : ''}
   <meta property="og:type" content="website"><meta property="og:title" content="${html(title)} · infovore"><meta property="og:description" content="${description}"><meta property="og:image" content="${html(config.publicBaseUrl)}/og.png?v=life-rings-muted">
   <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${html(title)} · infovore"><meta name="twitter:description" content="${description}"><meta name="twitter:image" content="${html(config.publicBaseUrl)}/og.png?v=life-rings-muted">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=muted"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=muted"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f3ef"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0f12"><link rel="alternate" type="application/rss+xml" title="infovore" href="/feed.xml"><title>${html(title)} · infovore</title>
@@ -194,7 +201,7 @@ export function searchPage(ownerName: string, filters: SearchFilters, page: Acti
   const previous = page.offset > 0 ? `<a class="button" href="${params({ offset: Math.max(0, page.offset - page.limit) })}">← Newer</a>` : '<span></span>';
   const next = page.offset + page.limit < page.total ? `<a class="button" href="${params({ offset: page.offset + page.limit })}">Older →</a>` : '';
   const pager = page.total > page.limit ? `<nav class="pager" aria-label="Pagination">${previous}<span class="muted">${page.offset + 1}–${Math.min(page.total, page.offset + page.limit)} of ${page.total.toLocaleString('en')}</span>${next}</nav>` : '';
-  return shell(`${ownerName} · search${filters.query ? ` · ${filters.query}` : ''}`, intro + form + sourceChips + kindChips + results + pager, 'search');
+  return shell(`${ownerName} · search${filters.query ? ` · ${filters.query}` : ''}`, intro + form + sourceChips + kindChips + results + pager, 'search', '', { noindex: true });
 }
 
 export interface ApiDocs {
@@ -240,7 +247,7 @@ curl -s '${html(docs.baseUrl)}/api/time-spent.json' | jq '.sources[] | {source, 
 
 # Embed a card
 &lt;img src="${html(docs.baseUrl)}/card/now.webp" width="520" alt="What ${html(ownerName)} is up to"&gt;</code></pre>`;
-  return shell(`${ownerName} · API`, `<div class="api-doc">${intro}${rules}${activities}${time}${mirrors}${cards}${service}${examples}</div>`, 'api');
+  return shell(`${ownerName} · API`, `<div class="api-doc">${intro}${rules}${activities}${time}${mirrors}${cards}${service}${examples}</div>`, 'api', '', { path: '/api' });
 }
 
 export interface NowExtras {
@@ -263,7 +270,7 @@ export function nowPage(ownerName: string, current: Activity[], upcoming: Activi
     + section('Up next', 'Watchlists, planned anime and manga, and the to-read shelf, newest additions first.', queued, 'queued')
     + (upcoming.length ? section('Upcoming events', 'Ticketed and planned real-world activities.', upcoming) : '')
     + section('Just happened', 'Recent media, sleep, exercise and daily steps. High-frequency sources are sampled.', recent), 'now',
-    '.paused{margin-top:14px}.paused>.details-toggle{border:1px solid var(--line);border-radius:var(--radius-sm);border-top:1px solid var(--line)}.paused[open]>.details-toggle{border-radius:var(--radius-sm) var(--radius-sm) 0 0}.paused>.grid{border:1px solid var(--line);border-top:0;border-radius:0 0 var(--radius-sm) var(--radius-sm);padding:12px}.entry-paused{opacity:.75}');
+    '.paused{margin-top:14px}.paused>.details-toggle{border:1px solid var(--line);border-radius:var(--radius-sm);border-top:1px solid var(--line)}.paused[open]>.details-toggle{border-radius:var(--radius-sm) var(--radius-sm) 0 0}.paused>.grid{border:1px solid var(--line);border-top:0;border-radius:0 0 var(--radius-sm) var(--radius-sm);padding:12px}.entry-paused{opacity:.75}', { path: '/now' });
 }
 
 export function profilePage(ownerName: string, total: number, bySource: Record<string, number>, latest: Activity[]): string {
@@ -281,6 +288,6 @@ export function profilePage(ownerName: string, total: number, bySource: Record<s
     return true;
   }).slice(0, 12);
   const latestSection = `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Archive edge</div><h2>Latest additions</h2></div><a href="/search">Search everything →</a></div><div class="grid">${distinct.map((activity) => activityCard(activity)).join('')}</div></section>`;
-  return shell(`${ownerName} · archive`, intro + overview + latestSection, 'profile');
+  return shell(`${ownerName} · archive`, intro + overview + latestSection, 'profile', '', { path: '/profile' });
 }
 

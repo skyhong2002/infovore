@@ -124,6 +124,15 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `POST /api/ingest/computai/reports` — authenticated ComputAI 30-day report
 - `POST /mcp` — stateless MCP Streamable HTTP endpoint
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
+- `GET /robots.txt` — served from gateway memory (never proxied, so a busy
+  backend cannot 5xx it); disallows `/api/` and `/mcp` and names the sitemap
+- `GET /sitemap.xml` — stable public HTML pages only: Home, Now, Time, Platforms
+  (each platform with a last-good snapshot, plus Manual events when any exist),
+  Archive, Cards and each Wrapped year with public activity; rebuilt hourly
+
+Every stable public page carries a self-referencing `<link rel="canonical">` on
+`PUBLIC_BASE_URL` (default `https://$DOMAIN`), ignoring the request host and
+query string. `/search` results are `noindex, follow` and claim no canonical.
 
 Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
 

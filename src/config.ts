@@ -1,3 +1,5 @@
+import { publicBaseUrl as basePublicUrl } from './seo.js';
+
 // Which sources to enable. Empty = all. e.g. SOURCES=kitsu,statsfm
 const sources = (process.env.SOURCES ?? '')
   .split(',')
@@ -14,7 +16,7 @@ if (dayflowToken && dayflowToken.length < 32) throw new Error('DAYFLOW_TOKEN mus
 const computaiToken = process.env.COMPUTAI_TOKEN ?? '';
 if (computaiToken && computaiToken.length < 32) throw new Error('COMPUTAI_TOKEN must contain at least 32 characters');
 const healthConnectToken = process.env.HEALTH_CONNECT_TOKEN ?? ingestToken;
-const publicBaseUrl = (process.env.PUBLIC_BASE_URL ?? (process.env.DOMAIN ? `https://${process.env.DOMAIN}` : 'http://localhost:3000')).replace(/\/$/, '');
+const publicBaseUrl = basePublicUrl(process.env);
 
 const invalidSources = sources.filter((source) => !knownSources.includes(source as typeof knownSources[number]));
 if (invalidSources.length) throw new Error(`Unknown SOURCES: ${invalidSources.join(', ')}`);

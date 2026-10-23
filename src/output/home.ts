@@ -324,5 +324,5 @@ export function homePage(data: HomepageData): string {
     <section class="home-section home-dashboard-grid">${rhythmPanel(data.coverage ?? recordedCoverage([]))}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime, data.daily)}</section>
     <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Latest from each platform</h2></div><a href="/now">Just happened →</a></div>${recent}</section>
   </div>`;
-  return shell(`${data.ownerName} · overview`, body, 'home', homeStyles);
+  return shell(`${data.ownerName} · overview`, body, 'home', homeStyles, { path: '/' });
 }

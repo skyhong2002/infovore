@@ -84,5 +84,5 @@ export function wrappedPage(ownerName: string, summary: WrappedSummary, extras: 
     .wrapped-title{min-width:0}.wrapped-title a{color:var(--text);display:block;font-size:13.5px;font-weight:600;overflow:hidden;text-decoration:none;text-overflow:ellipsis;white-space:nowrap}.wrapped-title a:hover{color:var(--accent)}.wrapped-title small{color:var(--quiet);font-size:11px;text-transform:uppercase}
     .wrapped-titles strong{font-size:13px;font-variant-numeric:tabular-nums}
     @media(max-width:700px){.wrapped-titles{columns:1}.wrapped-row{grid-template-columns:96px 16px minmax(0,1fr) 56px}.wrapped-share{display:none}.wrapped-row-simple{grid-template-columns:110px minmax(0,1fr) 56px}}`;
-  return shell(`${ownerName} · ${summary.year} Wrapped`, intro + headline + (mergedTime ? timeSection(mergedTime) : '') + (agents ? agentSection(agents) : '') + media + top, 'profile', styles);
+  return shell(`${ownerName} · ${summary.year} Wrapped`, intro + headline + (mergedTime ? timeSection(mergedTime) : '') + (agents ? agentSection(agents) : '') + media + top, 'profile', styles, { path: `/wrapped/${summary.year}` });
 }

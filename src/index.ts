@@ -38,6 +38,7 @@ import { homePage } from './output/home.js';
 import { dashboardActivities } from './health/home.js';
 import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
 import { statsPage } from './output/stats.js';
+import { sitemapXml } from './seo.js';
 import { handleMcpRequest } from './mcp.js';
 import { buildBackloggdCard } from './output/backloggd.js';
 import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './output/kitsu.js';
@@ -227,6 +228,26 @@ app.get('/healthz', (c) => {
   const freshCount = sources.filter((source) => source.fresh).length;
   const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';
   return c.json({ status, maxSourceAgeHours: config.maxSourceAgeHours, sources }, status === 'unhealthy' ? 503 : 200);
+});
+
+// Stable public HTML pages only: no search/query variants, JSON, cards, MCP or
+// ingest. A platform is listed only while its page serves 200, i.e. it has a
+// last-good snapshot (restored from SQLite, so an upstream outage keeps it).
+// Like /healthz, registered before the card middleware; rebuilt at most hourly.
+let sitemapCache: { hour: number; body: string } | null = null;
+app.get('/sitemap.xml', (c) => {
+  const hour = Math.floor(Date.now() / (60 * 60_000));
+  if (sitemapCache?.hour !== hour) {
+    const platforms = sections.filter((s) => s.source === 'health' || getCache(`data:${s.source}`)?.data).map((s) => s.source);
+    if (repository.countBySource().events) platforms.push('events');
+    sitemapCache = { hour, body: sitemapXml(config.publicBaseUrl, [
+      '/', '/now', '/stats', '/platforms', ...platforms.map((source) => `/platforms/${source}`),
+      '/profile', '/cards', ...repository.activityYears().map((year) => `/wrapped/${year}`),
+    ]) };
+  }
+  c.header('Content-Type', 'application/xml; charset=UTF-8');
+  c.header('Cache-Control', 'public, max-age=3600');
+  return c.body(sitemapCache.body);
 });
 
 // Cards that clip "in progress" spans at the current time are keyed on a
@@ -735,7 +756,7 @@ app.get('/cards', (c) => {
     <p>Compact visual snapshots generated from the same platform data. Use this gallery when the timeline is too detailed and the platform mirrors are too broad.</p></div>
     <div class="page-intro-aside">${updated ? `Last synced ${html(updated)}.` : ''} Click any card for its SVG original.</div></section>
     <div class="context-line"><a href="/">Home</a><span>→</span><a href="/platforms">Platforms</a><span>→</span><strong>Cards</strong></div>`;
-  return c.html(shell(`${config.ownerName} · cards`, `${intro}<div class="card-gallery">${body}</div>`, 'cards'));
+  return c.html(shell(`${config.ownerName} · cards`, `${intro}<div class="card-gallery">${body}</div>`, 'cards', '', { path: '/cards' }));
 });
 
 app.get('/status', (c) => {

@@ -10,7 +10,7 @@ export interface HealthSnapshot { capturedAt: number; body: HealthBody }
 // cold startup/migrations and refresh persistence belong in the isolated child.
 export function startGateway(options: {
   port?: number; hostname?: string; backendFile?: URL; staleMs?: number; requestDeadlineMs?: number; maxInFlight?: number;
-  homeRefreshMs?: number; homeCooldownMs?: number; homeMaxAgeMs?: number; homeMaxBytes?: number;
+  homeRefreshMs?: number; homeCooldownMs?: number; homeMaxAgeMs?: number; homeMaxBytes?: number; robotsTxt?: string;
 } = {}) {
   const staleMs = options.staleMs ?? 3000;
   const deadlineMs = options.requestDeadlineMs ?? 3000;
@@ -70,6 +70,14 @@ export function startGateway(options: {
         metadata: { capturedAt: snapshot ? new Date(snapshot.capturedAt).toISOString() : null,
           ageMs: snapshot ? elapsed : null, fresh: !error, error },
       }, req.method === 'HEAD');
+    }
+    // Static and backend-independent: a robots.txt 5xx makes Google treat the
+    // whole host as unavailable and pause crawling.
+    if (path === '/robots.txt' && options.robotsTxt !== undefined && (req.method === 'GET' || req.method === 'HEAD')) {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=UTF-8', 'Cache-Control': 'public, max-age=3600',
+        'Content-Length': String(Buffer.byteLength(options.robotsTxt)) });
+      res.end(req.method === 'HEAD' ? undefined : options.robotsTxt);
+      return;
     }
     if (home.serve(req, res)) return;
     const error = transportError();

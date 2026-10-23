@@ -1,6 +1,7 @@
 import { startGateway } from './gateway.js';
+import { publicBaseUrl, robotsTxt } from './seo.js';
 
-const gateway = startGateway();
+const gateway = startGateway({ robotsTxt: robotsTxt(publicBaseUrl(process.env)) });
 let stopping = false;
 // A crash is not a DB timeout: only after confirmed child exit do we exit
 // nonzero and let the existing compose restart policy recreate a single owner.

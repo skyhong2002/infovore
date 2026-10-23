@@ -245,7 +245,7 @@ export function platformIndexPage(ownerName: string, platforms: PlatformSummary[
   const intro = `<section class="page-intro"><div><div class="eyebrow">Source view</div><h1>Platform mirrors</h1>
     <p>A local, read-only copy of what infovore collects for ${html(ownerName)} from every connected account—kept separate here, then surfaced on the personal homepage.</p></div>
     <div class="page-intro-aside">Open a platform to see its native entries, summary, and shareable cards.</div></section>`;
-  return shell(`${ownerName} · platforms`, `${intro}${platformNav()}<div class="platform-index">${cards}</div>`, 'platforms');
+  return shell(`${ownerName} · platforms`, `${intro}${platformNav()}<div class="platform-index">${cards}</div>`, 'platforms', '', { path: '/platforms' });
 }
 
 export function platformPage(
@@ -313,5 +313,5 @@ export function platformPage(
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : 'Stored manually'}</div>
     </section>
     <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || '<div class="empty">Nothing has been collected from this platform yet.</div>'}${cards}</div>${aside}</div>`;
-  return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms');
+  return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms', '', { path: `/platforms/${definition.source}` });
 }
