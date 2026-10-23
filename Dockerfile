@@ -9,13 +9,14 @@ RUN npm ci --omit=dev
 COPY tsconfig.json ./
 COPY assets ./assets
 COPY src ./src
+COPY scripts/container-health.sh ./scripts/
 
 EXPOSE 3000
 
-# Gateway liveness, not /healthz readiness: Traefik drops unhealthy and still
-# starting containers, which would turn a warming or stalled backend into a 404
-# for the whole host instead of the gateway's 503s and last-good homepage.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --start-interval=2s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:${PORT:-3000}/livez || exit 1
+# Ready once, then live: see scripts/container-health.sh. The long start period
+# keeps 2-second probes until the first full readiness (cold starts take ~80 s);
+# the ingest service overrides this in docker-compose.yml.
+HEALTHCHECK --interval=30s --timeout=15s --start-period=600s --start-interval=2s --retries=3 \
+  CMD sh scripts/container-health.sh
 
 CMD ["npx", "tsx", "src/server.ts"]

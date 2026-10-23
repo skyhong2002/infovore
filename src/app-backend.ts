@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { refreshAndSchedule } from './data/schedule.js';
 import { startBackend } from './backend.js';
 import { prewarmFiles } from './prewarm.js';
+import { startRefreshOwner } from './refresh-owner.js';
 
 let backend: ReturnType<typeof startBackend> | undefined;
 process.on('disconnect', () => { backend?.close(); process.exit(0); });
@@ -21,10 +22,4 @@ void (async () => {
     catch (error) { console.error(`[warm] ${path} failed:`, error); }
   }
 })();
-// This process is the only refresh owner, so any run still marked running was
-// left behind by a previous one.
-const abandoned = repository.abandonRunningSyncs();
-if (abandoned) console.warn(`[refresh] marked ${abandoned} unfinished run(s) from a previous process as abandoned`);
-refreshAndSchedule(refreshAll, config.refreshIntervalMinutes).catch((error) => {
-  console.error(`[refresh] cycle failed: ${error instanceof Error ? error.message : String(error)}`);
-});
+startRefreshOwner(process.env.INFOVORE_ROLE, repository, () => refreshAndSchedule(refreshAll, config.refreshIntervalMinutes));

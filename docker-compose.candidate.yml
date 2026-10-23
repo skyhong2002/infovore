@@ -1,0 +1,18 @@
+# Temporary rollout candidate, started only by scripts/deploy.sh as its own
+# project (-p infovore-candidate) on top of docker-compose.yml and
+# docker-compose.traefik.yml. Same image, identical Traefik labels (so Traefik
+# load-balances it with production once its healthcheck reports ready) and the
+# production data volume. It serves reads only: no refreshes, no sync-run
+# bookkeeping, and no ingest service.
+services:
+  infovore:
+    container_name: infovore-candidate
+    # Never outlives the rollout that started it (e.g. across a host reboot).
+    restart: "no"
+    environment:
+      - INFOVORE_ROLE=candidate
+
+volumes:
+  infovore-data:
+    external: true
+    name: ${INFOVORE_DATA_VOLUME:?set to the production data volume}

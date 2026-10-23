@@ -276,13 +276,16 @@ server entrypoint. The separate ingest service and shared WAL format are unchang
   child exit makes the production entrypoint exit nonzero, allowing the existing
   Compose restart policy to start one new owner. This is availability isolation,
   not a fix for shared-host disk contention.
-- The container healthcheck probes `GET /livez` (gateway process liveness,
-  2-second probes during the start period), **not** `/healthz`. Traefik routes
-  only to healthy containers, so a readiness healthcheck turned a warming or
-  stalled backend into Traefik's 404 for the whole host, hiding robots.txt, the
-  last-good homepage and the gateway's explicit 503s. `/healthz` keeps its
-  readiness and source-freshness semantics for monitors. The ingest service
-  answers `/livez` with its existing configuration health.
+- The container healthcheck (`scripts/container-health.sh`) is **ready once,
+  then live**. Traefik routes only to healthy containers. A container reports
+  unhealthy, so receives no traffic, until it has once been fully ready:
+  `/healthz` healthy or degraded, a real homepage snapshot, and `/now` rendered by
+  the backend. From then on it probes only gateway liveness (`GET /livez`), so a
+  later backend stall or stale upstream keeps the gateway's explicit 503s and
+  last-good homepage reachable instead of becoming Traefik's 404 for the whole
+  host. The marker is tied to PID 1's start time; a restarted container must
+  qualify again. `/healthz` keeps its readiness and source-freshness semantics
+  for monitors. The ingest service keeps its configuration `/healthz` check.
 - Before opening SQLite, the app child reads the database file and its WAL once
   sequentially (4 MiB chunks, 60-second cap, advisory only) to populate the OS
   page cache. Startup's whole-table Health aggregates otherwise ran as cold 4 KiB
@@ -304,6 +307,26 @@ with `node --import tsx`; use only an isolated Node 22 image, no production
 volumes or credentials, and disable external networking. It exercises the exact
 `npx tsx src/server.ts` startup, production-only dependencies, worker loading,
 loopback HTTP, gzip/binary responses, JSON APIs and MCP using synthetic data.
+
+### Production rollout without a gap
+
+`git pull --ff-only && scripts/deploy.sh` on the host replaces the plain
+`docker compose … up -d --build`, which stops the running container before its
+replacement has warmed up (~80 s with a cold cache). The script builds while
+production serves, then starts one temporary candidate container from the new
+image (`docker-compose.candidate.yml`: identical Traefik labels, the same data
+volume, `INFOVORE_ROLE=candidate`). The candidate serves reads only. It runs no
+refreshes, leaves sync runs alone and starts no ingest service. Traefik
+load-balances it with production once its healthcheck reports ready; the script
+also checks `/healthz`, `/`, `/now` and `/stats` inside the container. Only then
+is production recreated. The new production container is admitted by the same
+rule, checked the same way, and the candidate is removed. If the candidate never
+gets ready it is removed and production is untouched. If the new production
+container does not get ready, the candidate keeps serving and the script prints
+the rollback commands (the previous image is tagged `infovore:rollback-<time>`).
+The script needs about 1.2 GiB of available memory for the extra web app, and it
+serializes on `/tmp/infovore-deploy.lock`. Requests in flight on a container
+that is being stopped can still be cut.
 
 ### Behind a reverse proxy
 

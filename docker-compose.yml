@@ -26,6 +26,13 @@ services:
     image: infovore
     container_name: infovore-ingest
     command: ["npx", "tsx", "src/ingest.ts"]
+    # Configuration health; the image's healthcheck is the web app's readiness.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
     restart: unless-stopped
     logging:
       driver: json-file
