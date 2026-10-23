@@ -111,7 +111,7 @@ test('low memory refuses to start a candidate', async (t) => {
 });
 
 test('production that cannot be drained is never stopped; both containers keep serving', async (t) => {
-  for (const env of [{ STUB_FAIL: 'exec infovore sh -c touch' }, { STUB_NEVER_UNHEALTHY: 'infovore' }]) {
+  for (const env of [{ STUB_FAIL: 'exec infovore sh -c touch' }, { STUB_NEVER_UNHEALTHY: 'infovore' }] as Array<Record<string, string>>) {
     const run = await deploy(t, env);
     const label = JSON.stringify(env);
     assert.equal(run.code, 1, label);
@@ -123,7 +123,7 @@ test('production that cannot be drained is never stopped; both containers keep s
 });
 
 test('a candidate that cannot be drained is never removed; it keeps serving with the new production', async (t) => {
-  for (const env of [{ STUB_FAIL: 'exec infovore-candidate sh -c touch' }, { STUB_NEVER_UNHEALTHY: 'infovore-candidate' }]) {
+  for (const env of [{ STUB_FAIL: 'exec infovore-candidate sh -c touch' }, { STUB_NEVER_UNHEALTHY: 'infovore-candidate' }] as Array<Record<string, string>>) {
     const run = await deploy(t, env);
     const label = JSON.stringify(env);
     assert.equal(run.code, 1, label);
