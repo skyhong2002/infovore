@@ -3,7 +3,7 @@ import { dayflowBatchSchema } from './dayflow/types.js';
 import { computaiReportSchema, computaiSegmentsSchema } from './computai/types.js';
 import { timingSafeEqual } from 'node:crypto';
 import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { config } from './config.js';
 import { Repository } from './data/database.js';
 import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
@@ -18,10 +18,14 @@ function authorized(auth: string | undefined, expectedToken = config.ingestToken
 
 export function createIngestApp(repository: Repository): Hono {
   const app = new Hono();
-  app.get('/healthz', (c) => c.json(
+  // Configuration only, no database read; also the shared image's container
+  // healthcheck path (/livez), so ingest keeps its existing health semantics.
+  const health = (c: Context) => c.json(
     { status: config.ingestToken ? 'healthy' : 'unhealthy', service: 'infovore-ingest' },
     config.ingestToken ? 200 : 503
-  ));
+  );
+  app.get('/healthz', health);
+  app.get('/livez', health);
   app.use('/api/ingest/dayflow/*', async (c, next) => {
     if (!config.dayflow.token) return c.json({ error: 'Dayflow ingestion is not configured' }, 503);
     if (!authorized(c.req.header('authorization'), config.dayflow.token)) return c.json({ error: 'Unauthorized' }, 401);

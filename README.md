@@ -276,6 +276,17 @@ server entrypoint. The separate ingest service and shared WAL format are unchang
   child exit makes the production entrypoint exit nonzero, allowing the existing
   Compose restart policy to start one new owner. This is availability isolation,
   not a fix for shared-host disk contention.
+- The container healthcheck probes `GET /livez` (gateway process liveness,
+  2-second probes during the start period), **not** `/healthz`. Traefik routes
+  only to healthy containers, so a readiness healthcheck turned a warming or
+  stalled backend into Traefik's 404 for the whole host, hiding robots.txt, the
+  last-good homepage and the gateway's explicit 503s. `/healthz` keeps its
+  readiness and source-freshness semantics for monitors. The ingest service
+  answers `/livez` with its existing configuration health.
+- Before opening SQLite, the app child reads the database file and its WAL once
+  sequentially (4 MiB chunks, 60-second cap, advisory only) to populate the OS
+  page cache. Startup's whole-table Health aggregates otherwise ran as cold 4 KiB
+  random reads: 80 s + 219 s on the shared host, against ~215 MB/s sequential.
 - Source refreshes run at most once per source at a time. A refresh still
   pending after **10 minutes** is recorded as failed (and retried once after two
   minutes); a late answer from it is ignored. A whole cycle is abandoned after

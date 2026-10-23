@@ -54,6 +54,11 @@ export function startGateway(options: {
     let path: string;
     try { path = new URL(req.url ?? '/', 'http://localhost').pathname; }
     catch { return json(res, 400, { error: 'invalid_request_target' }); }
+    // Liveness of this process only, for the container healthcheck. Traefik
+    // routes only to healthy containers, so readiness or source freshness here
+    // would replace the gateway's explicit 503s and last-good page with an
+    // edge 404 for the whole host. Readiness stays in /healthz.
+    if (path === '/livez' && (req.method === 'GET' || req.method === 'HEAD')) return json(res, 200, { status: 'alive' }, req.method === 'HEAD');
     if (path === '/healthz' && (req.method === 'GET' || req.method === 'HEAD')) {
       const error = transportError();
       const elapsed = snapshot ? snapshotAge() : 0;
