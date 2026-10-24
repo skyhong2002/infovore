@@ -85,6 +85,26 @@ test('urtube fetch still fails the source when one summary window is unavailable
   await assert.rejects(fetchYoutube(), /youtube: HTTP 503/);
 });
 
+test('urtube fetch failures name the range, phase and cause without the URL', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const range = new URL(String(input)).searchParams.get('range');
+    if (range === 'all') throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    if (range === '28d') return new Response('{"range":', { headers: { 'Content-Type': 'application/json' } });
+    throw new Error(`unexpected range ${range}`);
+  });
+  const err = await fetchYoutube().then(() => null, (e: unknown) => e);
+  assert.ok(err instanceof Error);
+  assert.match(err.message, /youtube: summary range=28d failed waiting for body after \d+ms \(SyntaxError\)/);
+  assert.match(err.message, /youtube: summary range=all timed out waiting for headers after \d+ms \(TimeoutError\)/);
+  assert.doesNotMatch(err.message, /https?:|summary\.json/);
+
+  t.mock.restoreAll();
+  t.mock.method(globalThis, 'fetch', async () => {
+    throw new TypeError('fetch failed', { cause: Object.assign(new Error('reset'), { code: 'ECONNRESET' }) });
+  });
+  await assert.rejects(fetchYoutube(), /range=28d failed waiting for headers after \d+ms \(TypeError\/ECONNRESET\)/);
+});
+
 test('Backloggd profile fixture normalizes a recent game', () => {
   const entries = parseBackloggdRecentFixture(`
     <div id="profile-journal"><div><a href="/games/chrono-trigger/"><img class="card-img" alt="Chrono Trigger" src="cover.jpg"></a><span class="played-date">July 7, 2026</span></div></div>

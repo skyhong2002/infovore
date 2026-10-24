@@ -149,23 +149,55 @@ export function normalizeYoutube(
   };
 }
 
+const SUMMARY_TIMEOUT_MS = 20000;
+
+// Where a summary request failed: before response headers, or while reading
+// the body. Network errors and aborts carry the class and nested cause code
+// only, never the URL, so the message stays safe for /healthz and the logs.
+function summaryFailure(range: string, phase: 'headers' | 'body', elapsedMs: number, err: unknown): Error {
+  const name = err instanceof Error ? err.name : typeof err;
+  const cause = err instanceof Error ? (err.cause as { code?: unknown } | undefined)?.code : undefined;
+  const reason = name === 'TimeoutError' ? 'timed out' : 'failed';
+  return new Error(`youtube: summary range=${range} ${reason} waiting for ${phase} after ${elapsedMs}ms (${name}${typeof cause === 'string' ? `/${cause}` : ''})`);
+}
+
 async function getSummary(range: '28d' | 'all'): Promise<unknown> {
   const { baseUrl, handle } = config.urtube;
   // This projection keeps topics/keywords and the time ledger, but skips
   // UrTube's channel race and topic trend work that this mirror never reads.
   const url = `${baseUrl}/u/${encodeURIComponent(handle)}/summary.json?range=${range}&detail=summary`;
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json', 'User-Agent': config.userAgent },
-    signal: AbortSignal.timeout(20000),
-  });
+  const started = performance.now();
+  const elapsed = () => Math.round(performance.now() - started);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': config.userAgent },
+      signal: AbortSignal.timeout(SUMMARY_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw summaryFailure(range, 'headers', elapsed(), err);
+  }
+  const headersMs = elapsed();
   if (res.status === 404) throw new Error(`youtube: urtube has no public dashboard for "${handle}" (${url})`);
   if (!res.ok) throw new Error(`youtube: HTTP ${res.status} for ${url}`);
-  return res.json();
+  let doc: unknown;
+  try {
+    doc = await res.json();
+  } catch (err) {
+    throw summaryFailure(range, 'body', elapsed(), err);
+  }
+  console.log(`[refresh] youtube summary range=${range} headers ${headersMs}ms, body ${elapsed() - headersMs}ms`);
+  return doc;
 }
 
 export async function fetchYoutube(): Promise<SourceSnapshot<YoutubeExtra>> {
-  const [recent, lifetime] = await Promise.all([getSummary('28d'), getSummary('all')]);
-  return normalizeYoutube(recent, lifetime, { ...config.urtube, ownerName: config.ownerName });
+  // Settle both windows so a failure reports every range, not just the first.
+  const [recent, lifetime] = await Promise.allSettled([getSummary('28d'), getSummary('all')]);
+  if (recent.status === 'rejected' || lifetime.status === 'rejected') {
+    const failures = [recent, lifetime].flatMap((r) => r.status === 'rejected' ? [r.reason instanceof Error ? r.reason.message : String(r.reason)] : []);
+    throw new Error(failures.join('; '));
+  }
+  return normalizeYoutube(recent.value, lifetime.value, { ...config.urtube, ownerName: config.ownerName });
 }
 
 const intervalsSchema = z.object({
