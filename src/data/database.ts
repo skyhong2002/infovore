@@ -371,6 +371,24 @@ export class Repository {
     if (afterWatchIntervals.user_version < 13) migrateComputai(this.db);
     const afterComputai = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterComputai.user_version < 14) migrateComputaiSegments(this.db);
+    const afterComputaiSegments = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterComputaiSegments.user_version < 15) this.migratePublicActivityIndexes();
+  }
+
+  // Homepage reads that filter public activities by first-seen time, or one
+  // source's public rows by time, otherwise read every row's payload. On a cold
+  // page cache that is seconds of synchronous I/O per read, long enough to stop
+  // the backend publishing health snapshots (gateway snapshot_stale 503).
+  // Both indexes cover their queries; only matching rows' payloads are read.
+  private migratePublicActivityIndexes(): void {
+    this.db.exec(`
+      BEGIN;
+      CREATE INDEX IF NOT EXISTS activities_public_seen_idx ON activities(visibility, first_seen_at);
+      CREATE INDEX IF NOT EXISTS activities_source_public_time_idx
+        ON activities(source, visibility, occurred_at, occurred_precision, first_seen_at, id);
+      PRAGMA user_version = 15;
+      COMMIT;
+    `);
   }
 
   // Clock intervals from urtube's private feed, kept to what coverage needs:

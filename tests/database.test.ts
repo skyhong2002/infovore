@@ -108,7 +108,7 @@ test('version 1 databases migrate through schema version 9 without data loss', (
     const activitiesSql = migrated.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
     ).get() as { sql: string };
-    assert.equal(version.user_version, 14);
+    assert.equal(version.user_version, 15);
     assert.ok(watchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(searchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(channelColumns.some((column) => column.name === 'thumbnail_url'));
@@ -354,6 +354,29 @@ test('latest source lookup preserves precision, timestamp ties and public-only e
     assert.equal(repository.latestPublicActivitiesBySource(now).find(a => a.source === 'c-id-tie')?.sourceItemId, 'tie-a');
     assert.equal(repository.latestPublicActivitiesBySource(new Date('2026-09-07T00:00:00.000Z'))[0].sourceItemId, 'tomorrow');
   } finally { writer.close(); repository.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('homepage activity reads search indexes instead of scanning every payload', (t) => {
+  const repository = new Repository(':memory:');
+  try {
+    // Record the SQL the homepage reads actually run, then check each plan.
+    const db = (repository as unknown as { db: DatabaseSync }).db;
+    const statements: string[] = [];
+    const prepare = db.prepare.bind(db);
+    t.mock.method(db, 'prepare', (sql: string) => { statements.push(sql); return prepare(sql); });
+    const now = new Date('2026-09-06T00:00:00.000Z');
+    repository.countNewSince('2026-08-30T00:00:00.000Z');
+    repository.activityCoverage(now, { dayflow: false, health: false, computai: false });
+    repository.latestPublicActivitiesBySource(now);
+    t.mock.restoreAll();
+    const reads = statements.filter((sql) => /\bFROM activities\b/.test(sql));
+    assert.equal(reads.length, 3);
+    for (const sql of reads) {
+      const plan = (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as Array<{ detail: string }>).map((row) => row.detail);
+      // A bare SCAN reads every row's payload; only covering-index scans are allowed.
+      assert.ok(plan.every((detail) => !/^SCAN (activities|activity|candidate)$/.test(detail)), `${sql}\n${plan.join('\n')}`);
+    }
+  } finally { repository.close(); }
 });
 
 test('cached reads see writes from another connection, like the ingest container', () => {
