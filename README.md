@@ -258,8 +258,8 @@ server entrypoint. The separate ingest service and shared WAL format are unchang
   source-sync labels. The last-good page does **not** make `/healthz` healthy.
   Cache state is intentionally ephemeral: a gateway restart must seed a new page.
 - Other routes stream through unchanged (including gzip, binary cards, Host,
-  request bodies and MCP). Admission is bounded to **16 actual in-flight
-  responses**, with no application waiting queue. A **3-second response-header
+  request bodies and MCP). Admission is bounded to **64 actual in-flight
+  responses** (enough for the ~30 card images `/cards` requests at once), with no application waiting queue. A **3-second response-header
   deadline** yields an explicit 503; it does **not** cancel/retry a SQLite
   operation or free its slot before the real response finishes. Saturated
   admission also makes health unhealthy, even if metadata is fresh. Response

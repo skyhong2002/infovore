@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server';
-import type { HealthBody } from './gateway.js';
+import { DEFAULT_MAX_IN_FLIGHT, type HealthBody } from './gateway.js';
 
 interface App {
   fetch(request: Request): Response | Promise<Response>;
@@ -13,7 +13,7 @@ export function startBackend(app: App, options: { snapshotIntervalMs?: number; m
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const server = serve({ hostname: '127.0.0.1', port: 0, fetch: async (request) => {
-    if (inFlight >= (options.maxInFlight ?? 16)) return new Response('Backend busy', { status: 503 });
+    if (inFlight >= (options.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT)) return new Response('Backend busy', { status: 503 });
     inFlight++;
     try { return await app.fetch(request); } finally { inFlight--; }
   } }, ({ port }) => { process.send?.({ type: 'ready', port }); void publish(); });

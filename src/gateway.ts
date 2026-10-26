@@ -6,6 +6,10 @@ export interface SourceHealth { source: string; fresh: boolean; ageMs: number | 
 export interface HealthBody { status: string; maxSourceAgeHours: number; sources: SourceHealth[] }
 export interface HealthSnapshot { capturedAt: number; body: HealthBody }
 
+// A gallery page fires one request per card image at once (~30 on /cards), so
+// the cap must clear that burst; it still bounds work behind a stalled read.
+export const DEFAULT_MAX_IN_FLIGHT = 64;
+
 // This module must never import config, Repository, renderers or the app. Even
 // cold startup/migrations and refresh persistence belong in the isolated child.
 export function startGateway(options: {
@@ -14,7 +18,7 @@ export function startGateway(options: {
 } = {}) {
   const staleMs = options.staleMs ?? 3000;
   const deadlineMs = options.requestDeadlineMs ?? 3000;
-  const maxInFlight = options.maxInFlight ?? 16;
+  const maxInFlight = options.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
   let snapshot: HealthSnapshot | null = null;
   let receivedAt = 0;
   let ageAtReceipt = 0;
