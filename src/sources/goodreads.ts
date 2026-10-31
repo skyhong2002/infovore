@@ -26,6 +26,12 @@ function field(item: string, tag: string): string {
 }
 
 export function parseGoodreadsRss(xml: string, limit: number, status: 'reading' | 'read' | 'to-read'): MediaEntry[] {
+  // A successful HTTP response can still be a sign-in/error page. Do not
+  // publish it as an empty shelf and replace the last successful snapshot.
+  const document = xml.replace(/^\uFEFF?\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*/, '');
+  if (!/^<rss\b[^>]*>\s*<channel\b[^>]*>[\s\S]*<\/channel>\s*<\/rss>\s*$/.test(document)) {
+    throw new Error(`goodreads: ${status} RSS unavailable: expected RSS channel`);
+  }
   const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
   return items.slice(0, limit).map((it) => {
     const rating = Number(field(it, 'user_rating'));
@@ -61,8 +67,9 @@ export async function fetchGoodreads(): Promise<SourceSnapshot> {
   const avatar = profileHtml.match(/<img[^>]*src="(https:\/\/images\.gr-assets\.com\/users\/[^"]+)"/)?.[1] ?? '';
   const name = profileHtml.match(/<h1[^>]*>([^<]+)<\/h1>/)?.[1].trim() ?? 'Goodreads';
   const shelfCount = (shelf: string): number => {
-    const m = profileHtml.match(new RegExp(`shelf=${shelf}[^>]*>[^(]*\\((\\d+)\\)`));
-    return m ? Number(m[1]) : 0;
+    const m = profileHtml.match(new RegExp(`shelf=${shelf}[^>]*>[^<]*\\((\\d+)\\)`));
+    if (!m) throw new Error(`goodreads: profile unavailable: missing ${shelf} shelf count`);
+    return Number(m[1]);
   };
 
   return {
