@@ -125,7 +125,7 @@ export function shell(title: string, body: string, active: PageKey, extraStyles 
 }
 
 export function sourceLabel(source: string): string {
-  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', goodreads: 'Goodreads', youtube: 'YouTube', health: 'Health', dayflow: 'Dayflow', computai: 'ComputAI', events: 'Manual' } as Record<string, string>)[source] ?? source;
+  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', hardcover: 'Hardcover', youtube: 'YouTube', health: 'Health', dayflow: 'Dayflow', computai: 'ComputAI', events: 'Manual' } as Record<string, string>)[source] ?? source;
 }
 
 // Coarse relative age for the present view: "today", "12 days ago", "4 months ago".

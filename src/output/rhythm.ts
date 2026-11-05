@@ -17,7 +17,7 @@ export const platformColors: Record<string, string> = {
   backloggd: '#f2d45c',
   simkl: '#5b8def',
   kitsu: '#f779a1',
-  goodreads: '#c8a27a',
+  hardcover: '#c8a27a',
 };
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'flex', fontFamily: textFont(value, 'Inter'), ...style } }, value);

@@ -26,7 +26,7 @@ import { fetchBackloggd } from './sources/backloggd.js';
 import { fetchKitsu } from './sources/kitsu.js';
 import { fetchStatsfm } from './sources/statsfm.js';
 import { fetchSimkl } from './sources/simkl.js';
-import { fetchGoodreads } from './sources/goodreads.js';
+import { fetchHardcover } from './sources/hardcover.js';
 import { fetchYoutube, syncYoutubeIntervals, type YoutubeExtra } from './sources/youtube.js';
 import { rasterize } from './output/render.js';
 import { RasterCache } from './output/raster-cache.js';
@@ -44,7 +44,7 @@ import { buildBackloggdCard } from './output/backloggd.js';
 import { buildKitsuCard, buildKitsuAnimeCard, buildKitsuMangaCard } from './output/kitsu.js';
 import { buildStatsfmCard, buildStatsfmAlbumsCard, buildStatsfmArtistsCard } from './output/statsfm.js';
 import { buildSimklCard, buildSimklMoviesCard, buildSimklShowsCard } from './output/simkl.js';
-import { buildGoodreadsCard } from './output/goodreads.js';
+import { buildHardcoverCard } from './output/hardcover.js';
 import { buildYoutubeChannelsCard, buildYoutubeOverviewCard, buildYoutubeTopicsCard } from './output/youtube.js';
 import { buildHealthCard, buildHealthSleepCard, buildHealthSleepStagesCard, buildHealthExerciseCard, buildHealthStepsCard } from './output/health.js';
 
@@ -58,7 +58,7 @@ const fetchers: Record<string, () => Promise<SourceSnapshot<unknown>>> = {
   kitsu: fetchKitsu,
   statsfm: fetchStatsfm,
   simkl: fetchSimkl,
-  goodreads: fetchGoodreads,
+  hardcover: fetchHardcover,
   youtube: fetchYoutube,
 };
 
@@ -82,7 +82,7 @@ const cards: Record<string, CardDefinition> = {
   simkl: defineCard('simkl', buildSimklCard),
   'simkl-movies': defineCard('simkl', buildSimklMoviesCard),
   'simkl-shows': defineCard('simkl', buildSimklShowsCard),
-  goodreads: defineCard('goodreads', buildGoodreadsCard),
+  hardcover: defineCard('hardcover', buildHardcoverCard),
   youtube: defineCard('youtube', buildYoutubeOverviewCard),
   'youtube-channels': defineCard('youtube', buildYoutubeChannelsCard),
   'youtube-topics': defineCard('youtube', buildYoutubeTopicsCard),
@@ -526,7 +526,7 @@ const allSections: PlatformDefinition[] = [
   { source: 'kitsu', title: 'Kitsu', description: 'Anime and manga progress, ratings and library status.', accent: '#f779a1', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
   { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
   { source: 'simkl', title: 'Simkl', description: 'Movies, TV and anime collected into one watch history.', accent: '#7bb8ff', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
-  { source: 'goodreads', title: 'Goodreads', description: 'Reading shelf, completed books, authors and ratings.', accent: '#d6b98c', url: `https://www.goodreads.com/user/show/${config.goodreads.userId}`, cards: ['goodreads'] },
+  { source: 'hardcover', title: 'Hardcover', description: 'Reading shelf, completed books, authors and ratings.', accent: '#d6b98c', url: `https://hardcover.app/@${config.hardcover.username}`, cards: ['hardcover'] },
   {
     source: 'youtube', title: 'YouTube', description: 'Viewing volume, top channels, topics and most-watched videos, mirrored from urtube.',
     accent: '#ff453a', url: `${config.urtube.baseUrl}/${config.urtube.handle}`, cards: ['youtube', 'youtube-channels', 'youtube-topics'],
@@ -697,6 +697,8 @@ app.get('/platforms', (c) => {
   return c.html(platformIndexPage(config.ownerName, connected));
 });
 
+// Goodreads → Hardcover move; must precede the :source route to match.
+app.get('/platforms/goodreads', (c) => c.redirect('/platforms/hardcover', 301));
 app.get('/platforms/:source', (c) => {
   const source = c.req.param('source');
   const definition = source === 'events' ? manualPlatform : sections.find((section) => section.source === source);
@@ -723,7 +725,7 @@ app.get('/platforms/:source', (c) => {
   if (!cached?.data) return c.text('Platform has not completed its first sync yet', 503);
   c.header('Cache-Control', 'no-cache');
   const cardVersions = Object.fromEntries((definition.cards ?? []).map((name) => [name, version(name)]));
-  const timeSpent = ['statsfm', 'simkl', 'kitsu', 'backloggd', 'goodreads', 'youtube', 'computai'].includes(source)
+  const timeSpent = ['statsfm', 'simkl', 'kitsu', 'backloggd', 'hardcover', 'youtube', 'computai'].includes(source)
     ? timeSpentWithAgents().summary.sources.find((entry) => entry.source === source) ?? null
     : null;
   return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions, timeSpent));
@@ -1045,6 +1047,13 @@ const MIME: Record<string, string> = {
 // Cache rasterized (png/webp) card bodies keyed by content, so we only encode
 // once per hot card render + scale. Bound old content hashes across refreshes.
 const rasterCache = new RasterCache();
+
+// The book source moved from Goodreads to Hardcover; embeds of the old card
+// (profile READMEs) follow the permanent redirect, query string included.
+app.get('/card/:file{goodreads\\.(svg|png|webp)}', (c) => {
+  const url = new URL(c.req.url);
+  return c.redirect(`/card/hardcover.${c.req.param('file').split('.')[1]}${url.search}`, 301);
+});
 
 app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
   const file = c.req.param('file');

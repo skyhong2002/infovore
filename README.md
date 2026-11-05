@@ -17,7 +17,7 @@ an MCP endpoint for AI tools.
     <td width="50%" valign="top"><a href="https://infovore.skyhong.tw"><img width="100%" alt="Simkl" src="https://infovore.skyhong.tw/card/simkl.webp"></a></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><a href="https://infovore.skyhong.tw"><img width="50%" alt="Goodreads" src="https://infovore.skyhong.tw/card/goodreads.webp"></a></td>
+    <td colspan="2" align="center"><a href="https://infovore.skyhong.tw"><img width="50%" alt="Hardcover" src="https://infovore.skyhong.tw/card/hardcover.webp"></a></td>
   </tr>
 </table>
 
@@ -75,7 +75,7 @@ change.
 | [Kitsu](https://kitsu.app/users/skyhong2002) | Official JSON:API |
 | [stats.fm](https://stats.fm/skyhong2002) | Public API |
 | [Simkl](https://simkl.com) | Official API (client ID + OAuth token via PIN flow) |
-| [Goodreads](https://www.goodreads.com/user/show/160195773-skychopath) | Shelf RSS feeds + profile scrape |
+| [Hardcover](https://hardcover.app/@skyhong.tw) | Official GraphQL API (personal token). Replaced Goodreads, whose RSS feeds shut down in 2026; `/card/goodreads.*` redirects |
 | [YouTube](https://urtube.observe.tw/skyhong.tw) | Mirrored from [urtube](https://urtube.observe.tw)'s public per-handle summary (stats, top channels, topics, per-day time) |
 
 ## Cards
@@ -84,7 +84,7 @@ Twenty-six cards in total — cross-source, combined and single-medium variants:
 `now` (in-progress media, upcoming events and the latest item from each platform — the one to embed in a profile README), `activity-rhythm` (seven days of recording coverage),
 `dayflow` / `dayflow-keywords` / `dayflow-categories` (computer time, keywords and categories), `ai-agents` / `ai-agents-light` (a plain 30-day summary of AI agent tokens, hours and models, in GitHub's dark and light palettes), `backloggd` (10 recent games), `kitsu` / `kitsu-anime` / `kitsu-manga`,
 `statsfm` / `statsfm-albums` / `statsfm-artists`,
-`simkl` / `simkl-shows` / `simkl-movies`, `goodreads`,
+`simkl` / `simkl-shows` / `simkl-movies`, `hardcover`,
 `youtube` / `youtube-channels` / `youtube-topics`,
 `health` (latest 3 recorded days each of sleep, workouts and steps; no efficiency score or lifetime totals), `health-sleep` (14 recorded wake-up days),
 `health-sleep-stages` (stage proportions and efficiency), `health-exercise`, `health-steps`.

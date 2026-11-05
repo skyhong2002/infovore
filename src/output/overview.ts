@@ -42,7 +42,7 @@ export function platformOverview(source: string, image: string, snapshot: Source
     return result(channel ? `Top channel: ${channel.name}` : `${count('uniqueVideos')} videos in 28 days`,
       `${count('watchEvents')} watches · ${count('uniqueChannels')} channels · recent 28 days`, channel?.thumbnailUrl || image);
   }
-  if (source === 'goodreads') return result(current[0] ? `Reading: ${current[0].title}` : `${count('readCount')} books read`,
+  if (source === 'hardcover') return result(current[0] ? `Reading: ${current[0].title}` : `${count('readCount')} books read`,
     `${count('currentlyReadingCount')} reading · ${count('toReadCount')} to read`, current[0]?.image || image);
   if (source === 'kitsu') return result(current.length ? `${current.length} in progress in synced library` : `${count('animeCompleted')} anime completed`,
     `${count('animeEpisodes')} episodes · ${count('mangaChapters')} manga chapters · lifetime`);

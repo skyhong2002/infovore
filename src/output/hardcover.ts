@@ -1,29 +1,31 @@
 import { h, logo, toDataUri, truncate, timeAgo, renderCard, textFont, titleFontSize, MAX_TITLE_LINES } from './render.js';
 import type { SourceSnapshot } from '../data/types.js';
 
-// Goodreads' signature light UI: warm beige paper, dark brown ink,
-// teal links, orange rating stars, Merriweather serif headings.
+// Hardcover's light UI: cool off-white paper, slate ink, the indigo of its
+// book mark for accents and amber rating stars, set in Inter.
 const C = {
-  bg: '#f4f1ea',
+  bg: '#f8fafc',
   panel: '#ffffff',
-  text: '#382110',
-  dim: '#767676',
-  accent: '#00635d',
-  stars: '#e87400',
-  border: '#dcd6c6',
+  text: '#1e1b4b',
+  dim: '#64748b',
+  accent: '#4f46e5',
+  stars: '#f59e0b',
+  border: '#e2e8f0',
 };
 
-function starString(rating: number): string {
-  return '★'.repeat(rating) + '☆'.repeat(5 - rating);
+// Hardcover rates in half stars; the half rounds up so 3.5 reads as ★★★★☆.
+export function starString(rating: number): string {
+  const full = Math.max(0, Math.min(5, Math.round(rating)));
+  return '★'.repeat(full) + '☆'.repeat(5 - full);
 }
 
-export async function buildGoodreadsCard(data: SourceSnapshot): Promise<string> {
+export async function buildHardcoverCard(data: SourceSnapshot): Promise<string> {
   const currentlyReading = data.entries.filter((e) => e.status === 'reading').slice(0, 2);
   const recentlyRead = data.entries.filter((e) => e.status === 'read').slice(0, 5);
   const nCurrent = currentlyReading.length;
   const [avatar, mark, ...covers] = await Promise.all([
     toDataUri(data.profile.avatar),
-    Promise.resolve(logo('goodreads')),
+    Promise.resolve(logo('hardcover')),
     ...currentlyReading.map((b) => toDataUri(b.image)),
     ...recentlyRead.map((b) => toDataUri(b.image)),
   ]);
@@ -46,7 +48,7 @@ export async function buildGoodreadsCard(data: SourceSnapshot): Promise<string> 
       h(
         'div',
         { style: { display: 'flex', flexDirection: 'column' } },
-        h('span', { style: { fontSize: titleFontSize(b.title, 13), fontWeight: 700, color: C.text, lineHeight: 1.3, wordBreak: 'break-word', display: 'block', lineClamp: MAX_TITLE_LINES, fontFamily: textFont(b.title, 'Merriweather') } }, b.title),
+        h('span', { style: { fontSize: titleFontSize(b.title, 13), fontWeight: 700, color: C.text, lineHeight: 1.3, wordBreak: 'break-word', display: 'block', lineClamp: MAX_TITLE_LINES, fontFamily: textFont(b.title, 'Inter') } }, b.title),
         h('span', { style: { fontSize: 11, color: C.dim, marginTop: 2 } }, b.extra.author)
       ),
       h('span', { style: { fontSize: 10, fontWeight: 700, color: C.accent, marginLeft: 'auto', letterSpacing: 1 } }, 'READING')
@@ -59,9 +61,9 @@ export async function buildGoodreadsCard(data: SourceSnapshot): Promise<string> 
       { style: { display: 'flex', flexDirection: 'column', width: 84, marginRight: i < 4 ? 12 : 0 } },
       readCovers[i]
         ? h('img', { src: readCovers[i], width: 84, height: 122, style: { borderRadius: 3, objectFit: 'cover', border: `1px solid ${C.border}` } })
-        : h('div', { style: { width: 84, height: 122, backgroundColor: '#e8e2d4', borderRadius: 3, display: 'flex' } }),
-      h('span', { style: { fontSize: titleFontSize(b.title), fontWeight: 700, color: C.text, marginTop: 6, lineHeight: 1.25, wordBreak: 'break-word', display: 'block', lineClamp: MAX_TITLE_LINES, fontFamily: textFont(b.title, 'Merriweather') } }, b.title),
-      h('span', { style: { fontSize: 10, color: C.dim, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(String(b.extra.author), 'Merriweather') } }, truncate(String(b.extra.author), 16)),
+        : h('div', { style: { width: 84, height: 122, backgroundColor: '#e0e7ff', borderRadius: 3, display: 'flex' } }),
+      h('span', { style: { fontSize: titleFontSize(b.title), fontWeight: 700, color: C.text, marginTop: 6, lineHeight: 1.25, wordBreak: 'break-word', display: 'block', lineClamp: MAX_TITLE_LINES, fontFamily: textFont(b.title, 'Inter') } }, b.title),
+      h('span', { style: { fontSize: 10, color: C.dim, marginTop: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontFamily: textFont(String(b.extra.author), 'Inter') } }, truncate(String(b.extra.author), 16)),
       b.rating !== null
         ? h('span', { style: { fontSize: 10, color: C.stars, marginTop: 2, letterSpacing: 1 } }, starString(b.rating.value))
         : h('span', { style: { fontSize: 10, color: C.dim, marginTop: 2 } }, b.activityAt ? timeAgo(b.activityAt) : '')
@@ -74,14 +76,14 @@ export async function buildGoodreadsCard(data: SourceSnapshot): Promise<string> 
       style: {
         width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
         backgroundColor: C.bg, borderRadius: 8, border: `1px solid ${C.border}`,
-        padding: '20px 24px', fontFamily: 'Merriweather',
+        padding: '20px 24px', fontFamily: 'Inter',
       },
     },
     h(
       'div',
       { style: { display: 'flex', alignItems: 'center', marginBottom: 12 } },
       h('img', { src: mark, width: 28, height: 28, style: { borderRadius: 6, marginRight: 8 } }),
-      h('span', { style: { fontSize: 19, fontWeight: 700, color: C.text } }, 'goodreads'),
+      h('span', { style: { fontSize: 19, fontWeight: 700, color: C.text } }, 'Hardcover'),
       h(
         'div',
         { style: { display: 'flex', alignItems: 'center', marginLeft: 'auto' } },

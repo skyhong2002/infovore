@@ -22,11 +22,11 @@ test('overviews use source aggregates and preferences instead of latest activity
 });
 
 test('reading overview prefers current books; missing snapshots have an explicit empty state', () => {
-  const books = snapshot('goodreads', { readCount: 8, currentlyReadingCount: 1, toReadCount: 4 });
-  books.entries = [{ source: 'goodreads', kind: 'book', title: 'Reading now', status: 'reading', image: '', rating: null, activityAt: '', extra: {} }];
-  assert.equal(platformOverview('goodreads', '', books).title, 'Reading: Reading now');
+  const books = snapshot('hardcover', { readCount: 8, currentlyReadingCount: 1, toReadCount: 4 });
+  books.entries = [{ source: 'hardcover', kind: 'book', title: 'Reading now', status: 'reading', image: '', rating: null, activityAt: '', extra: {} }];
+  assert.equal(platformOverview('hardcover', '', books).title, 'Reading: Reading now');
   books.entries = [];
-  assert.equal(platformOverview('goodreads', '', books).title, '8 books read');
+  assert.equal(platformOverview('hardcover', '', books).title, '8 books read');
   assert.equal(platformOverview('kitsu', '', null).title, 'Waiting for sync');
 });
 

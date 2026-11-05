@@ -173,10 +173,10 @@ const HEALTH_SECONDS_SQL = `
   FROM (${preferredHealthRecords(['exercise_session'])}) health_connect_records
   WHERE data_type='exercise_session' AND end_at>=start_at
 `;
-const GOODREADS_SECONDS_SQL = `
+const HARDCOVER_SECONDS_SQL = `
   SELECT occurred_at, json_extract(extra_json, '$.pages') * ${SECONDS_PER_PAGE}.0 seconds
   FROM activities
-  WHERE source='goodreads' AND status='read' AND occurred_at IS NOT NULL
+  WHERE source='hardcover' AND status='read' AND occurred_at IS NOT NULL
     AND json_extract(extra_json, '$.pages') > 0
 `;
 
@@ -373,6 +373,23 @@ export class Repository {
     if (afterComputai.user_version < 14) migrateComputaiSegments(this.db);
     const afterComputaiSegments = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterComputaiSegments.user_version < 15) this.migratePublicActivityIndexes();
+    const afterPublicActivityIndexes = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterPublicActivityIndexes.user_version < 16) this.migrateGoodreadsToHardcover();
+  }
+
+  // Goodreads shut down its RSS feeds in 2026; books now come from Hardcover,
+  // into which the whole Goodreads library was imported. Hardcover book ids
+  // differ from Goodreads ones, so keeping the old rows would show every book
+  // twice. The first Hardcover sync re-creates them under the new source.
+  private migrateGoodreadsToHardcover(): void {
+    this.db.exec(`
+      BEGIN;
+      DELETE FROM activities WHERE source='goodreads';
+      DELETE FROM snapshots WHERE source='goodreads';
+      DELETE FROM time_ledger WHERE source='goodreads';
+      PRAGMA user_version = 16;
+      COMMIT;
+    `);
   }
 
   // Homepage reads that filter public activities by first-seen time, or one
@@ -1227,7 +1244,7 @@ export class Repository {
     fill('statsfm', byDay(STATSFM_SECONDS_SQL));
     fill('events', byDay(EVENTS_SECONDS_SQL, now.toISOString()));
     fill('health', byDay(HEALTH_SECONDS_SQL));
-    fill('goodreads', byDay(GOODREADS_SECONDS_SQL));
+    fill('hardcover', byDay(HARDCOVER_SECONDS_SQL));
     const ledger = this.db.prepare('SELECT day, SUM(seconds) seconds FROM time_ledger WHERE source=? AND day>=? GROUP BY day');
     for (const source of ['simkl', 'kitsu', 'backloggd', 'youtube']) {
       fill(source, ledger.all(source, dayList[0]) as Array<{ day: string; seconds: number }>);
@@ -1269,7 +1286,7 @@ export class Repository {
       { source: 'statsfm', method: 'measured', seconds: between(STATSFM_SECONDS_SQL) },
       { source: 'events', method: 'estimated', seconds: between(EVENTS_SECONDS_SQL, now.toISOString()) },
       { source: 'health', method: 'measured', seconds: between(HEALTH_SECONDS_SQL) },
-      { source: 'goodreads', method: 'estimated', seconds: between(GOODREADS_SECONDS_SQL) },
+      { source: 'hardcover', method: 'estimated', seconds: between(HARDCOVER_SECONDS_SQL) },
       { source: 'simkl', method: 'estimated', seconds: fromLedger('simkl') },
       { source: 'kitsu', method: 'estimated', seconds: fromLedger('kitsu') },
       { source: 'backloggd', method: 'measured', seconds: fromLedger('backloggd') },
@@ -1400,8 +1417,8 @@ export class Repository {
 
     // Books: pages × reading pace, attributed to the day the book was
     // finished. Books without a page count in the shelf RSS are skipped.
-    const goodreads = activityWindows(GOODREADS_SECONDS_SQL);
-    if (goodreads.allTime > 0) sources.push({ source: 'goodreads', method: 'estimated', windows: goodreads });
+    const books = activityWindows(HARDCOVER_SECONDS_SQL);
+    if (books.allTime > 0) sources.push({ source: 'hardcover', method: 'estimated', windows: books });
 
     const ledgerQuery = this.db.prepare(`
       SELECT

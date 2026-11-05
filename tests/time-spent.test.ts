@@ -35,7 +35,7 @@ test('Taipei calendar helpers anchor windows to UTC+8', () => {
 test('migration creates the time ledger tables', () => {
   const repository = new Repository(':memory:');
   const raw = (repository as any).db;
-  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 15);
+  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 16);
   const tables = raw.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('time_ledger', 'time_ledger_state')"
   ).all() as Array<{ name: string }>;
@@ -166,9 +166,9 @@ test('Kitsu snapshots feed the ledger through animeSeconds', () => {
   assert.equal(kitsu?.windows.allTime, 1440);
   // Sources without a lifetime figure are a no-op.
   repository.recordTimeLedger({
-    source: 'goodreads', profile: { id: 'g', name: 'G', avatar: '', url: '' }, stats: { books: 3 }, entries: [], extra: {},
+    source: 'hardcover', profile: { id: 'g', name: 'G', avatar: '', url: '' }, stats: { books: 3 }, entries: [], extra: {},
   });
-  assert.equal(repository.timeSpent(NOW).sources.some((entry) => entry.source === 'goodreads'), false);
+  assert.equal(repository.timeSpent(NOW).sources.some((entry) => entry.source === 'hardcover'), false);
   repository.close();
 });
 
@@ -196,7 +196,7 @@ test('attended events count their scheduled span with a 2 h default, excluding p
 test('finished books estimate reading time from page counts', () => {
   const repository = new Repository(':memory:');
   const book = (id: string, status: string, extra: Record<string, number>) => ({
-    sourceItemId: id, source: 'goodreads', kind: 'book' as const, title: `Book ${id}`, image: '',
+    sourceItemId: id, source: 'hardcover', kind: 'book' as const, title: `Book ${id}`, image: '',
     status, activityAt: '2026-08-02T09:00:00Z', rating: null, extra,
   });
   repository.ingestEntries([
@@ -204,9 +204,9 @@ test('finished books estimate reading time from page counts', () => {
     book('reading', 'reading', { pages: 500 }), // not finished yet
     book('no-pages', 'read', {}),               // RSS had no page count
   ]);
-  const goodreads = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'goodreads');
-  assert.equal(goodreads?.method, 'estimated');
-  assert.deepEqual(goodreads?.windows, {
+  const books = repository.timeSpent(NOW).sources.find((entry) => entry.source === 'hardcover');
+  assert.equal(books?.method, 'estimated');
+  assert.deepEqual(books?.windows, {
     last24h: 36000, last28d: 36000, day: 36000, week: 36000, month: 36000, year: 36000, allTime: 36000,
   });
   repository.close();

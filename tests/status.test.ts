@@ -33,7 +33,7 @@ test('in-progress items go stale after the window and recent Backloggd games cou
 test('the queue takes only queued statuses, newest first, capped per platform', () => {
   const queued = selectQueued([
     ...Array.from({ length: 8 }, (_, index) => activity({ id: `simkl-${index}`, source: 'simkl', status: 'plantowatch', occurredAt: daysAgo(index) })),
-    activity({ id: 'book', source: 'goodreads', mediaKind: 'book', status: 'to-read', occurredAt: daysAgo(2) }),
+    activity({ id: 'book', source: 'hardcover', mediaKind: 'book', status: 'to-read', occurredAt: daysAgo(2) }),
     activity({ id: 'planned', status: 'planned', occurredAt: daysAgo(30) }),
     activity({ id: 'current', status: 'current' }),
   ], 12, 6);

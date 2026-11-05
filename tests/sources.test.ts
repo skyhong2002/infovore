@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseBackloggdLogFixture, parseBackloggdRecentFixture } from '../src/sources/backloggd.js';
-import { parseGoodreadsRss } from '../src/sources/goodreads.js';
+import { parseHardcoverBooks, type HardcoverUserBook } from '../src/sources/hardcover.js';
+import { starString } from '../src/output/hardcover.js';
 import { parseKitsuEntries } from '../src/sources/kitsu.js';
 import { parseSimklEntries } from '../src/sources/simkl.js';
 import { normalizeStatsfm } from '../src/sources/statsfm.js';
@@ -143,16 +144,44 @@ test('Backloggd log fixture pairs per-day playtimes with their month headers', (
   ]);
 });
 
-test('Goodreads RSS fixture preserves ids, author, rating and timestamp', () => {
-  const entries = parseGoodreadsRss(`<rss><channel><item>
-    <book_id>123</book_id><title><![CDATA[A Book]]></title><author_name>Author</author_name>
-    <book_large_image_url>cover.jpg</book_large_image_url><user_rating>4</user_rating>
-    <user_read_at>Fri, 10 Jul 2026 12:00:00 +0000</user_read_at>
-  </item></channel></rss>`, 5, 'read');
-  assert.equal(entries[0].sourceItemId, '123');
-  assert.equal(entries[0].title, 'A Book');
-  assert.equal(entries[0].extra.author, 'Author');
-  assert.equal(entries[0].activityAt, '2026-07-10T12:00:00.000Z');
+test('Hardcover fixture maps statuses, dates, edition data and half-star ratings', () => {
+  const book = (id: number, extra: Partial<HardcoverUserBook>): HardcoverUserBook => ({
+    id, status_id: 3, rating: null, date_added: '2023-07-18', last_read_date: null,
+    book: { id, slug: `book-${id}`, title: `Book ${id}`, pages: 200, image: { url: `book-${id}.jpg` }, contributions: [{ author: { name: '倪匡' } }, { author: { name: 'Translator' } }] },
+    edition: null, user_book_reads: [], ...extra,
+  });
+  const entries = parseHardcoverBooks([
+    book(1, { rating: 3.5, user_book_reads: [{ started_at: null, finished_at: '2025-09-13' }], edition: { title: '大廈', pages: 247, image: { url: 'edition.jpg' } } }),
+    book(2, { status_id: 2, user_book_reads: [{ started_at: '2026-10-01', finished_at: null }] }),
+    book(3, { status_id: 1, date_added: '2024-01-02' }),
+    book(4, { status_id: 6 }),
+  ]);
+  assert.deepEqual(entries.map((e) => [e.sourceItemId, e.status, e.activityAt]), [
+    ['2', 'reading', '2026-10-01'],
+    ['1', 'read', '2025-09-13'],
+    ['3', 'to-read', '2024-01-02'],
+  ]);
+  const read = entries[1];
+  assert.equal(read.source, 'hardcover');
+  assert.equal(read.title, '大廈');
+  assert.equal(read.image, 'edition.jpg');
+  assert.equal(read.extra.author, '倪匡');
+  assert.equal(read.extra.pages, 247);
+  assert.deepEqual(read.rating, { value: 3.5, scale: 5 });
+  assert.equal(entries[2].rating, null);
+  assert.equal(starString(3.5), '★★★★☆');
+  assert.equal(starString(2), '★★☆☆☆');
+});
+
+test('a finished book without a read date falls back to when it was shelved', () => {
+  const [entry] = parseHardcoverBooks([{
+    id: 9, status_id: 3, rating: 2, date_added: '2025-09-13', last_read_date: null,
+    book: { id: 9, slug: 'x', title: 'X', pages: null, image: null, contributions: [] },
+    edition: null, user_book_reads: [],
+  }]);
+  assert.equal(entry.activityAt, '2025-09-13');
+  assert.equal(entry.extra.pages, undefined);
+  assert.equal(entry.image, '');
 });
 
 test('Kitsu JSON fixture resolves included media and stable library id', () => {

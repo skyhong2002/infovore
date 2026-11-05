@@ -90,12 +90,19 @@ test('version 1 databases migrate through schema version 9 without data loss', (
         'instant', NULL, NULL, 'public', '{}',
         '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
       );
+      INSERT INTO activities VALUES (
+        'legacy-book', 'legacy-book-key', 'goodreads', '123', 'book.read',
+        'book', 'Legacy Goodreads Book', '', 'read', '2026-01-02T00:00:00.000Z',
+        'instant', NULL, NULL, 'public', '{}',
+        '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z'
+      );
       PRAGMA user_version = 1;
     `);
     legacy.close();
 
     const repository = new Repository(path);
-    assert.equal(repository.listActivities()[0].title, 'Legacy Anime');
+    // Goodreads rows are dropped (Hardcover re-creates them); others survive.
+    assert.deepEqual(repository.listActivities().map((activity) => activity.title), ['Legacy Anime']);
     repository.close();
 
     const migrated = new DatabaseSync(path);
@@ -108,7 +115,7 @@ test('version 1 databases migrate through schema version 9 without data loss', (
     const activitiesSql = migrated.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
     ).get() as { sql: string };
-    assert.equal(version.user_version, 15);
+    assert.equal(version.user_version, 16);
     assert.ok(watchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(searchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(channelColumns.some((column) => column.name === 'thumbnail_url'));

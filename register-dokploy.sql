@@ -4,7 +4,7 @@ insert into project ("projectId", name, description, "createdAt", env, "organiza
 values (
   'kBXwKYfFI77Hjd6E',
   'status.skyhong.tw',
-  'Live SVG status cards (Backloggd, Kitsu, stats.fm, Simkl, Goodreads)',
+  'Live SVG status cards (Backloggd, Kitsu, stats.fm, Simkl, Hardcover)',
   '2026-07-08T00:00:00.000Z',
   '',
   'e5tHYty-_Hlq8XMTQxyhR'
@@ -47,7 +47,7 @@ values (
   'cXCF85GXlgyXoLXS',
   'status.skyhong.tw',
   'status-skyhong-dokploy',
-  'Live SVG status cards (Backloggd, Kitsu, stats.fm, Simkl, Goodreads)',
+  'Live SVG status cards (Backloggd, Kitsu, stats.fm, Simkl, Hardcover)',
   '',
   $compose$
 services:

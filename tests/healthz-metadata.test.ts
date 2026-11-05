@@ -7,7 +7,7 @@ import { gunzipSync } from 'node:zlib';
 test('healthz reads metadata without entering cold snapshot/card middleware', async (t) => {
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_PATH = ':memory:';
-  process.env.SOURCES = 'backloggd,kitsu,statsfm,simkl,goodreads,youtube,health,dayflow,computai';
+  process.env.SOURCES = 'backloggd,kitsu,statsfm,simkl,hardcover,youtube,health,dayflow,computai';
   process.env.DAYFLOW_TOKEN = 'synthetic-dayflow-token-at-least-32-characters';
   process.env.COMPUTAI_TOKEN = 'synthetic-computai-token-at-least-32-characters';
   // Avoid the separate pre-listen Health-card restore during import. Enable
@@ -52,7 +52,7 @@ test('healthz reads metadata without entering cold snapshot/card middleware', as
     throw new Error('health must not rebuild Health cards');
   });
 
-  const polled = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'goodreads', 'youtube'];
+  const polled = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'hardcover', 'youtube'];
   const allSources = [...polled, 'health', 'dayflow', 'computai'];
   const maxAge = 60 * 60_000;
   const seed = (ageMs: number, errors: string[] = []) => {
@@ -107,7 +107,7 @@ test('healthz reads metadata without entering cold snapshot/card middleware', as
     assert.deepEqual(body.sources.map((source: { source: string }) => source.source), allSources);
   });
   await t.test('five errors remain visible even when all nine sources are fresh', async () => {
-    seed(20 * 60_000, polled.filter((source) => source !== 'goodreads'));
+    seed(20 * 60_000, polled.filter((source) => source !== 'hardcover'));
     const before = polled.map((source) => getCache(`data:${source}`));
     const { response, body } = await probe();
     assert.equal(response.status, 200);

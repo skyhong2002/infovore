@@ -1,12 +1,16 @@
 import { publicBaseUrl as basePublicUrl } from './seo.js';
 
 // Which sources to enable. Empty = all. e.g. SOURCES=kitsu,statsfm
-const sources = (process.env.SOURCES ?? '')
+// `goodreads` is accepted as a legacy name for `hardcover`: Goodreads shut
+// down its RSS feeds in 2026 and the book source moved to Hardcover, so an
+// older SOURCES line keeps booting instead of failing on an unknown source.
+const sources = [...new Set((process.env.SOURCES ?? '')
   .split(',')
   .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
+  .filter(Boolean)
+  .map((s) => (s === 'goodreads' ? 'hardcover' : s)))];
 
-const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'goodreads', 'youtube', 'health', 'dayflow', 'computai'] as const;
+const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'hardcover', 'youtube', 'health', 'dayflow', 'computai'] as const;
 const port = Number(process.env.PORT ?? 3000);
 const maxSourceAgeHours = Number(process.env.MAX_SOURCE_AGE_HOURS ?? 36);
 const refreshIntervalMinutes = Number(process.env.REFRESH_INTERVAL_MINUTES ?? 60);
@@ -54,7 +58,11 @@ export const config = {
     clientId: process.env.SIMKL_CLIENT_ID ?? '',
     accessToken: process.env.SIMKL_ACCESS_TOKEN ?? '',
   },
-  goodreads: { userId: process.env.GOODREADS_USER_ID ?? '160195773-skychopath' },
+  // Personal API token from https://hardcover.app/account/api.
+  hardcover: {
+    username: process.env.HARDCOVER_USERNAME ?? 'skyhong.tw',
+    token: (process.env.HARDCOVER_TOKEN ?? '').trim(),
+  },
   // YouTube tracking lives in urtube; infovore mirrors its public per-handle
   // aggregates.
   urtube: {

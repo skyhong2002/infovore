@@ -6,7 +6,7 @@ import { rasterize } from '../src/output/render.js';
 import type { Activity } from '../src/data/types.js';
 
 function activity(overrides: Partial<Activity>): Activity {
-  return { id: 'id', dedupeKey: 'key', source: 'goodreads', sourceItemId: null, type: 'book.reading', mediaKind: 'book',
+  return { id: 'id', dedupeKey: 'key', source: 'hardcover', sourceItemId: null, type: 'book.reading', mediaKind: 'book',
     title: 'Title', image: '', status: 'reading', occurredAt: '2026-09-01T00:00:00Z', occurredAtPrecision: 'exact', rating: null,
     visibility: 'public', extra: {}, firstSeenAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-01T00:00:00Z', ...overrides };
 }
@@ -37,9 +37,9 @@ test('now card route serves every format, revalidates by ETag and picks up newly
   assert.equal(before.status, 200);
   const etag = before.headers.get('etag')!;
   assert.equal((await app.request('/card/now.svg', { headers: { 'if-none-match': etag } })).status, 304);
-  repository.finishSync(repository.startSync('goodreads'), {
-    source: 'goodreads', profile: { id: 'sky', name: 'Sky', avatar: '', url: '' }, stats: {}, extra: {},
-    entries: [{ source: 'goodreads', sourceItemId: 'now-card-book', kind: 'book', title: 'NOW CARD READING TEST', image: '', rating: null,
+  repository.finishSync(repository.startSync('hardcover'), {
+    source: 'hardcover', profile: { id: 'sky', name: 'Sky', avatar: '', url: '' }, stats: {}, extra: {},
+    entries: [{ source: 'hardcover', sourceItemId: 'now-card-book', kind: 'book', title: 'NOW CARD READING TEST', image: '', rating: null,
       status: 'reading', activityAt: '2026-09-01T00:00:00Z', extra: { author: 'Fixture Author' } }],
   });
   const after = await app.request('/card/now.svg');

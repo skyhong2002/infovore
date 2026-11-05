@@ -1,8 +1,8 @@
 import type { Activity } from './types.js';
 
 // Raw platform statuses grouped by what they mean for the present view.
-// Kitsu says `current`, Goodreads `reading`, Simkl `watching`; the queue is
-// Kitsu `planned`, Simkl `plantowatch`, Goodreads `to-read`, and Backloggd's
+// Kitsu says `current`, Hardcover `reading`, Simkl `watching`; the queue is
+// Kitsu `planned`, Simkl `plantowatch`, Hardcover `to-read`, and Backloggd's
 // backlog/wishlist labels should they ever be synced.
 export const IN_PROGRESS_STATUSES = new Set(['current', 'reading', 'watching', 'playing']);
 export const QUEUED_STATUSES = new Set(['planned', 'plantowatch', 'to-read', 'backlog', 'wishlist']);

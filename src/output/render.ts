@@ -35,7 +35,7 @@ const fonts = [
 
 // Platform logos shipped in-repo, inlined as data URIs.
 const logoCache = new Map<string, string>();
-export function logo(name: 'backloggd' | 'kitsu' | 'statsfm' | 'simkl' | 'goodreads' | 'urtube' | 'healthconnect' | 'dayflow' | 'infovore'): string {
+export function logo(name: 'backloggd' | 'kitsu' | 'statsfm' | 'simkl' | 'hardcover' | 'urtube' | 'healthconnect' | 'dayflow' | 'infovore'): string {
   let uri = logoCache.get(name);
   if (!uri) {
     const buf = readFileSync(`${assetDir}logos/${name}.png`);

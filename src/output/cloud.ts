@@ -223,7 +223,7 @@ const SOURCE_COLORS: Record<string, string> = {
   youtube: '#ff5a4f',
   simkl: '#7bb8ff',
   kitsu: '#f779a1',
-  goodreads: '#d6b98c',
+  hardcover: '#d6b98c',
   events: '#c39bff',
   dayflow: '#b5adff',
   health: '#5fd4c4',
