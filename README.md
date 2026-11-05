@@ -312,7 +312,12 @@ loopback HTTP, gzip/binary responses, JSON APIs and MCP using synthetic data.
 ### Production rollout without a gap
 
 `git pull --ff-only && scripts/deploy.sh` on the host replaces the plain
-`docker compose … up -d --build`, which stops the running container before its
+`docker compose … up -d --build`. For a stack defined elsewhere (for example a
+Dokploy compose with a bind-mounted data directory), pass a config file naming
+the production container, compose project and files, candidate overlay and
+image tag: `scripts/deploy.sky-server.env` with
+`docker-compose.candidate-dokploy.yml` is the production example. The plain
+command stops the running container before its
 replacement has warmed up (~80 s with a cold cache). The script builds while
 production serves, then starts one temporary candidate container from the new
 image (`docker-compose.candidate.yml`: identical Traefik labels, the same data

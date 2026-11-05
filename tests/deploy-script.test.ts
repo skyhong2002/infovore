@@ -17,18 +17,18 @@ case "$1" in
       *Health.Status*) if [ -e "$STUB_DIR/drained-$4" ] && [ "$4" != "\${STUB_NEVER_UNHEALTHY:-}" ]; then echo unhealthy; else echo healthy; fi;;
       *State.Running*) echo true;;
       *.Image*) echo sha256:running;;
-      *Mounts*) echo statusskyhongtw_infovore-data;;
+      *Mounts*) echo "\${STUB_VOLUME-statusskyhongtw_infovore-data}";;
       *Labels*)
         echo "com.docker.compose.project=$4"
         echo "traefik.http.services.infovore.loadbalancer.server.port=3000"
         if [ "$4" = infovore-candidate ] && [ -n "\${STUB_LABEL_DIFF:-}" ]; then echo "traefik.http.routers.infovore.middlewares=new"; fi;;
     esac;;
   exec) case "$*" in *infovore-drain*) touch "$STUB_DIR/drained-$2";; esac;;
-  compose) case "$*" in *--force-recreate*) rm -f "$STUB_DIR/drained-infovore";; esac;;
+  compose) case "$*" in *--force-recreate*) rm -f "$STUB_DIR/drained-\${STUB_PRODUCTION:-infovore}";; esac;;
 esac
 `;
 
-async function deploy(t: { after(fn: () => unknown): void }, env: Record<string, string> = {}) {
+async function deploy(t: { after(fn: () => unknown): void }, env: Record<string, string> = {}, args: string[] = []) {
   const dir = await mkdtemp(join(tmpdir(), 'infovore-deploy-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'docker'), stubDocker);
@@ -38,7 +38,7 @@ async function deploy(t: { after(fn: () => unknown): void }, env: Record<string,
   await writeFile(join(dir, 'meminfo'), 'MemAvailable:    3000000 kB\n');
   await writeFile(join(dir, 'calls'), '');
   const result = await new Promise<{ code: number; output: string }>((resolve) => {
-    execFile('sh', [fileURLToPath(new URL('../scripts/deploy.sh', import.meta.url))], {
+    execFile('sh', [fileURLToPath(new URL('../scripts/deploy.sh', import.meta.url)), ...args], {
       env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STUB_DIR: dir, INFOVORE_MEMINFO: join(dir, 'meminfo'), ...env },
     }, (error, stdout, stderr) => resolve({ code: error ? Number(error.code ?? 1) : 0, output: stdout + stderr }));
   });
@@ -94,7 +94,7 @@ test('a failed production recreate keeps the ready candidate serving and prints 
     const run = await deploy(t, { STUB_FAIL: fail });
     assert.equal(run.code, 1, fail);
     assert.match(run.output, /candidate keeps serving\. To roll back:/);
-    assert.match(run.output, /docker tag infovore:rollback-\d{14} infovore:latest/);
+    assert.match(run.output, /docker tag infovore:rollback-\d{14} infovore && git checkout ORIG_HEAD && docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --no-build/);
     assert.equal(run.calls.some((call) => call.includes(CANDIDATE) && call.endsWith(' down')), false, `${fail}: candidate kept`);
     assert.equal(run.index('exec infovore-candidate sh -c touch /tmp/infovore-drain'), -1, `${fail}: candidate not drained`);
   }
@@ -132,4 +132,33 @@ test('a candidate that cannot be drained is never removed; it keeps serving with
     assert.match(run.output, /the candidate could not be drained, so it was not removed/, label);
     assert.match(run.output, /wait until 'docker inspect -f \{\{\.State\.Health\.Status\}\} infovore-candidate' is unhealthy/, label);
   }
+});
+
+test('the sky-server config rolls out the Dokploy stack without ever pointing the candidate at its project', async (t) => {
+  const config = fileURLToPath(new URL('../scripts/deploy.sky-server.env', import.meta.url));
+  const production = 'compose-calculate-online-port-oqidr1-infovore-1';
+  const dokployFile = '-f /etc/dokploy/compose/compose-calculate-online-port-oqidr1/code/docker-compose.yml';
+  const candidate = `-p infovore-candidate ${dokployFile} -f docker-compose.candidate-dokploy.yml`;
+  const run = await deploy(t, { STUB_PRODUCTION: production, STUB_VOLUME: '' }, [config]);
+  assert.equal(run.code, 0, run.output);
+  assert.ok(run.index(`tag sha256:running blog-svc-infovore:rollback-`) >= 0, 'running image kept for rollback');
+  assert.ok(run.index('build -q -t blog-svc-infovore:production .') >= 0, 'builds the fixed tag Dokploy uses');
+  const order = [`${candidate} up -d`, 'exec infovore-candidate sh scripts/container-health.sh --ready',
+    `exec ${production} sh -c touch /tmp/infovore-drain`,
+    `compose -p compose-calculate-online-port-oqidr1 ${dokployFile} up -d --no-build --force-recreate`,
+    `exec ${production} sh scripts/container-health.sh --ready`,
+    'exec infovore-candidate sh -c touch /tmp/infovore-drain', `${candidate} down`];
+  const positions = order.map(run.index);
+  assert.ok(positions.every((position) => position >= 0), JSON.stringify(positions));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'steps run in order');
+  assert.ok(run.calls.filter((call) => call.includes('-p infovore-candidate')).every((call) => !call.includes('oqidr1 ')),
+    'candidate calls never name the production project');
+  assert.ok(run.calls.filter((call) => / down$/.test(call)).every((call) => call.includes('-p infovore-candidate')), 'only the candidate project is taken down');
+});
+
+test('a missing deploy config stops before touching Docker', async (t) => {
+  const run = await deploy(t, {}, ['/nonexistent/deploy.env']);
+  assert.equal(run.code, 1);
+  assert.match(run.output, /deploy config \/nonexistent\/deploy.env not found/);
+  assert.deepEqual(run.calls, ['']);
 });

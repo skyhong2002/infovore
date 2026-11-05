@@ -1,7 +1,15 @@
 #!/bin/sh
-# Production rollout without an availability gap, on the existing Docker +
-# Traefik setup. Run on the host from the production checkout:
-#   git pull --ff-only && scripts/deploy.sh
+# Production rollout without an availability gap, on a Docker + Traefik host.
+# Run on the host from the production checkout:
+#   git pull --ff-only && scripts/deploy.sh [config]
+#
+# The optional config file (sourced; see scripts/deploy.sky-server.env) points
+# the rollout at a stack other than this checkout's compose files:
+#   INFOVORE_PRODUCTION         production web container   (default infovore)
+#   INFOVORE_COMPOSE_PROJECT    its compose project        (default: compose's own)
+#   INFOVORE_COMPOSE_FILES      its compose files as -f args
+#   INFOVORE_CANDIDATE_OVERLAY  overlay that turns it into the candidate
+#   INFOVORE_IMAGE              image tag both build and compose use (default infovore)
 #
 # 1. Build the new image while production keeps serving.
 # 2. Start one candidate container from it (docker-compose.candidate.yml): same
@@ -17,10 +25,29 @@
 # new production container does not get ready the candidate keeps serving and
 # the rollback commands are printed.
 set -eu
+if [ -n "${1:-}" ]; then
+  [ -f "$1" ] || { echo "deploy config $1 not found" >&2; exit 1; }
+  config=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+  # shellcheck disable=SC1090
+  . "$config"
+fi
 cd "$(dirname "$0")/.."
 
-compose() { docker compose -f docker-compose.yml -f docker-compose.traefik.yml "$@"; }
-candidate() { docker compose -p infovore-candidate -f docker-compose.yml -f docker-compose.traefik.yml -f docker-compose.candidate.yml "$@"; }
+PRODUCTION=${INFOVORE_PRODUCTION:-infovore}
+PROJECT=${INFOVORE_COMPOSE_PROJECT:-}
+FILES=${INFOVORE_COMPOSE_FILES:--f docker-compose.yml -f docker-compose.traefik.yml}
+OVERLAY=${INFOVORE_CANDIDATE_OVERLAY:-docker-compose.candidate.yml}
+IMAGE=${INFOVORE_IMAGE:-infovore}
+# The candidate always gets its own project, never production's.
+[ "$PROJECT" != infovore-candidate ] || { echo 'INFOVORE_COMPOSE_PROJECT must not be infovore-candidate' >&2; exit 1; }
+
+# FILES is deliberately word-split into -f arguments (paths without spaces).
+# shellcheck disable=SC2086
+compose() { docker compose ${PROJECT:+-p "$PROJECT"} $FILES "$@"; }
+# shellcheck disable=SC2086
+candidate() { docker compose -p infovore-candidate $FILES -f "$OVERLAY" "$@"; }
+compose_cmd="docker compose ${PROJECT:+-p $PROJECT }$FILES"
+candidate_cmd="docker compose -p infovore-candidate $FILES -f $OVERLAY"
 log() { echo "[deploy $(date -u +%H:%M:%S)] $*"; }
 
 exec 9>/tmp/infovore-deploy.lock
@@ -68,7 +95,7 @@ undrain_hint() {
 # Remove the candidate only once Traefik no longer routes to it.
 candidate_removal_hint() {
   log "  docker exec infovore-candidate touch /tmp/infovore-drain, wait until 'docker inspect -f {{.State.Health.Status}} infovore-candidate' is unhealthy, then:"
-  log "  INFOVORE_DATA_VOLUME=$INFOVORE_DATA_VOLUME docker compose -p infovore-candidate -f docker-compose.yml -f docker-compose.traefik.yml -f docker-compose.candidate.yml down"
+  log "  INFOVORE_DATA_VOLUME=$INFOVORE_DATA_VOLUME $candidate_cmd down"
 }
 
 traefik_labels() {
@@ -78,15 +105,21 @@ traefik_labels() {
 # The candidate is one extra web app (~0.4 GiB), not a second stack.
 available=$(awk '/^MemAvailable/ { print int($2 / 1024) }' "${INFOVORE_MEMINFO:-/proc/meminfo}")
 [ "$available" -ge 1200 ] || { log "only ${available} MiB available; not starting a candidate"; exit 1; }
-[ "$(docker inspect -f '{{.State.Health.Status}}' infovore)" = healthy ] || { log 'production is not healthy; deploy the plain way'; exit 1; }
+[ "$(docker inspect -f '{{.State.Health.Status}}' "$PRODUCTION")" = healthy ] || { log 'production is not healthy; deploy the plain way'; exit 1; }
 
-current=$(git rev-parse --short HEAD)
-rollback="infovore:rollback-$(date -u +%Y%m%d%H%M%S)"
-docker tag "$(docker inspect -f '{{.Image}}' infovore)" "$rollback"
-log "building $current; the running production image is kept as $rollback"
-compose build
+# Run as root (to read a root-only env_file), git would refuse a checkout owned
+# by another user.
+current=$(git -c safe.directory="$(pwd)" rev-parse --short HEAD)
+rollback="${IMAGE%%:*}:rollback-$(date -u +%Y%m%d%H%M%S)"
+docker tag "$(docker inspect -f '{{.Image}}' "$PRODUCTION")" "$rollback"
+log "building $current as $IMAGE; the running production image is kept as $rollback"
+# Running containers keep the image they were created from, so retagging only
+# affects the candidate and the recreated production container.
+docker build -q -t "$IMAGE" .
 
-INFOVORE_DATA_VOLUME=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' infovore)
+# Named-volume stacks pass the volume to the candidate overlay; bind-mount
+# stacks leave this empty and their overlay does not use it.
+INFOVORE_DATA_VOLUME=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' "$PRODUCTION")
 export INFOVORE_DATA_VOLUME
 # Traefik merges identical router/service definitions from both containers but
 # drops a router defined differently by two of them, which would take the site
@@ -98,7 +131,7 @@ if ! candidate up --no-start --no-build infovore; then
   log 'could not create the candidate; production untouched'
   exit 1
 fi
-production_labels=$(traefik_labels infovore || true)
+production_labels=$(traefik_labels "$PRODUCTION" || true)
 if [ -z "$production_labels" ] || [ "$(traefik_labels infovore-candidate)" != "$production_labels" ]; then
   candidate down
   log 'Traefik labels changed; a candidate would conflict with production. Deploy the plain way.'
@@ -110,19 +143,19 @@ if ! candidate up -d --no-build infovore || ! ready infovore-candidate; then
   exit 1
 fi
 
-if ! drain infovore; then
+if ! drain "$PRODUCTION"; then
   log 'production could not be drained, so it was not stopped; production and the candidate both keep serving.'
   log 'Undo the drain on production, then remove the candidate:'
-  undrain_hint infovore
+  undrain_hint "$PRODUCTION"
   candidate_removal_hint
   exit 1
 fi
 # Recreate even if the image did not change: the drained container stays out
 # of Traefik until it is replaced.
-if ! compose up -d --no-build --force-recreate || ! ready infovore; then
+if ! compose up -d --no-build --force-recreate || ! ready "$PRODUCTION"; then
   log 'new production container is not ready; the candidate keeps serving. To roll back:'
-  log "  docker tag $rollback infovore:latest && git checkout ORIG_HEAD && docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --no-build"
-  log '  then, once infovore is healthy:'
+  log "  docker tag $rollback $IMAGE && git checkout ORIG_HEAD && $compose_cmd up -d --no-build"
+  log "  then, once $PRODUCTION is healthy:"
   candidate_removal_hint
   exit 1
 fi

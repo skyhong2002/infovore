@@ -1,0 +1,14 @@
+# Temporary rollout candidate for a Dokploy-managed stack whose data is a bind
+# mount (sky-server: /srv/infovore/data). Started only by scripts/deploy.sh as
+# its own project (-p infovore-candidate) on top of the Dokploy compose file,
+# so it carries the same image, Traefik labels, env_file and bind mount as
+# production. It serves reads only: no refreshes, no sync-run bookkeeping, and
+# no ingest service. Unlike docker-compose.candidate.yml there is no named
+# volume to point at.
+services:
+  infovore:
+    container_name: infovore-candidate
+    # Never outlives the rollout that started it (e.g. across a host reboot).
+    restart: "no"
+    environment:
+      INFOVORE_ROLE: candidate
