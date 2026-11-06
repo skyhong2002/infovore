@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildCloudTerms, buildWordCloudCard, layoutCloud, wordCloudNode, type CloudTerm } from '../src/output/cloud.js';
-import { logo } from '../src/output/render.js';
+import { logo, textFont } from '../src/output/render.js';
 import type { Activity } from '../src/data/types.js';
 
 function activity(overrides: Partial<Activity>): Activity {
@@ -78,6 +78,10 @@ test('cloud layout keeps every placed term inside the box without overlaps', () 
   }
 });
 
+test('word cloud selects the Simplified Chinese font for channel names', () => {
+  assert.match(textFont('热剧2026', 'Inter'), /Noto Sans SC/);
+});
+
 test('word cloud card renders terms and an empty state', async () => {
   const terms: CloudTerm[] = [
     { label: 'Cy Leo', source: 'statsfm', kind: 'music', count: 91, weight: 1 },
@@ -91,7 +95,7 @@ test('word cloud card renders terms and an empty state', async () => {
   assert.match(tree, /What Sky has been into/);
   assert.match(tree, /last 28 days/);
   assert.ok(tree.includes(JSON.stringify(logo('infovore'))), 'header carries the infovore mark');
-  assert.match(tree, /Noto Sans JP.*"position":"absolute","top":\d+,"whiteSpace":"nowrap"\},"children":"ヨルシカ"/);
+  assert.match(tree, /Noto Sans JP.*\"position\":\"absolute\",\"top\":\d+,\"whiteSpace\":\"nowrap\"\},\"children\":\"ヨルシカ\"/);
   const svg = await buildWordCloudCard(terms, { days: 28, ownerName: 'Sky' });
   assert.match(svg, /^<svg width="520" height="\d+"/);
   const empty = JSON.stringify(wordCloudNode([]));

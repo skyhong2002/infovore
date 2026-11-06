@@ -24,6 +24,8 @@ const fonts = [
   { name: 'Merriweather', data: font('Merriweather-Regular.woff'), weight: 400 as const, style: 'normal' as const },
   { name: 'Merriweather', data: font('Merriweather-Bold.woff'), weight: 700 as const, style: 'normal' as const },
   // CJK fallback for Japanese/Chinese titles.
+  { name: 'Noto Sans SC', data: font('NotoSansSC-Regular.otf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Noto Sans SC', data: font('NotoSansSC-Bold.otf'), weight: 700 as const, style: 'normal' as const },
   { name: 'Noto Sans JP', data: font('NotoSansJP-Regular.otf'), weight: 400 as const, style: 'normal' as const },
   { name: 'Noto Sans JP', data: font('NotoSansJP-Bold.otf'), weight: 700 as const, style: 'normal' as const },
   { name: 'Noto Sans TC', data: font('NotoSansTC-Regular.otf'), weight: 400 as const, style: 'normal' as const },
@@ -143,8 +145,8 @@ export function titleFontSize(text: string, base = 11, min = 8): number {
 // put the Noto CJK fonts first — Noto also covers Latin, so the whole run
 // renders. Pure-Latin strings keep the brand font.
 export function textFont(text: string, brand: string): string {
-  if (HANGUL.test(text)) return `"Noto Sans KR", "Noto Sans JP", "Noto Sans TC", ${brand}`;
-  return CJK.test(text) ? `"Noto Sans JP", "Noto Sans TC", ${brand}` : brand;
+  if (HANGUL.test(text)) return `"Noto Sans KR", "Noto Sans JP", "Noto Sans TC", "Noto Sans SC", ${brand}`;
+  return CJK.test(text) ? `"Noto Sans JP", "Noto Sans TC", "Noto Sans SC", ${brand}` : brand;
 }
 
 export function timeAgo(iso: string): string {

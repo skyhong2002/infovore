@@ -9,3 +9,6 @@ matching the native macOS app. `InstrumentSerif-Regular.ttf` is unmodified.
 `Figtree-VariableFont_wght.ttf` at weights 400 and 700, generated with FontTools
 for Satori's static-font renderer. License texts are from the corresponding
 [Google Fonts](https://github.com/google/fonts/tree/main/ofl) family directories.
+
+Noto Sans SC is bundled under the SIL Open Font License 1.1. The Simplified
+Chinese files come from the [Noto CJK repository](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/SC).
