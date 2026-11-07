@@ -145,6 +145,12 @@ in the background. `/platforms/dayflow`, `/card/dayflow.*`, Home, Now, and
 The keyword card separates general recent terms from topics that stand out
 against the preceding 90 days. Full activity text and raw app lists stay private. Computer time is separate from media totals to avoid overlap.
 Set a dedicated `DAYFLOW_TOKEN`; see [setup and sync semantics](scripts/DAYFLOW.md).
+Optional `DAYFLOW_AI_BASE_URL`, `DAYFLOW_AI_API_KEY` and `DAYFLOW_AI_MODEL`
+(default `sky-quality`) enable background semantic topic grouping. Only sanitized
+activity titles reach the configured gateway. Persisted topics replace local
+keyword extraction on pages, daily summaries and the word cloud; tools and
+low-confidence labels are excluded. AI failure retains existing classifications.
+Without a configured provider, local keyword extraction continues.
 
 ## macOS ComputAI sync
 

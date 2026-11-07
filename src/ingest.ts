@@ -1,3 +1,4 @@
+import { startDayflowQualityWorker } from './dayflow/quality-worker.js';
 import { bodyLimit } from 'hono/body-limit';
 import { dayflowBatchSchema } from './dayflow/types.js';
 import { computaiReportSchema, computaiSegmentsSchema } from './computai/types.js';
@@ -107,7 +108,8 @@ export function createIngestApp(repository: Repository): Hono {
 }
 
 if (process.env.NODE_ENV !== 'test') {
-  const repository = new Repository(config.databasePath);
+  const repository = new Repository(config.databasePath, { dayflowQuality: Boolean(config.dayflow.quality) });
   const app = createIngestApp(repository);
+  if (config.dayflow.quality && config.dayflow.token && config.sourceEnabled('dayflow')) startDayflowQualityWorker(repository.dayflow, config.dayflow.quality);
   serve({ fetch: app.fetch, port: config.port }, (info) => console.log(`infovore ingest listening on :${info.port}`));
 }

@@ -1,4 +1,6 @@
-import { keywordPools } from './pools.js';
+import { DayflowQualityStore } from './quality-store.js';
+import type { QualityLabels } from './quality.js';
+import { dayflowCloudTerms, keywordPools } from './pools.js';
 import { measureRead } from '../data/read-timing.js';
 import { dayflowKeywords } from './keywords.js';
 import type { DatabaseSync } from 'node:sqlite';
@@ -18,7 +20,8 @@ export function migrateDayflow(db: DatabaseSync): void {
 
 // Raw activity text stays exclusively in this private table, never snapshots or activities.
 export class DayflowStore {
-  constructor(private db: DatabaseSync) {}
+  readonly quality: DayflowQualityStore;
+  constructor(private db: DatabaseSync, private useQuality = false) { this.quality = new DayflowQualityStore(db); }
   ingest(input: DayflowBatch, receivedAt = new Date().toISOString()) {
     const batch = dayflowBatchSchema.parse(input);
     const observed = new Date(batch.observedAt).toISOString();
@@ -31,7 +34,7 @@ export class DayflowStore {
   }
   status() {
     const row = this.db.prepare('SELECT MAX(received_at) lastSyncedAt, MIN(day) firstDay, MAX(day) lastDay, COUNT(DISTINCT day) days, COALESCE(SUM(revision), 0) revision FROM dayflow_days').get()!;
-    return { lastSyncedAt: row.lastSyncedAt as string | null, firstDay: row.firstDay as string | null, lastDay: row.lastDay as string | null, days: Number(row.days), revision: Number(row.revision) };
+    return { lastSyncedAt: row.lastSyncedAt as string | null, firstDay: row.firstDay as string | null, lastDay: row.lastDay as string | null, days: Number(row.days), revision: Number(row.revision) + this.quality.revision() };
   }
   // Distinct recorded days in [fromDay, toDay), across devices.
   dayCount(fromDay = '0000-00-00', toDay = '9999-99-99'): number {
@@ -42,6 +45,11 @@ export class DayflowStore {
   batchesSince(day: string): DayflowBatch[] {
     const rows = this.db.prepare('SELECT payload_json FROM dayflow_days WHERE day >= ? ORDER BY day').all(day) as Array<{ payload_json: string }>;
     return rows.map((row) => JSON.parse(row.payload_json) as DayflowBatch);
+  }
+  cloudTerms(since: string, now: Date) {
+    const batches = this.batchesSince(since);
+    const classification = this.useQuality ? this.quality.labelsFor(batches, now) : null;
+    return dayflowCloudTerms(batches, now, 2, classification?.hasResults ? classification.get : undefined);
   }
   // Idle time is recorded by Dayflow but is not activity, so the rhythm
   // timeline leaves it unrecorded along with system/error cards.
@@ -85,7 +93,8 @@ export class DayflowStore {
     return batches;
   }
 
-  private summarize(day: string, batches: DayflowBatch[], now: Date): DayflowDay {
+  private summarize(day: string, batches: DayflowBatch[], now: Date, quality?: QualityLabels): DayflowDay {
+    if (quality) return { ...this.summarize(day, batches, now), keywords: dayflowKeywords(batches, now, 10, quality) };
     const cached = this.summaries.get(day);
     if (cached && cached.batches.length === batches.length && cached.batches.every((batch, i) => batch === batches[i])) return cached.summary;
     const summary = summarizeDay(day, batches, now);
@@ -103,7 +112,10 @@ export class DayflowStore {
       if (batch.day > dayflowDay(now)) continue;
       const group = byDay.get(batch.day) ?? []; group.push(batch); byDay.set(batch.day, group);
     }
-    const daily = [...byDay].map(([day, batches]) => this.summarize(day, batches, now));
+    const batches = [...byDay.values()].flat();
+    const classification = this.useQuality ? this.quality.labelsFor(batches, now) : null;
+    const quality = classification?.hasResults ? classification.get : undefined;
+    const daily = [...byDay].map(([day, batches]) => this.summarize(day, batches, now, quality));
     const today = dayflowDay(now);
     const weekStart = new Date(`${today}T00:00:00Z`);
     weekStart.setUTCDate(weekStart.getUTCDate() - (weekStart.getUTCDay() + 6) % 7);
@@ -127,15 +139,18 @@ export class DayflowStore {
         extra: { durationMinutes: d.trackedMinutes, activeMinutes: d.activeMinutes, idleMinutes: d.idleMinutes },
       })),
       extra: { timeZone: 'Asia/Taipei', dayBoundaryHour: 4, daily,
-        keywordPools: keywordPools([...byDay.values()].flat(), now),
-        keywords: dayflowKeywords([...byDay].filter(([day]) => day >= weekStart.toISOString().slice(0, 10)).flatMap(([, batches]) => batches), now),
+        keywordPools: keywordPools(batches, now, quality),
+        ...(classification ? { keywordQuality: { mode: quality ? 'ai' as const : 'local' as const,
+          classifiedActivities: classification.classified, eligibleActivities: classification.eligible,
+          model: classification.model } } : {}),
+        keywords: dayflowKeywords([...byDay].filter(([day]) => day >= weekStart.toISOString().slice(0, 10)).flatMap(([, batches]) => batches), now, 36, quality),
         categories: [...categories.values()].sort((a, b) => b.minutes - a.minutes),
         lastSyncedAt: status.lastSyncedAt, firstDay: status.firstDay, lastDay: status.lastDay },
     };
   }
 }
 
-export function summarizeDay(day: string, batches: DayflowBatch[], now = new Date()): DayflowDay {
+export function summarizeDay(day: string, batches: DayflowBatch[], now = new Date(), quality?: QualityLabels): DayflowDay {
   const start = Date.parse(`${day}T04:00:00+08:00`), end = Math.min(start + 86400000, +now);
   const intervals = batches.flatMap((batch) => batch.cards.map((card) => {
     const category = batch.categories.find((c) => c.name === card.category);
@@ -160,5 +175,5 @@ export function summarizeDay(day: string, batches: DayflowBatch[], now = new Dat
   const values = [...categories.values()].sort((a, b) => b.minutes - a.minutes);
   const trackedMinutes = values.reduce((sum, c) => sum + c.minutes, 0);
   const idleMinutes = values.filter((c) => c.idle).reduce((sum, c) => sum + c.minutes, 0);
-  return { day, trackedMinutes, activeMinutes: trackedMinutes - idleMinutes, idleMinutes, errorMinutes, categories: values, keywords: dayflowKeywords(batches, now, 10) };
+  return { day, trackedMinutes, activeMinutes: trackedMinutes - idleMinutes, idleMinutes, errorMinutes, categories: values, keywords: dayflowKeywords(batches, now, 10, quality) };
 }

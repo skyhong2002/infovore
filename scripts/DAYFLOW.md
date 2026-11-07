@@ -53,7 +53,7 @@ card, JSON and MCP also publish recognized keywords from titles and abbreviated
 summaries: tools, projects and topics matched by the local bilingual vocabulary
 in `src/dayflow/keywords.ts`. The legacy weekly/daily lists only use the vocabulary. The recent pools also
 discover repeated narrative terms (see below). Full sentences, URLs, email
-addresses, paths and raw app lists are not published. No external AI service is called.
+addresses, paths and raw app lists are not published. No external AI service is called unless the optional semantic provider below is configured.
 
 Each keyword counts at most once per device/record, ignoring idle, error,
 zero-duration and future records. Weekly keywords follow the same Monday 4am
@@ -103,7 +103,7 @@ and adjacent title phrases. Common narration, URLs, email addresses, paths,
 code blocks and token-like identifiers are removed. A discovered term needs
 at least two recent activities and a title occurrence. Full prose and raw app
 lists remain private; repeated narrative terms themselves are public. Extraction
-is statistical and may still produce imperfect phrases; it uses no external AI.
+is statistical and may still produce imperfect phrases; it uses no external AI unless the optional semantic provider is configured.
 
 Distinctiveness requires at least 14 recorded historical days and 50 historical
 activities. Otherwise status is `insufficient_history`, the distinctive pool is
@@ -114,3 +114,53 @@ rate is smoothed as `(mentions + 0.5) / (activities + 1)`. Ranking uses
 `log(1 + recent mentions) * log2(1 + rate lift) * (1 - historical day share)`.
 This is relative to the observed baseline, not a claim of first-ever occurrence.
 Both rankings are calculated before their independent display limits.
+
+
+## Semantic topics with sky-quality
+
+Set `DAYFLOW_AI_BASE_URL` (including `/v1`), `DAYFLOW_AI_API_KEY`, and optionally
+`DAYFLOW_AI_MODEL` (default `sky-quality`) in the shared server environment.
+The ingest process owns a serial background worker. It starts on boot, revisits
+pending titles after each cycle, and works newest-first over 97 days (the recent
+7 days plus the preceding 90). Each cycle handles at most four batches of 16
+unique titles, then waits a minute. No HTTP read or ingest waits for inference.
+A database lease prevents overlapping workers during a rollout.
+
+Only sanitized titles are sent: summaries, app lists, record/device identifiers,
+timestamps, URLs, email addresses, paths and token-like strings are excluded.
+Titles remain private; they are sent only to the configured AI gateway and its
+upstream model. The prompt treats titles as untrusted data and asks for concise
+Traditional Chinese topics and complete original project/work names, not people
+or private identifiers. It distinguishes tool usage from work on a project.
+
+Replies must contain a complete, unique per-input ID mapping and typed labels.
+Malformed/truncated responses fail the batch. Labels below 0.8 confidence, tool
+labels, unsafe identifiers and generic narration are not published. Counts,
+clipped durations, cross-day thresholds and novelty are calculated locally.
+Labels are cached by sanitized title and prompt version in the dedicated private
+`dayflow_keyword_quality` table, with requested and resolved model provenance.
+Unchanged titles reuse results, including deliberately empty results. Changed
+or deleted records immediately stop contributing their old labels. Existing
+labels are supplied as vocabulary hints to keep names consistent across batches.
+
+Before any result exists, the local extractor is used. Once results exist,
+unclassified titles do not introduce old noisy words into AI output; coverage is
+reported as `extra.keywordQuality`. Existing classifications survive outages;
+failed titles wait 30 minutes before retry. Pending titles are excluded from
+historical novelty comparisons until classified. Weekly and daily lists use
+semantic labels; recent pools and the word cloud require at least two days.
+Disabling the provider restores the local extractor without deleting data.
+
+Raw titles, response bodies and credentials are never logged. Public JSON/MCP
+contain only the existing aggregates, safe label names and classification
+coverage, never the private per-record mapping. Database schema version 17 adds
+the result cache and worker lease; back up the database before first deployment.
+
+Production credentials live in `/srv/infovore/service.env` (root, mode 600).
+Dokploy's existing `service.env` path is a symlink to that canonical file.
+The dedicated `infovore` client key is managed by the ai-gateway repository on
+sky-mini in its private `~/.config/ai-gateway/clients.env`; register it with the
+existing `apply.py` flow on both engines. This is a project client key, not the
+management key. Production uses `http://172.17.0.1:8317/v1` and `sky-quality`;
+sky-server is ingress only. Recreate the app and ingest containers when changing
+these environment variables. Preserve all other variables and never commit keys.

@@ -1,3 +1,4 @@
+import { publicQualityNames, type QualityLabels } from './quality.js';
 import { narrativeKeywords, canonicalKeyword, isToolKeyword } from './keywords.js';
 import { dayflowDay, type DayflowBatch, type DayflowKeywordPools } from './types.js';
 
@@ -73,29 +74,33 @@ interface Count { mentions: number; days: Set<string>; titles: number }
 // Tokenising every card is the expensive step and, for a day that has ended,
 // depends only on the batch itself. The store hands back the same batch object
 // while its stored revision is unchanged, so the tokens are kept per batch.
-const batchDocuments = new WeakMap<DayflowBatch, Array<{ id: string; doc: Document }>>();
-function documentsOf(batch: DayflowBatch, now: Date): Array<{ id: string; doc: Document }> {
-  const settled = batch.day < dayflowDay(now);
+const batchDocuments = new WeakMap<DayflowBatch, Array<{ id: string; doc: Document | null }>>();
+function documentsOf(batch: DayflowBatch, now: Date, quality?: QualityLabels): Array<{ id: string; doc: Document | null }> {
+  const settled = !quality && batch.day < dayflowDay(now);
   const cached = settled ? batchDocuments.get(batch) : undefined;
   if (cached) return cached;
-  const result: Array<{ id: string; doc: Document }> = [], start = Date.parse(batch.day + 'T04:00:00+08:00');
+  const result: Array<{ id: string; doc: Document | null }> = [], start = Date.parse(batch.day + 'T04:00:00+08:00');
   for (const card of batch.cards) {
     if (Math.min(+now, start + 86400000, Date.parse(card.end)) <= Math.max(start, Date.parse(card.start))) continue;
     if (card.category.toLowerCase() === 'idle' || card.category.toLowerCase() === 'system'
       || card.subcategory?.toLowerCase() === 'error' || batch.categories.find((c) => c.name === card.category)?.is_idle) continue;
-    const titleTerms = terms(card.title, true);
+    if (quality && quality(card.title) === null) {
+      result.push({ id: batch.deviceId + ':' + card.record_id, doc: null });
+      continue;
+    }
+    const titleTerms = quality ? new Set(publicQualityNames(quality(card.title))) : terms(card.title, true);
     result.push({ id: batch.deviceId + ':' + card.record_id,
-      doc: { day: batch.day, titleTerms, terms: new Set([...titleTerms, ...terms(card.summary ?? '', false)]) } });
+      doc: { day: batch.day, titleTerms, terms: new Set([...titleTerms, ...(quality ? [] : terms(card.summary ?? '', false))]) } });
   }
   if (settled) batchDocuments.set(batch, result);
   return result;
 }
-function documents(batches: DayflowBatch[], now: Date): Document[] {
+function documents(batches: DayflowBatch[], now: Date, quality?: QualityLabels): Document[] {
   const result: Document[] = [], seen = new Set<string>();
-  for (const batch of [...batches].sort((a, b) => b.observedAt.localeCompare(a.observedAt))) for (const { id, doc } of documentsOf(batch, now)) {
+  for (const batch of [...batches].sort((a, b) => b.observedAt.localeCompare(a.observedAt) || b.day.localeCompare(a.day))) for (const { id, doc } of documentsOf(batch, now, quality)) {
     if (seen.has(id)) continue;
     seen.add(id);
-    result.push(doc);
+    if (doc) result.push(doc);
   }
   return result;
 }
@@ -109,19 +114,19 @@ function corpus(docs: Document[]): Map<string, Count> {
   return result;
 }
 
-export function keywordPools(batches: DayflowBatch[], now = new Date()): DayflowKeywordPools {
+export function keywordPools(batches: DayflowBatch[], now = new Date(), quality?: QualityLabels): DayflowKeywordPools {
   const today = dayflowDay(now);
   const shift = (day: string, n: number) => new Date(Date.parse(day) + n * 86400000).toISOString().slice(0, 10);
   const recentFrom = shift(today, -6), baselineFrom = shift(recentFrom, -90), baselineTo = shift(recentFrom, -1);
-  const docs = documents(batches.filter((b) => b.day >= baselineFrom && b.day <= today), now);
+  const docs = documents(batches.filter((b) => b.day >= baselineFrom && b.day <= today), now, quality);
   const recentDocs = docs.filter((d) => d.day >= recentFrom), historyDocs = docs.filter((d) => d.day < recentFrom);
   const recent = corpus(recentDocs), history = corpus(historyDocs);
   const recentDays = new Set(recentDocs.map((d) => d.day)).size, baselineDays = new Set(historyDocs.map((d) => d.day)).size;
   const ready = baselineDays >= 14 && historyDocs.length >= 50;
-  const candidates = [...recent].filter(([name, value]) => canonicalKeyword(name) === name || value.mentions >= 2 && value.titles >= 1);
+  const candidates = [...recent].filter(([name, value]) => (canonicalKeyword(name) === name || value.mentions >= 2 && value.titles >= 1) && (!quality || value.days.size >= 2));
   // Keep a descriptive phrase instead of a redundant fragment when it accounts
   // for nearly every occurrence of that fragment. Apply caps only after ranking.
-  const specific = candidates.filter(([name, value]) => canonicalKeyword(name) === name || !candidates.some(([phrase, count]) =>
+  const specific = quality ? candidates : candidates.filter(([name, value]) => canonicalKeyword(name) === name || !candidates.some(([phrase, count]) =>
     phrase !== name && (phrase.includes(' ') ? phrase.toLowerCase().split(' ').includes(name.toLowerCase()) : /[\p{Script=Han}]/u.test(phrase) && phrase.includes(name)) && count.mentions >= value.mentions * 0.75));
   const all = specific.map(([name, value]) => ({ name, mentions: value.mentions }))
     .sort((a, b) => b.mentions - a.mentions || a.name.localeCompare(b.name, 'en')).slice(0, 48);
@@ -143,9 +148,9 @@ export interface DayflowCloudTerm { name: string; mentions: number; days: number
 // name what was being done (a club, a project, a trip); the tool vocabulary
 // is left out because apps are where things happen, not what they are. A
 // term must recur on separate days so one-off names never surface.
-export function dayflowCloudTerms(batches: DayflowBatch[], now: Date, minDays = 2): DayflowCloudTerm[] {
+export function dayflowCloudTerms(batches: DayflowBatch[], now: Date, minDays = 2, quality?: QualityLabels): DayflowCloudTerm[] {
   const totals = new Map<string, { mentions: number; days: Set<string>; seconds: number; forms: Map<string, number> }>(), seen = new Set<string>();
-  for (const batch of [...batches].sort((a, b) => b.observedAt.localeCompare(a.observedAt))) for (const card of batch.cards) {
+  for (const batch of [...batches].sort((a, b) => b.observedAt.localeCompare(a.observedAt) || b.day.localeCompare(a.day))) for (const card of batch.cards) {
     const id = batch.deviceId + ':' + card.record_id, start = Date.parse(batch.day + 'T04:00:00+08:00');
     const span = Math.min(+now, start + 86400000, Date.parse(card.end)) - Math.max(start, Date.parse(card.start));
     if (span <= 0) continue;
@@ -153,18 +158,18 @@ export function dayflowCloudTerms(batches: DayflowBatch[], now: Date, minDays = 
       || card.subcategory?.toLowerCase() === 'error' || batch.categories.find((c) => c.name === card.category)?.is_idle || seen.has(id)) continue;
     seen.add(id);
     const title = clean(card.title);
-    for (const name of terms(card.title, true)) {
+    for (const name of quality ? publicQualityNames(quality(card.title)) : terms(card.title, true)) {
       if (isToolKeyword(name)) continue;
       const value = totals.get(name) ?? { mentions: 0, days: new Set(), seconds: 0, forms: new Map() };
       value.mentions++; value.days.add(batch.day); value.seconds += Math.round(span / 1000);
       // Terms are lower-cased for counting; remember how the title spelt it.
-      const form = canonicalKeyword(name) === name ? name : new RegExp(escape(name), 'iu').exec(title)?.[0] ?? name;
+      const form = quality || canonicalKeyword(name) === name ? name : new RegExp(escape(name), 'iu').exec(title)?.[0] ?? name;
       value.forms.set(form, (value.forms.get(form) ?? 0) + 1);
       totals.set(name, value);
     }
   }
   const candidates = [...totals].filter(([, value]) => value.days.size >= minDays);
-  const specific = candidates.filter(([name, value]) => canonicalKeyword(name) === name || !candidates.some(([phrase, count]) =>
+  const specific = quality ? candidates : candidates.filter(([name, value]) => canonicalKeyword(name) === name || !candidates.some(([phrase, count]) =>
     phrase !== name && (phrase.includes(' ') ? phrase.toLowerCase().split(' ').includes(name.toLowerCase()) : /[\p{Script=Han}]/u.test(phrase) && phrase.includes(name)) && count.mentions >= value.mentions * 0.75));
   return specific.map(([, value]) => ({
     name: [...value.forms].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0],

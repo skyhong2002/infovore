@@ -2,7 +2,6 @@ import { buildRhythmCard } from './output/rhythm.js';
 import { measureRead } from './data/read-timing.js';
 import { buildNowCard } from './output/now.js';
 import { buildCloudTerms, buildWordCloudCard, type CloudEntry, type CloudTerm } from './output/cloud.js';
-import { dayflowCloudTerms } from './dayflow/pools.js';
 import { platformOverview } from './output/overview.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js';
@@ -98,7 +97,7 @@ const cards: Record<string, CardDefinition> = {
   'ai-agents-light': defineCard('computai', buildAiAgentsLightCard),
 };
 
-const repository = new Repository(config.databasePath);
+const repository = new Repository(config.databasePath, { dayflowQuality: Boolean(config.dayflow.quality) });
 
 async function renderCards(name: string, data: SourceSnapshot<unknown>): Promise<void> {
   for (const [cardName, card] of Object.entries(cards)) {
@@ -395,7 +394,7 @@ function readCloudTerms(): CloudTerm[] {
       // Keyword extraction over 28 days of Dayflow text only reruns for new data or a new hour.
       const key = `${repository.dayflow.status().revision}:${+now}`;
       if (dayflowCloudCache?.key !== key) {
-        dayflowCloudCache = { key, terms: dayflowCloudTerms(repository.dayflow.batchesSince(dayflowDay(new Date(since))), now)
+        dayflowCloudCache = { key, terms: repository.dayflow.cloudTerms(dayflowDay(new Date(since)), now)
           .map((keyword) => ({ source: 'dayflow', kind: 'computer' as const, label: keyword.name, count: keyword.mentions, seconds: keyword.seconds })) };
       }
       extras.push(...dayflowCloudCache.terms);

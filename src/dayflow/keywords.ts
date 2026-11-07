@@ -1,3 +1,4 @@
+import { publicQualityNames, type QualityLabels } from './quality.js';
 import type { DayflowBatch, DayflowKeyword } from './types.js';
 
 // Publish recognizable tool/project/topic labels, not arbitrary tokens from
@@ -68,7 +69,7 @@ export function narrativeKeywords(title: string, summary = ''): string[] {
   return matchers.filter(({ patterns }) => patterns.some((pattern) => pattern.test(prose))).map(({ name }) => name);
 }
 
-export function dayflowKeywords(batches: DayflowBatch[], now: Date, limit = 36): DayflowKeyword[] {
+export function dayflowKeywords(batches: DayflowBatch[], now: Date, limit = 36, quality?: QualityLabels): DayflowKeyword[] {
   const counts = new Map<string, number>(), seen = new Set<string>();
   for (const batch of batches) for (const card of batch.cards) {
     const id = `${batch.deviceId}:${card.record_id}`;
@@ -78,7 +79,7 @@ export function dayflowKeywords(batches: DayflowBatch[], now: Date, limit = 36):
       || card.subcategory?.toLowerCase() === 'error' || batch.categories.find((c) => c.name === card.category)?.is_idle) continue;
     if (seen.has(id)) continue;
     seen.add(id);
-    for (const name of narrativeKeywords(card.title, card.summary)) counts.set(name, (counts.get(name) ?? 0) + 1);
+    for (const name of quality ? publicQualityNames(quality(card.title)) : narrativeKeywords(card.title, card.summary)) counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   return [...counts].map(([name, mentions]) => ({ name, mentions }))
     .sort((a, b) => b.mentions - a.mentions || a.name.localeCompare(b.name, 'en')).slice(0, limit);

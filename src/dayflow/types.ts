@@ -48,6 +48,7 @@ export interface DayflowExtra {
   categories: DayflowCategory[]; lastSyncedAt: string | null;
   keywords?: DayflowKeyword[];
   keywordPools?: DayflowKeywordPools;
+  keywordQuality?: { mode: 'ai' | 'local'; classifiedActivities: number; eligibleActivities: number; model: string | null };
   firstDay: string | null; lastDay: string | null;
 }
 export type DayflowSnapshot = SourceSnapshot<DayflowExtra>;

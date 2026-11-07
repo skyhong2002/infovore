@@ -1,5 +1,6 @@
 import { recordedCoverage, type RecordedInterval } from './coverage.js';
 import { measureRead, type ReadPhase } from './read-timing.js';
+import { migrateDayflowQuality } from '../dayflow/quality-store.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
 import { ComputaiStore, migrateComputai, migrateComputaiSegments } from '../computai/store.js';
 import { mkdirSync } from 'node:fs';
@@ -264,12 +265,12 @@ export class Repository {
   readonly dayflow: DayflowStore;
   readonly computai: ComputaiStore;
 
-  constructor(path: string) {
+  constructor(path: string, options: { dayflowQuality?: boolean } = {}) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.migrate();
-    this.dayflow = new DayflowStore(this.db);
+    this.dayflow = new DayflowStore(this.db, options.dayflowQuality);
     this.computai = new ComputaiStore(this.db);
   }
 
@@ -375,6 +376,8 @@ export class Repository {
     if (afterComputaiSegments.user_version < 15) this.migratePublicActivityIndexes();
     const afterPublicActivityIndexes = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterPublicActivityIndexes.user_version < 16) this.migrateGoodreadsToHardcover();
+    const afterHardcover = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterHardcover.user_version < 17) migrateDayflowQuality(this.db);
   }
 
   // Goodreads shut down its RSS feeds in 2026; books now come from Hardcover,

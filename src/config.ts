@@ -21,6 +21,12 @@ const computaiToken = process.env.COMPUTAI_TOKEN ?? '';
 if (computaiToken && computaiToken.length < 32) throw new Error('COMPUTAI_TOKEN must contain at least 32 characters');
 const healthConnectToken = process.env.HEALTH_CONNECT_TOKEN ?? ingestToken;
 const publicBaseUrl = basePublicUrl(process.env);
+const qualityBaseUrl = (process.env.DAYFLOW_AI_BASE_URL ?? '').replace(/\/+$/, '');
+const qualityApiKey = process.env.DAYFLOW_AI_API_KEY ?? '';
+if (qualityBaseUrl && !/^https?:\/\//.test(qualityBaseUrl)) throw new Error('DAYFLOW_AI_BASE_URL must use HTTP or HTTPS');
+const dayflowQuality = qualityBaseUrl && qualityApiKey ? {
+  baseUrl: qualityBaseUrl, apiKey: qualityApiKey, model: process.env.DAYFLOW_AI_MODEL || 'sky-quality',
+} : null;
 
 const invalidSources = sources.filter((source) => !knownSources.includes(source as typeof knownSources[number]));
 if (invalidSources.length) throw new Error(`Unknown SOURCES: ${invalidSources.join(', ')}`);
@@ -40,7 +46,7 @@ export const config = {
   publicBaseUrl,
   ingestToken,
   healthConnect: { token: healthConnectToken },
-  dayflow: { token: dayflowToken },
+  dayflow: { token: dayflowToken, quality: dayflowQuality },
   computai: { token: computaiToken },
   maxSourceAgeHours,
   refreshIntervalMinutes,

@@ -20,8 +20,14 @@ Pushing to `main` does **not** auto-deploy (CI only runs checks). Production
 - Compose: `/etc/dokploy/compose/compose-calculate-online-port-oqidr1/code/docker-compose.yml`
   (services `infovore` + `ingest`, image `blog-svc-infovore:production`; Dokploy's
   stored copy in its Postgres uses the same fixed tag).
-- Env/secrets: `…/oqidr1/service.env` (root; use `sudo -n`). Never print values.
+- Env/secrets: `/srv/infovore/service.env` (root, mode 600; use `sudo -n`).
+  Dokploy's `/etc/dokploy/compose/compose-calculate-online-port-oqidr1/service.env`
+  is a symlink to this canonical file. Never print values or commit credentials.
   It lives outside `code/`, so a Dokploy redeploy does not overwrite it.
+- Dayflow semantic topics use the dedicated `infovore` client key managed on
+  sky-mini by `~/Projects/ai-gateway/apply.py`. Set `DAYFLOW_AI_BASE_URL` to
+  `http://172.17.0.1:8317/v1` and `DAYFLOW_AI_MODEL=sky-quality`. sky-server
+  runs HA ingress only; never add a gateway engine there.
 - Data: `/srv/infovore/data/infovore.sqlite` (bind mount). Back up before a
   migration with `VACUUM INTO '/data/infovore-pre-<change>-<UTC ts>.sqlite'`
   run inside the container (`node:sqlite`).
