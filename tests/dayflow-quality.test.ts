@@ -161,3 +161,34 @@ test('model outage preserves already classified topics without resurrecting loca
     assert.deepEqual(repo.dayflow.snapshot('Sky', now).extra.keywordPools?.all, [{ name: '研究規劃', mentions: 2 }]);
   } finally { repo.close(); }
 });
+
+
+test('backfill reaches all history, prioritizes new imports and resumes without reclassifying completed titles', async () => {
+  const repo = new Repository(':memory:', { dayflowQuality: true });
+  try {
+    repo.dayflow.ingest(batch('2025-09-25', Array.from({ length: 64 }, (_, i) => `早期專案 ${i}`), 1));
+    repo.dayflow.ingest(batch('2026-11-06', Array.from({ length: 16 }, (_, i) => `近期專案 ${i}`), 100));
+    const titles: string[] = [];
+    const worker = new DayflowQualityWorker(repo.dayflow, config, async (inputs) => {
+      titles.push(...inputs.map(input => input.title));
+      return { model: 'resolved', labels: inputs.map(() => [label('專案研究')]) };
+    });
+    assert.equal(await worker.tick(now), 64, 'one cycle remains bounded to four requests of sixteen titles');
+    assert.ok(titles.slice(0,16).every(title => title.startsWith('近期專案')), 'newest activities get priority');
+    assert.ok(titles.slice(16).every(title => title.startsWith('早期專案')), 'activities older than 97 days are included');
+    repo.dayflow.ingest(batch('2026-11-07', ['新增活動'], 200));
+    const later = new Date(+now + 30 * 60_000);
+    const progressPage = dayflowDetails(repo.dayflow.snapshot('Sky', later).extra);
+    assert.match(progressPage, /Topic review in progress: 64 of 81 activities reviewed/);
+    assert.match(progressPage, /Older days fill in automatically/);
+    assert.equal(await worker.tick(later), 17, 'new imports and remaining historical titles resume together');
+    assert.equal(titles[64], '新增活動', 'a fresh import takes priority over the old backlog');
+    assert.equal(await worker.tick(later), 0, 'completed titles do not incur another model call');
+    assert.equal(titles.length, 81);
+    assert.equal(new Set(titles).size, 81);
+    const snapshot = repo.dayflow.snapshot('Sky', later);
+    assert.equal(snapshot.extra.keywordQuality?.classifiedActivities,81);
+    assert.deepEqual(snapshot.extra.daily.find(day => day.day === '2025-09-25')?.keywords, [{ name: '專案研究', mentions: 64 }]);
+    assert.doesNotMatch(dayflowDetails(snapshot.extra), /Topic review in progress/);
+  } finally { repo.close(); }
+});

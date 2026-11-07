@@ -121,9 +121,10 @@ Both rankings are calculated before their independent display limits.
 Set `DAYFLOW_AI_BASE_URL` (including `/v1`), `DAYFLOW_AI_API_KEY`, and optionally
 `DAYFLOW_AI_MODEL` (default `sky-quality`) in the shared server environment.
 The ingest process owns a serial background worker. It starts on boot, revisits
-pending titles after each cycle, and works newest-first over 97 days (the recent
-7 days plus the preceding 90). Each cycle handles at most four batches of 16
-unique titles, then waits a minute. No HTTP read or ingest waits for inference.
+pending titles after each cycle, and works newest-first over the entire stored
+history. Each cycle handles at most four batches of 16 unique titles. A full
+cycle resumes after five seconds while draining the backlog; idle or failing
+cycles wait a minute. No HTTP read or ingest waits for inference.
 A database lease prevents overlapping workers during a rollout.
 
 Only sanitized titles are sent: summaries, app lists, record/device identifiers,
@@ -164,3 +165,10 @@ existing `apply.py` flow on both engines. This is a project client key, not the
 management key. Production uses `http://172.17.0.1:8317/v1` and `sky-quality`;
 sky-server is ingress only. Recreate the app and ingest containers when changing
 these environment variables. Preserve all other variables and never commit keys.
+
+Historical backfill has no age cutoff. New imports are prioritized at the start
+of each cycle, and previously classified titles (including empty results) are
+reused. The Dayflow page shows reviewed/eligible activity coverage while backfill
+is incomplete. A day may still have no labels after review when its activities
+have no clear public topic. All inference stays serial through the same worker
+and database lease; no additional engine or parallel inference worker is needed.
