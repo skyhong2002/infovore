@@ -46,6 +46,14 @@ class SecureSettings(context: Context) {
         get() = preferences.getString(KEY_LAST_STATUS, "尚未同步") ?: "尚未同步"
         set(value) { preferences.edit { putString(KEY_LAST_STATUS, value) } }
 
+    /** Whether the most recent finished full sync (manual or background) failed. */
+    var lastSyncFailed: Boolean
+        get() = preferences.getBoolean(KEY_LAST_SYNC_FAILED, false)
+        set(value) { preferences.edit { putBoolean(KEY_LAST_SYNC_FAILED, value) } }
+
+    /** True once the initial historical import has finished and incremental sync has a cursor. */
+    val initialImportDone: Boolean get() = changesToken != null
+
     var lastSleepStatus: String
         get() = preferences.getString("last_sleep_status", "睡眠尚未檢查") ?: "睡眠尚未檢查"
         set(value) { preferences.edit { putString("last_sleep_status", value) } }
@@ -60,6 +68,7 @@ class SecureSettings(context: Context) {
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_CHANGES_TOKEN = "changes_token"
         private const val KEY_LAST_STATUS = "last_status"
+        private const val KEY_LAST_SYNC_FAILED = "last_sync_failed"
         private const val KEY_ALIAS = "infovore-health-ingest-token"
     }
 }

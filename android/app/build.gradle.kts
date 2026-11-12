@@ -11,8 +11,8 @@ android {
         applicationId = "tw.skyhong.infovore.health"
         minSdk = 34
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.2.0"
+        versionCode = 10
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -29,6 +29,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+
+    buildFeatures { buildConfig = true }
 }
 
 dependencies {

@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.2.0) reads selected records from Android Health Connect and
+This private companion (current version 0.3.0) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -14,6 +14,33 @@ requested. The ingest token is encrypted with Android Keystore, Android backup
 is disabled, and the server keeps raw Health Connect records outside the public
 activity, feed, and MCP projections. Infovore's Health platform page uses only
 safe aggregates and recent workout summaries.
+
+## App layout (0.3.0)
+
+The screen is split into a **開始使用** checklist (connection → Health Connect
+permission → first sync, with a button for the next step) and three collapsible
+sections: **連線設定**, **健康資料同步**, and **手機畫面記錄（進階・敏感）**, which
+always starts collapsed. Each section header shows its current state.
+
+- Fields are validated before saving, with the reason shown under the field:
+  the endpoint must be `https://` (the private Tailscale HTTP address below is
+  the only exception, same as the network layer), tokens need at least 32
+  characters without spaces, and **初始同步範圍** must be a number from 1 to
+  3650; out-of-range values are rejected instead of silently clamped. Unsaved
+  edits are flagged, and leaving the screen with unsaved edits asks first.
+- Health Connect status follows `HealthConnectClient.getSdkStatus`: when an
+  install or update is required the app offers to open the Play Store; when it
+  is unsupported it says so and disables syncing. **只同步睡眠（優先）** needs
+  only the sleep permission and **立即同步** needs all of them; a disabled
+  button always shows why. If the permission dialog does not appear (after
+  repeated denials), the app links to Health Connect's settings instead.
+- Manual syncs run in a ViewModel, so rotating the phone or switching dark mode
+  does not cancel them; failures show a plain-language reason and **重試**.
+- Times are shown as relative time plus the local date and time, following the
+  phone's 12/24-hour setting.
+- The UI supports TalkBack (section headings, expand/collapse state, field
+  labels and errors), large fonts, 48 dp touch targets, dark mode, and
+  edge-to-edge insets.
 
 ## Setup
 
@@ -65,13 +92,14 @@ and holds no model keys.
 1. Set a random `DAYFLOW_PHONE_TOKEN` of at least 32 characters on the infovore
    ingest service. It is separate from `HEALTH_CONNECT_TOKEN`; without it the
    server answers 503.
-2. In the app's **手機 Dayflow（畫面活動）** section, enter the token, tap
-   **儲存**, and use **測試連線** (calls `GET /api/ingest/dayflow-phone/status`).
+2. In the app's **手機畫面記錄（進階・敏感）** section, enter the token, tap
+   **儲存畫面記錄設定**, and use **測試連線** (calls `GET /api/ingest/dayflow-phone/status`).
    The endpoint and device id are shared with the Health Connect section.
 3. Sideloaded APKs must first allow restricted settings: Android Settings →
    Apps → Infovore → ⋮ → **允許受限制的設定** (Allow restricted settings).
 4. Tap **開啟無障礙設定**, enable **Infovore 手機 Dayflow**, then turn on
-   **啟用記錄** in the app.
+   **啟用記錄** in the app and confirm the dialog. The app never enables
+   recording or the accessibility service by itself.
 
 ### What is captured
 

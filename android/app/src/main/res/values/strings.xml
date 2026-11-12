@@ -2,4 +2,94 @@
     <string name="app_name">Infovore</string>
     <string name="screen_service_label">Infovore 手機 Dayflow</string>
     <string name="screen_service_description">在螢幕開啟且已解鎖時，約每分鐘及切換 App 時記錄前景 App 名稱、畫面上可見的文字，並視需要附上一張小縮圖，上傳到你自己的 infovore 伺服器，由伺服器以 AI 摘要成時間軸後刪除原始資料。密碼欄位、禁止截圖的安全畫面與你排除的 App 不會擷取文字或畫面。可在 Infovore App 內暫停或關閉記錄。</string>
+
+    <!-- Header and first-run steps -->
+    <string name="header_version">版本 %1$s</string>
+    <string name="header_intro">將 Android Health Connect（包括 Garmin Connect 寫入的資料）私密同步到你自己的 Infovore。</string>
+    <string name="setup_title">開始使用</string>
+    <string name="setup_step_row">%1$s  %2$d. %3$s\n%4$s</string>
+    <string name="field_error">⚠ %1$s</string>
+    <string name="setup_next_connection">填寫連線設定</string>
+    <string name="setup_next_permissions">授權 Health Connect</string>
+    <string name="footer_privacy">隱私：token 以 Android Keystore 加密保存，App 資料不會備份到雲端。健康資料只上傳到上方設定的 Infovore 伺服器。</string>
+
+    <!-- Collapsible sections -->
+    <string name="section_connection">連線設定</string>
+    <string name="section_health">健康資料同步</string>
+    <string name="section_screen">手機畫面記錄（進階・敏感）</string>
+    <string name="state_expanded">已展開</string>
+    <string name="state_collapsed">已收合</string>
+    <string name="action_expand">展開</string>
+    <string name="action_collapse">收合</string>
+
+    <!-- Connection settings -->
+    <string name="label_endpoint">Infovore 網址（ingest endpoint）</string>
+    <string name="help_endpoint">需使用 https://；HTTP 只允許預設的 Tailscale 私網位址。</string>
+    <string name="label_health_token">HEALTH_CONNECT_TOKEN</string>
+    <string name="help_health_token">至少 32 字元，與伺服器設定相同；以 Android Keystore 加密保存。</string>
+    <string name="label_history_days">初始同步範圍（最近幾天，1–%1$d）</string>
+    <string name="help_history_days">預設 %1$d 天。第一次同步與每次睡眠同步只讀取這段期間。</string>
+    <string name="action_save_connection">儲存連線設定</string>
+    <string name="save_state_clean">所有變更皆已儲存</string>
+    <string name="save_state_unsaved">有未儲存的變更</string>
+    <string name="save_state_saved">已安全儲存</string>
+    <string name="save_state_incomplete">尚未完成連線設定</string>
+    <string name="save_state_fix_errors">請修正標示的欄位後再儲存</string>
+    <string name="connection_summary_ready">已設定 · %1$s</string>
+    <string name="connection_summary_unsaved">有未儲存的變更</string>
+    <string name="connection_summary_incomplete">尚未完成</string>
+
+    <!-- Health Connect sync -->
+    <string name="health_sync_heading">同步</string>
+    <string name="health_sync_explainer">「只同步睡眠」只需要睡眠讀取權限，會先上傳最新的睡眠；「立即同步」需要全部權限，第一次會匯入上方設定的天數，之後只處理變更。</string>
+    <string name="action_sync_sleep">只同步睡眠（優先）</string>
+    <string name="action_sync_all">立即同步</string>
+    <string name="sync_in_progress">同步進行中</string>
+    <string name="sync_failed_full">同步失敗：%1$s</string>
+    <string name="sync_failed_sleep">睡眠同步失敗：%1$s</string>
+    <string name="sync_blocked_invalid_inputs">連線設定有未修正的錯誤，請先修正後再同步</string>
+    <string name="sync_blocked_no_connection">請先在「連線設定」填寫並儲存網址與 token</string>
+    <string name="action_retry">重試</string>
+    <string name="health_last_heading">最近結果</string>
+    <string name="last_full_sync">完整同步：%1$s</string>
+    <string name="last_sleep_sync">睡眠：%1$s</string>
+    <string name="health_summary_last">上次同步 %1$s</string>
+    <string name="health_background_note">背景同步每 6 小時在有網路時執行一次。使用私網位址時請保持 Tailscale 連線，並在 Garmin Connect → 設定 → Health Connect 開啟資料分享。</string>
+
+    <!-- Phone screen recording -->
+    <string name="screen_warning">敏感功能，預設關閉。啟用後，App 會透過無障礙服務記錄前景 App 名稱、畫面上的文字（密碼欄位除外）與小縮圖，上傳到你的 Infovore 伺服器整理成時間軸，伺服器摘要後刪除原始資料。安全畫面、密碼管理器與你排除的 App 只記錄名稱。每一步都需要你手動完成，隨時可以暫停或關閉。</string>
+    <string name="screen_step_settings">1. 上傳 token 與排除的 App</string>
+    <string name="label_phone_token">DAYFLOW_PHONE_TOKEN（選填）</string>
+    <string name="help_phone_token">至少 32 字元，與健康同步的 token 不同；使用上方連線設定的網址。</string>
+    <string name="label_exclusions">排除的 App 套件</string>
+    <string name="help_exclusions">以逗號或換行分隔。密碼管理器與驗證器等 %1$d 個 App 已預設排除。</string>
+    <string name="action_save_screen">儲存畫面記錄設定</string>
+    <string name="screen_saved">已安全儲存；排除 %1$d 個自訂套件（另有 %2$d 個預設）。</string>
+    <string name="screen_step_service">2. 開啟無障礙服務</string>
+    <string name="accessibility_on">無障礙服務「Infovore 手機 Dayflow」：已開啟</string>
+    <string name="accessibility_off">無障礙服務「Infovore 手機 Dayflow」：未開啟</string>
+    <string name="screen_restricted_help">側載安裝的 App 需先到「應用程式資訊 → ⋮ → 允許受限制的設定」，才能開啟無障礙服務。</string>
+    <string name="action_open_app_info">開啟 App 資訊（允許受限制的設定）</string>
+    <string name="action_open_accessibility">開啟無障礙設定</string>
+    <string name="screen_step_recording">3. 記錄控制</string>
+    <string name="label_recording_switch">啟用記錄</string>
+    <string name="confirm_recording_title">啟用手機畫面記錄？</string>
+    <string name="confirm_recording_message">無障礙服務開啟時，Infovore 會在螢幕開啟且已解鎖時，約每分鐘及切換 App 時記錄前景 App、畫面文字與小縮圖，並上傳到你的 Infovore 伺服器。\n\n密碼欄位、安全畫面與排除的 App 不會擷取內容。你可以隨時暫停或關閉。</string>
+    <string name="confirm_recording_ok">啟用記錄</string>
+    <string name="action_cancel">取消</string>
+    <string name="screen_upload_heading">上傳</string>
+    <string name="screen_upload_note">紀錄會自動在有網路時上傳；也可以手動上傳或測試伺服器連線。</string>
+    <string name="action_upload_now">立即上傳</string>
+    <string name="action_test_connection">測試連線</string>
+    <string name="screen_task_in_progress">處理中</string>
+    <string name="screen_uploading">上傳中…</string>
+    <string name="screen_testing">測試連線中…</string>
+
+    <!-- Dialogs and errors -->
+    <string name="unsaved_title">有未儲存的變更</string>
+    <string name="unsaved_message">離開前要儲存你修改的設定嗎？</string>
+    <string name="unsaved_save">儲存</string>
+    <string name="unsaved_discard">捨棄</string>
+    <string name="unsaved_keep_editing">繼續編輯</string>
+    <string name="error_no_activity">此裝置找不到可開啟的設定畫面。</string>
 </resources>

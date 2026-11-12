@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Stable ids so EditText contents and scroll position survive configuration changes. -->
+    <item name="scroll" type="id" />
+    <item name="endpoint_input" type="id" />
+    <item name="token_input" type="id" />
+    <item name="history_days_input" type="id" />
+    <item name="phone_token_input" type="id" />
+    <item name="exclusions_input" type="id" />
+</resources>

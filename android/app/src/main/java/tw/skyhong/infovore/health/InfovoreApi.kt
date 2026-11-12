@@ -62,7 +62,7 @@ class InfovoreApi(private val settings: SecureSettings) {
             "Endpoint 必須以 http:// 或 https:// 開頭"
         }
         val endpointUrl = URL(settings.endpoint)
-        require(endpointUrl.protocol == "https" || endpointUrl.host == "100.85.214.25") {
+        require(endpointUrl.protocol == "https" || endpointUrl.host == EndpointPolicy.TAILSCALE_HTTP_HOST) {
             "自訂 endpoint 必須使用 HTTPS；HTTP 僅允許預設 Tailscale IP"
         }
     }
