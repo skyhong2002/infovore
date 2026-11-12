@@ -92,7 +92,7 @@ const layout = `
 .board-head{align-items:end;display:flex;gap:30px;justify-content:space-between;margin-bottom:28px}
 .section-heading{align-items:end;display:flex;gap:20px;justify-content:space-between;margin:0 0 10px}
 .section-heading h2{font-size:19px;margin:0}.section-heading p,.section-heading span{color:var(--quiet);font-size:12.5px;margin:2px 0 0}
-.section-heading a{color:var(--muted);font-size:13px;text-decoration:none;white-space:nowrap}.section-heading a:hover{color:var(--text)}
+.section-heading a{color:var(--muted);display:inline-block;font-size:13.5px;padding:8px 0;text-decoration:none;white-space:nowrap}.section-heading a:hover{color:var(--text)}
 .content-section{margin-top:34px}
 img[data-adaptive-media]{aspect-ratio:var(--media-ratio,.75);display:block;max-width:100%;object-fit:cover;width:auto}
 .source-pulse{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}.source-pulse .entry{min-height:104px}
@@ -263,7 +263,7 @@ const widgets = `
 .cloud a.hot{color:var(--accent)}.cloud a.warm{color:var(--gold)}
 .cloud-legend{color:var(--quiet);display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;justify-content:center;margin-top:8px}
 .cloud-legend i{border-radius:2px;display:inline-block;height:9px;margin-right:5px;vertical-align:-1px;width:9px}
-th[data-sort]{cursor:pointer;user-select:none}th[data-sort]:hover{color:var(--text)}th[data-sort][aria-sort]::after{content:" ↓";color:var(--accent)}th[data-sort][aria-sort=ascending]::after{content:" ↑"}
+th[data-sort]{cursor:pointer;user-select:none}th[data-sort]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}th[data-sort]:hover{color:var(--text)}th[data-sort][aria-sort]::after{content:" ↓";color:var(--accent)}th[data-sort][aria-sort=ascending]::after{content:" ↑"}
 .time-table .spark{margin-left:auto}
 .search-form{display:flex;gap:8px;margin:0 0 24px}
 .search-form input{background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;color:var(--text);flex:1;font:inherit;font-size:16px;min-width:0;padding:12px 16px}
