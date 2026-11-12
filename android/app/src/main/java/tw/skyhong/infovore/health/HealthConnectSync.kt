@@ -118,6 +118,7 @@ class HealthConnectReader(private val client: HealthConnectClient) : HealthReade
         startMs = HealthRecordJson.startOf(record).toEpochMilli(),
         originPackage = record.metadata.dataOrigin.packageName,
         json = HealthRecordJson.encode(record).toString(),
+        endMs = HealthRecordJson.endOf(record).toEpochMilli(),
     )
 
     private fun recordClass(dataType: String): KClass<out Record> =

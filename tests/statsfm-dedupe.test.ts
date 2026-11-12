@@ -190,7 +190,7 @@ test('migration 21 runs at startup on an existing database', () => {
 });
 
 test('the dedupe plan prefers the seconds-precision row, then the earliest seen', () => {
-  const play = (id: string, occurredAt: string, firstSeenAt: string) => ({ id, sourceItemId: id, title: 'T', artist: '', occurredAt, firstSeenAt });
+  const play = (id: string, occurredAt: string, firstSeenAt: string) => ({ id, sourceItemId: id, title: 'T', artist: 'A', occurredAt, firstSeenAt });
   const plan = planStatsfmDedupe([
     play('floored-early', '2026-11-12T10:00:00.000Z', '2026-11-10T00:00:00.000Z'),
     play('precise-late', '2026-11-12T10:00:42.123Z', '2026-11-12T00:00:00.000Z'),
@@ -222,6 +222,45 @@ test('two floored plays with the same title merge only under the same track id',
     play('floored', 'track-2', '2026-11-12T10:00:00.000Z'),
     play('precise', 'track-1', '2026-11-12T10:00:41.250Z'),
   ]).remove, ['floored']);
+});
+
+test('a play missing its artist merges with a same-title play only under the same track id', () => {
+  const play = (id: string, sourceItemId: string | null, occurredAt: string, artist: string) =>
+    ({ id, sourceItemId, title: 'Intro', artist, occurredAt, firstSeenAt: '2026-11-12T00:00:00.000Z' });
+  // Round-7 probe (opus-5.5): seconds-precision "Intro" by X (track 1) and a floored "Intro"
+  // without an artist (track 2) in the same minute: nothing says they are one play, kept.
+  assert.deepEqual(planStatsfmDedupe([
+    play('precise', 'track-1', '2026-11-12T10:00:41.250Z', 'X'),
+    play('floored', 'track-2', '2026-11-12T10:00:00.000Z', ''),
+  ]).remove, []);
+  // Either side missing it, or blank: same answer.
+  assert.deepEqual(planStatsfmDedupe([
+    play('precise', 'track-1', '2026-11-12T10:00:41.250Z', ' '),
+    play('floored', 'track-2', '2026-11-12T10:00:00.000Z', 'X'),
+  ]).remove, []);
+  // The same track id still merges them.
+  assert.deepEqual(planStatsfmDedupe([
+    play('precise', 'track-1', '2026-11-12T10:00:41.250Z', 'X'),
+    play('floored', 'track-1', '2026-11-12T10:00:00.000Z', ''),
+  ]).remove, ['floored']);
+  // Both artists present and equal: the title rule applies across a relinked id, as before.
+  assert.deepEqual(planStatsfmDedupe([
+    play('precise', 'track-1', '2026-11-12T10:00:41.250Z', 'X'),
+    play('floored', 'track-2', '2026-11-12T10:00:00.000Z', 'x'),
+  ]).remove, ['floored']);
+});
+
+test('ingest keeps a floored play without an artist next to a same-title play of another track', () => {
+  const repository = new Repository(':memory:');
+  try {
+    sync(repository, '2026-11-12T11:20:00.000Z', stream(1, 'Intro', '2026-11-12T10:00:41.250Z', 22_000, 'X'));
+    const missing = stream(2, 'Intro', '2026-11-12T10:00:00.000Z', 22_000);
+    (missing.track as { artists: unknown[] }).artists = [];
+    sync(repository, '2026-11-12T11:30:00.000Z', missing);
+    assert.deepEqual(statsfmRows(repository).map((row) => row.source_item_id).sort(), ['1', '2']);
+  } finally {
+    repository.close();
+  }
 });
 
 test('ingest keeps two floored same-title plays with different track ids', () => {

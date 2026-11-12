@@ -69,7 +69,11 @@ class ScreenSettings(context: Context) {
         get() = preferences.getString(KEY_LAST_UPLOAD_STATUS, "尚未上傳") ?: "尚未上傳"
         set(value) { preferences.edit { putString(KEY_LAST_UPLOAD_STATUS, value) } }
 
-    /** The quarantine level last seen by [tw.skyhong.infovore.health.QuarantineNotifier], so each warning shows once. */
+    /**
+     * The quarantine level last notified by [tw.skyhong.infovore.health.QuarantineNotifier], so
+     * each warning shows once (see [QuarantineAlerts.Decision.notified]). A new key in 0.4.4: the
+     * old one held the level last seen, even while notifications were off.
+     */
     var quarantineAlertLevel: QuarantineAlerts.Level
         get() = preferences.getString(KEY_QUARANTINE_ALERT, null)
             ?.let { name -> QuarantineAlerts.Level.entries.firstOrNull { it.name == name } }
@@ -89,6 +93,6 @@ class ScreenSettings(context: Context) {
         const val KEY_EXCLUSIONS = "exclusions"
         const val KEY_LAST_CAPTURE_AT = "last_capture_at"
         const val KEY_LAST_UPLOAD_STATUS = "last_upload_status"
-        const val KEY_QUARANTINE_ALERT = "quarantine_alert_level"
+        const val KEY_QUARANTINE_ALERT = "quarantine_notified_level"
     }
 }

@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import tw.skyhong.infovore.health.screen.ScreenUploader
 
 /**
  * Applies [SyncFailureAlerts] decisions: keeps the consecutive-failure count in [SecureSettings]
@@ -25,17 +26,33 @@ object SyncFailureNotifier {
     fun record(context: Context, settings: SecureSettings, outcome: SyncFailureAlerts.Outcome) {
         val decision = SyncFailureAlerts.next(settings.backgroundFailures, outcome, settings.notifyOnSyncFailure)
         if (decision.failures != settings.backgroundFailures) settings.backgroundFailures = decision.failures
-        if (decision.clear) cancel(context)
+        // A successful sync removes only its own warning; the screen quarantine's stays.
+        if (decision.clear) NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
         if (decision.notify) show(context, decision.failures)
+    }
+
+    /**
+     * Called when notifications were just turned on (the switch, or the permission granted):
+     * shows at once the warnings that already apply (background syncs failing, the screen
+     * quarantine filling or full) instead of waiting for the next change. Each still shows once.
+     */
+    fun catchUp(context: Context, settings: SecureSettings) {
+        val enabled = settings.notifyOnSyncFailure && permissionGranted(context)
+        if (SyncFailureAlerts.catchUp(settings.backgroundFailures, enabled)) show(context, settings.backgroundFailures)
+        ScreenUploader.recheckQuarantine(context)
     }
 
     fun permissionGranted(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /** Removes this notification and the screen-record quarantine warning (e.g. when the user turns notifications off). */
+    /**
+     * When the user turns notifications off: removes this notification and the screen-record
+     * quarantine warning, and forgets that the latter was shown, so turning them on again
+     * delivers the warnings that still apply ([catchUp]).
+     */
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
-        QuarantineNotifier.cancel(context)
+        QuarantineNotifier.withdraw(context)
     }
 
     private fun show(context: Context, failures: Int) {

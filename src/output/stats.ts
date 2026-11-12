@@ -2,6 +2,7 @@ import type { DailyTimeSeries, SourceTimeSpent, TimeSpentSummary, TimeWindows } 
 import { platformColors } from './rhythm.js';
 import { delta, html, info, shell, sourceLabel, sparkline, sum, timeAmount } from './pages.js';
 import { timeNotes } from './platforms.js';
+import { inlineScript, TIME_TABLE_SCRIPT } from './scripts.js';
 
 const WINDOW_COLUMNS: Array<{ key: keyof TimeWindows; title: string }> = [
   { key: 'last24h', title: 'Last 24h' },
@@ -97,7 +98,6 @@ function weekShare(summary: TimeSpentSummary): string {
     <div class="time-share">${rows}</div></section>`;
 }
 
-const sortScript = `<script>(()=>{const t=document.querySelector('.time-table');if(!t)return;const w=t.closest('.time-table-wrap'),hint=document.querySelector('.time-table-hint');const pick=document.getElementById('time-window'),narrow=matchMedia('(max-width:1024px)');const showWindow=()=>{const value=pick.value,delta=value==='delta',chosen=narrow.matches?(delta?-2:Number(value)):-1;for(const row of t.rows)[...row.cells].forEach((cell,i)=>cell.classList.toggle('tw-hide',chosen!==-1&&((i===3&&!delta)||(i>=4&&(delta||i-4!==chosen)))))};if(pick){pick.closest('label').hidden=false;pick.addEventListener('change',()=>{showWindow();fit()});narrow.addEventListener('change',()=>{showWindow();fit()});showWindow()}const fit=()=>{const more=w.scrollWidth-w.clientWidth-w.scrollLeft>2;w.classList.toggle('has-more',more);if(hint)hint.hidden=w.scrollWidth<=w.clientWidth+2};fit();w.addEventListener('scroll',fit,{passive:true});addEventListener('resize',fit);const b=t.tBodies[0];t.querySelectorAll('th[data-sort]').forEach((h)=>{const b=document.createElement('button');b.type='button';b.className='th-sort';b.append(...h.childNodes);h.append(b)});t.querySelectorAll('th[data-sort]').forEach((h,i)=>h.addEventListener('click',()=>{const asc=h.getAttribute('aria-sort')==='descending';t.querySelectorAll('th[data-sort]').forEach(o=>o.removeAttribute('aria-sort'));h.setAttribute('aria-sort',asc?'ascending':'descending');const live=document.getElementById('sort-status');if(live)live.textContent='Sorted by '+h.textContent.trim()+', '+(asc?'ascending':'descending');const v=r=>r.cells[i].dataset.value??'';const num=h.dataset.sort==='number';[...b.rows].sort((a,c)=>{const x=v(a),y=v(c);const d=num?Number(x)-Number(y):x.localeCompare(y);return asc?d:-d}).forEach(r=>b.appendChild(r))}))})()</script>`;
 
 export function statsPage(ownerName: string, summary: TimeSpentSummary, daily: DailyTimeSeries = { days: [], sources: {} }): string {
   const totalSeries = daily.days.map((_, index) => Object.values(daily.sources).reduce((total, series) => total + (series[index] ?? 0), 0));
@@ -121,7 +121,7 @@ export function statsPage(ownerName: string, summary: TimeSpentSummary, daily: D
       <tbody>${summary.sources.map((entry) => sourceRow(entry, daily.sources[entry.source] ?? EMPTY_SERIES)).join('')}</tbody>
       <tfoot><tr><td>All platforms</td><td></td><td class="time-trend">${sparkline(totalSeries, { label: 'All platforms · daily time over the last 28 days' })}</td><td>${weekDelta(totalSeries, totalApprox(summary, 'last28d'))}</td>${WINDOW_COLUMNS.map(({ key }) =>
         `<td>${cell(summary.total[key], totalApprox(summary, key))}</td>`).join('')}</tr></tfoot>
-      </table></div></section>${sortScript}`
+      </table></div></section>${inlineScript(TIME_TABLE_SCRIPT)}`
     : '<div class="empty">No time has been recorded yet — totals appear once the platforms have synced.</div>';
   const method = `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Honest accounting</div><h2>How these numbers are made</h2></div></div>
     <div class="grid">

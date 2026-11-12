@@ -42,6 +42,12 @@ object SyncFailureAlerts {
         }
     }
 
+    /**
+     * Right after notifications were turned on (opt-in and permission): whether the failures
+     * already counted call for the warning now, instead of only at the next failed run.
+     */
+    fun catchUp(failures: Int, notificationsEnabled: Boolean): Boolean = notificationsEnabled && failures >= THRESHOLD
+
     /** Whether a failed attempt (0-based [runAttemptCount]) is the last one WorkManager runs this period. */
     fun isFinalAttempt(runAttemptCount: Int): Boolean = runAttemptCount >= MAX_RETRIES
 

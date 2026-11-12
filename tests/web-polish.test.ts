@@ -104,7 +104,7 @@ test('device-pushed sources explain where their errors are reported', () => {
     sources: [{ source: 'health', lastFetched: '2026-11-12T07:00:00Z', error: null, json: '/api/health.json' },
       { source: 'dayflow', lastFetched: '2026-11-08T07:00:00Z', error: null, json: '/api/dayflow.json' }] }));
   assert.match(page('tbody tr').first().text(), /pushed from a device/);
-  assert.match(page('tbody tr').last().text(), /Delayed[\s\S]*check the device app/);
+  assert.match(page('tbody tr').last().text(), /Delayed[\s\S]*check that the device app is running/);
   assert.match(page('.feed-note').text(), /Phone screen activity is not listed/);
 });
 
@@ -163,7 +163,7 @@ test('the Time page hides the window picker without JavaScript and marks the def
   const $ = render([30, 20, 10]);
   // Without the script nothing reveals the picker; the script unhides it before wiring it up.
   assert.notEqual($('label.time-window-pick').attr('hidden'), undefined);
-  assert.match($('script').text(), /pick\.closest\('label'\)\.hidden=false/);
+  assert.match($('script').text(), /pick\.closest\('label'\)\.hidden = false/);
   // Rows arrive in all-time order, and the heading says so before any click.
   assert.deepEqual($('th[aria-sort]').map((_, th) => [[$(th).text(), $(th).attr('aria-sort')]]).get(), [['All time', 'descending']]);
   // Rows in another order claim no sort.

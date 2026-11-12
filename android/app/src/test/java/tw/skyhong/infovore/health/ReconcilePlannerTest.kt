@@ -12,7 +12,7 @@ class ReconcilePlannerTest {
     private val start = 1_000L
     private val end = 2_000L
 
-    private fun item(id: String, at: Long) = Item(id, at)
+    private fun item(id: String, at: Long, until: Long = at) = Item(id, at, until)
 
     @Test
     fun aSmallCompleteReadBecomesOneWindowOverTheWholeRange() {
@@ -40,17 +40,19 @@ class ReconcilePlannerTest {
     fun longReadsAreCutOnlyBetweenDistinctStartTimes() {
         val planner = ReconcilePlanner("steps", start, end, ascending = true, targetIds = 2, maxIds = 5)
         val windows = planner.add(listOf(item("a", 1_100), item("b", 1_100), item("c", 1_100), item("d", 1_200), item("e", 1_300)))
-        // a, b and c share a start time, so the first cut waits for d.
-        assertEquals(listOf(ReconcileWindow("steps", 1_000, 1_200, listOf("a", "b", "c"))), windows)
-        assertEquals(ReconcileWindow("steps", 1_200, 2_000, listOf("d", "e")), planner.finish())
+        // a, b and c share a start time, so the first cut waits for d; it is placed right after
+        // the earlier side (just after its start, these being instants), not at d's start.
+        assertEquals(listOf(ReconcileWindow("steps", 1_000, 1_101, listOf("a", "b", "c"))), windows)
+        assertEquals(ReconcileWindow("steps", 1_101, 2_000, listOf("d", "e")), planner.finish())
     }
 
     @Test
     fun descendingReadsProduceTheSameKindOfWindows() {
         val planner = ReconcilePlanner("sleep_session", start, end, ascending = false, targetIds = 2, maxIds = 5)
         val windows = planner.add(listOf(item("z", 1_900), item("y", 1_800), item("x", 1_700)))
-        assertEquals(listOf(ReconcileWindow("sleep_session", 1_800, 2_000, listOf("z", "y"))), windows)
-        assertEquals(ReconcileWindow("sleep_session", 1_000, 1_800, listOf("x")), planner.finish())
+        // The cut follows the earlier side's latest record (x), so the gap up to y is in the later window.
+        assertEquals(listOf(ReconcileWindow("sleep_session", 1_701, 2_000, listOf("z", "y"))), windows)
+        assertEquals(ReconcileWindow("sleep_session", 1_000, 1_701, listOf("x")), planner.finish())
     }
 
     @Test
@@ -59,7 +61,10 @@ class ReconcilePlannerTest {
         for (ascending in listOf(true, false)) {
             repeat(50) { round ->
                 val starts = List(random.nextInt(0, 400)) { random.nextLong(900, 2_100) }.sorted()
-                val items = starts.mapIndexed { index, at -> item("r$round-$index", at) }
+                // Mostly short records, some long ones overlapping their neighbours.
+                val items = starts.mapIndexed { index, at ->
+                    item("r$round-$index", at, at + if (random.nextInt(10) == 0) random.nextLong(0, 80) else random.nextLong(0, 4))
+                }
                 val ordered = if (ascending) items else items.reversed()
                 val planner = ReconcilePlanner("heart_rate", start, end, ascending, targetIds = 7, maxIds = 400)
                 val windows = ordered.chunked(random.nextInt(1, 60)).flatMap(planner::add) + listOfNotNull(planner.finish())
@@ -74,8 +79,66 @@ class ReconcilePlannerTest {
                     val expected = items.filter { it.startMs >= window.startMs && it.startMs < window.endMs }.map { it.id }.toSet()
                     assertEquals(expected, window.recordIds.toSet())
                 }
+                if (ascending) {
+                    // No record of the window's read lies across an internal cut.
+                    val inside = items.filter { it.startMs in start until end }
+                    for (cut in sorted.dropLast(1).map { it.endMs }) {
+                        assertTrue("record across $cut", inside.none { it.startMs < cut && it.endMs > cut })
+                    }
+                }
             }
         }
+    }
+
+    @Test
+    fun aCutFallsWhereTheEarlierRecordsEndSoAGapLandsInTheLaterWindow() {
+        // Contiguous 10 ms records, one of which (r4, 1_040..1_050) was deleted at the source and
+        // so is not read. The earlier side ends at 1_040: the cut goes there, not at r5's start
+        // (1_050), so r4 starts inside the later window and ends before its end; the server can
+        // delete it. A cut at 1_050 would have left r4 in no window's deletable range.
+        val planner = ReconcilePlanner("steps", start, end, ascending = true, targetIds = 4, maxIds = 10)
+        val read = (0 until 8).filter { it != 4 }.map { item("r$it", 1_000L + it * 10, 1_010L + it * 10) }
+        val windows = planner.add(read) + listOfNotNull(planner.finish())
+        assertEquals(
+            listOf(
+                ReconcileWindow("steps", 1_000, 1_040, listOf("r0", "r1", "r2", "r3")),
+                ReconcileWindow("steps", 1_040, 2_000, listOf("r5", "r6", "r7")),
+            ),
+            windows,
+        )
+    }
+
+    @Test
+    fun aLongRecordDelaysTheCutUntilNothingReadLiesAcrossIt() {
+        val planner = ReconcilePlanner("exercise_session", start, end, ascending = true, targetIds = 2, maxIds = 10)
+        val windows = planner.add(
+            listOf(
+                item("long", 1_000, 1_500),
+                item("b", 1_100, 1_110),
+                item("c", 1_200, 1_210),
+                item("d", 1_300, 1_310),
+                item("e", 1_600, 1_610),
+            ),
+        )
+        assertEquals(listOf(ReconcileWindow("exercise_session", 1_000, 1_500, listOf("long", "b", "c", "d"))), windows)
+        assertEquals(ReconcileWindow("exercise_session", 1_500, 2_000, listOf("e")), planner.finish())
+    }
+
+    @Test
+    fun aDescendingCutAvoidsTheRecordItFollows() {
+        val planner = ReconcilePlanner("sleep_session", start, end, ascending = false, targetIds = 1, maxIds = 10)
+        // y (1_700..1_850) overlaps z's start: no cut between them; x ends at 1_650, so the cut is there.
+        val windows = planner.add(listOf(item("z", 1_800, 1_900), item("y", 1_700, 1_850), item("x", 1_600, 1_650)))
+        assertEquals(listOf(ReconcileWindow("sleep_session", 1_650, 2_000, listOf("z", "y"))), windows)
+        assertEquals(ReconcileWindow("sleep_session", 1_000, 1_650, listOf("x")), planner.finish())
+    }
+
+    @Test
+    fun overlapsThatLeaveNoSafeCutWithinTheLimitStayUnverified() {
+        val planner = ReconcilePlanner("heart_rate", start, end, ascending = true, targetIds = 2, maxIds = 3)
+        planner.add(listOf(item("long", 1_000, 1_900), item("b", 1_100), item("c", 1_200), item("d", 1_300)))
+        assertEquals(ReconcilePlanner.NO_SAFE_CUT, planner.failure)
+        assertNull(planner.finish())
     }
 
     @Test

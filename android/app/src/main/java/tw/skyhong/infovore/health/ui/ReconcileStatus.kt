@@ -4,6 +4,7 @@ import tw.skyhong.infovore.health.GapRefusal
 import tw.skyhong.infovore.health.HealthCatalog
 import tw.skyhong.infovore.health.OriginCount
 import tw.skyhong.infovore.health.ReconcileGap
+import tw.skyhong.infovore.health.ReconcileText
 import tw.skyhong.infovore.health.ReconcileWindow
 import java.time.Instant
 import java.time.ZoneId
@@ -85,6 +86,8 @@ object ReconcileStatus {
             origins(refusal)?.let { append(it).append("。") }
             if (gap.confirmable) {
                 append("若你確定這些資料已在來源端（Health Connect 或寫入它的 App）刪除，可確認刪除；否則請保留。")
+            } else if (gap.withinCeiling) {
+                append(ReconcileText.CONFIRM_NEEDS_REVERIFY).append("。")
             } else {
                 append("超過 App 內可確認的上限 ").append(ReconcileWindow.MAX_CONFIRMED_DELETES)
                 append(" 筆，無法在此刪除；可保留伺服器資料並忽略此提醒。")
@@ -114,7 +117,7 @@ object ReconcileStatus {
             title = "刪除伺服器上的 $count 筆${label}資料？",
             message = "資料類型：$label\n時間範圍：$range\n將刪除：$count 筆（伺服器上這段範圍共 ${refusal.checked} 筆，" +
                 "屬於這支手機）" + (origins(refusal)?.let { "\n$it" } ?: "") + "\n\n只在你確定這些紀錄已在來源端（Health Connect 或寫入它的 App）刪除時才繼續。" +
-                "按下後會先重新讀取這段範圍；若數字已改變，不會刪除任何資料，並請你重新確認。",
+                "按下後會先重新讀取這段範圍；若要刪除的紀錄已改變（即使筆數相同），不會刪除任何資料，並請你重新確認。",
             ok = "繼續",
         )
         val second = DialogText(

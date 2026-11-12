@@ -45,7 +45,7 @@ class QuarantineAlertsTest {
             val decision = QuarantineAlerts.next(level, rejected, 500, notificationsEnabled = true)
             if (decision.notify) notified += decision.level
             assertFalse(decision.clear)
-            level = decision.level
+            level = decision.notified
         }
         assertEquals(listOf(Level.NEAR, Level.FULL), notified)
 
@@ -59,10 +59,48 @@ class QuarantineAlertsTest {
         assertTrue(partly.clear)
         assertFalse(partly.notify)
 
-        // Without the opt-in nothing is posted, but the level is still tracked.
+        // Without the opt-in nothing is posted, and nothing counts as notified.
         val off = QuarantineAlerts.next(Level.NONE, 500, 500, notificationsEnabled = false)
         assertEquals(Level.FULL, off.level)
         assertFalse(off.notify)
+        assertEquals(Level.NONE, off.notified)
+    }
+
+    /** Runs [steps] of (rejected, notifications enabled) from nothing notified; returns the levels notified. */
+    private fun notifications(vararg steps: Pair<Int, Boolean>): List<Level> {
+        var notified = Level.NONE
+        return steps.mapNotNull { (rejected, enabled) ->
+            val decision = QuarantineAlerts.next(notified, rejected, 500, enabled)
+            notified = decision.notified
+            decision.level.takeIf { decision.notify }
+        }
+    }
+
+    @Test
+    fun aWarningReachedWhileNotificationsWereOffIsDeliveredOnceTheyAreOn() {
+        // Round 7 (sol-6.1, astra-6): NONE -> FULL with notifications off, then the user turns them
+        // on (the catch-up runs the same decision with them on): the FULL warning is shown once.
+        assertEquals(listOf(Level.FULL), notifications(0 to false, 500 to false, 500 to false, 500 to true))
+        // Then further checks at FULL do not repeat it.
+        assertEquals(listOf(Level.FULL), notifications(500 to false, 500 to true, 500 to true, 500 to true, 500 to true))
+        // The system permission revoked and restored (enabled = opt-in and permission): same.
+        assertEquals(listOf(Level.NEAR, Level.FULL), notifications(420 to true, 500 to false, 500 to false, 500 to true, 500 to true))
+        // Reached NEAR while off, FULL after turning on: NEAR first (catch-up), then FULL.
+        assertEquals(listOf(Level.NEAR, Level.FULL), notifications(450 to false, 450 to true, 500 to true))
+        // Brought down while off and up again: still one warning per step once on.
+        assertEquals(listOf(Level.FULL, Level.FULL), notifications(500 to true, 0 to false, 500 to false, 500 to true))
+        // Ordinary polling at FULL with notifications on all along: one warning only.
+        assertEquals(listOf(Level.FULL), notifications(500 to true, 500 to true, 500 to true))
+    }
+
+    @Test
+    fun theNotifiedLevelOnlyRisesWithANotificationAndFallsWithTheCounts() {
+        val held = QuarantineAlerts.next(Level.FULL, 450, 500, notificationsEnabled = false)
+        assertTrue(held.clear)
+        assertEquals(Level.NEAR, held.notified)
+        val unchanged = QuarantineAlerts.next(Level.NEAR, 500, 500, notificationsEnabled = false)
+        assertFalse(unchanged.notify)
+        assertEquals(Level.NEAR, unchanged.notified)
     }
 
     @Test

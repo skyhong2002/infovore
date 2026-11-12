@@ -7,13 +7,17 @@ package tw.skyhong.infovore.health
  * [HealthConnectSync].
  */
 
-/** One Health Connect record as the sync needs it: its id, start (the server's start_at), origin and encoded JSON. */
+/**
+ * One Health Connect record as the sync needs it: its id, start and end (the server's start_at
+ * and end_at; an instant's time for both), origin and encoded JSON.
+ */
 data class HealthItem(
     val id: String,
     val startMs: Long,
     val originPackage: String,
     /** The record exactly as uploaded (see [HealthRecordJson.encode]). */
     val json: String,
+    val endMs: Long = startMs,
 )
 
 /** One page of a time-range read; [nextPageToken] is null after the last page. */

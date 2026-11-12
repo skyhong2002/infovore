@@ -5,8 +5,11 @@ package tw.skyhong.infovore.health
  * deleting [wouldDelete] of the [checked] rows this device has stored in [startMs, endMs).
  * [sentIds] is how many record ids the app listed for that window, so a later re-read can tell
  * whether the phone's records changed since. [byOrigin]: which source apps the rows to delete
- * came from, when the server reported it (0.4.3+). Counts and package names only: no record ids,
- * no health values.
+ * came from, when the server reported it (0.4.3+). [confirmToken] (0.4.4+): the server's digest
+ * naming exactly the rows it would delete, sent back with a confirmation. [idsDigest] (0.4.4+):
+ * [ReconcileWindow.idsDigest] of the ids the app listed, so a re-read can tell whether the phone
+ * still has exactly the same set (not only the same number). Counts, package names and digests
+ * only: no record ids, no health values.
  */
 data class GapRefusal(
     val startMs: Long,
@@ -15,7 +18,12 @@ data class GapRefusal(
     val checked: Int,
     val sentIds: Int,
     val byOrigin: List<OriginCount> = emptyList(),
-)
+    val confirmToken: String? = null,
+    val idsDigest: String? = null,
+) {
+    /** Saved with what a confirmation needs: the server's token and the digest of the ids sent. */
+    val bound: Boolean get() = confirmToken != null && idsDigest != null
+}
 
 /**
  * A data type whose server rows in [startMs, endMs) could not be re-verified against Health
@@ -33,9 +41,17 @@ data class ReconcileGap(
     val refusal: GapRefusal? = null,
     val dismissed: Boolean = false,
 ) {
-    /** The user may confirm this refused deletion in the app (the server's hard ceiling allows it). */
+    /** Within the server's hard ceiling, so a confirmation could be accepted. */
+    val withinCeiling: Boolean
+        get() = refusal != null && refusal.wouldDelete in 1..ReconcileWindow.MAX_CONFIRMED_DELETES
+
+    /**
+     * The user may confirm this refused deletion in the app: within the server's hard ceiling and
+     * saved with the server's token for exactly these rows (a refusal saved before 0.4.4 has none
+     * and must be re-verified first).
+     */
     val confirmable: Boolean
-        get() = !dismissed && refusal != null && refusal.wouldDelete in 1..ReconcileWindow.MAX_CONFIRMED_DELETES
+        get() = !dismissed && withinCeiling && refusal?.bound == true
 }
 
 /**
@@ -49,13 +65,22 @@ object ReconcileGaps {
     fun decode(text: String): List<ReconcileGap> = text.lineSequence().mapNotNull { line ->
         val parts = line.split('\t')
         // 5 fields up to 0.4.0; 0.4.1 appends the refusal (5 fields, empty when none) and the
-        // dismissed flag; 0.4.3 appends the refusal's source-app counts.
-        if (parts.size != 5 && parts.size != 11 && parts.size != 12) return@mapNotNull null
+        // dismissed flag; 0.4.3 appends the refusal's source-app counts; 0.4.4 its confirm token
+        // and the digest of the ids sent.
+        if (parts.size != 5 && parts.size != 11 && parts.size != 12 && parts.size != 14) return@mapNotNull null
         val start = parts[1].toLongOrNull() ?: return@mapNotNull null
         val end = parts[2].toLongOrNull() ?: return@mapNotNull null
         val checked = parts[3].toLongOrNull() ?: return@mapNotNull null
         if (parts[0].isEmpty() || start >= end) return@mapNotNull null
-        val refusal = if (parts.size >= 11) refusal(parts.subList(5, 10))?.copy(byOrigin = origins(parts.getOrNull(11))) else null
+        val refusal = if (parts.size >= 11) {
+            refusal(parts.subList(5, 10))?.copy(
+                byOrigin = origins(parts.getOrNull(11)),
+                confirmToken = ReconcileWindow.cleanToken(parts.getOrNull(12)),
+                idsDigest = ReconcileWindow.cleanToken(parts.getOrNull(13)),
+            )
+        } else {
+            null
+        }
         ReconcileGap(parts[0], start, end, parts[4], checked, refusal, dismissed = parts.size >= 11 && parts[10] == "1")
     }.toList()
 
@@ -67,8 +92,12 @@ object ReconcileGaps {
             listOf(refusal.startMs, refusal.endMs, refusal.wouldDelete, refusal.checked, refusal.sentIds).map(Any::toString)
         }
         val origins = refusal?.byOrigin.orEmpty().joinToString("|") { "${OriginCount.clean(it.origin)}=${it.count}" }
+        val digests = listOf(
+            ReconcileWindow.cleanToken(refusal?.confirmToken).orEmpty(),
+            ReconcileWindow.cleanToken(refusal?.idsDigest).orEmpty(),
+        )
         (listOf(gap.dataType, gap.startMs, gap.endMs, gap.checkedAtMs, clean(gap.reason)).map(Any::toString) +
-            refusalFields + (if (gap.dismissed) "1" else "0") + origins).joinToString("\t")
+            refusalFields + (if (gap.dismissed) "1" else "0") + origins + digests).joinToString("\t")
     }
 
     private fun origins(field: String?): List<OriginCount> = field.orEmpty().split('|').mapNotNull { entry ->
@@ -80,7 +109,8 @@ object ReconcileGaps {
     /**
      * Adds [gap]; an existing gap of the same type grows to cover both windows and takes the new
      * reason and refusal. A dismissed gap stays dismissed only when the server refused the very
-     * same deletion again (same counts, inside the dismissed window); anything new shows again.
+     * same deletion again (same counts and the same confirm token, inside the dismissed window);
+     * anything new shows again.
      */
     fun record(gaps: List<ReconcileGap>, gap: ReconcileGap): List<ReconcileGap> {
         val existing = gaps.firstOrNull { it.dataType == gap.dataType }
@@ -110,7 +140,9 @@ object ReconcileGaps {
         val old = existing.refusal ?: return false
         val new = gap.refusal ?: return false
         return gap.startMs >= existing.startMs && gap.endMs <= existing.endMs &&
-            old.wouldDelete == new.wouldDelete && old.checked == new.checked
+            old.wouldDelete == new.wouldDelete && old.checked == new.checked &&
+            // A reminder dismissed before 0.4.4 has no token: its counts decide, as they did then.
+            (old.confirmToken == null || old.confirmToken == new.confirmToken)
     }
 
     private fun refusal(fields: List<String>): GapRefusal? {

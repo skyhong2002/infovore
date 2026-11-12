@@ -14,6 +14,25 @@ const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'hardcover', 'yo
 const port = Number(process.env.PORT ?? 3000);
 const maxSourceAgeHours = Number(process.env.MAX_SOURCE_AGE_HOURS ?? 36);
 const refreshIntervalMinutes = Number(process.env.REFRESH_INTERVAL_MINUTES ?? 60);
+// Device-pushed sources can be called delayed sooner than fetched ones: the
+// Android app pushes Health several times a day, so a day without a push means
+// the phone's sync has stopped (often because the app is not running at all,
+// which the phone itself cannot report). Dayflow and AI agents are pushed from
+// computers that may stay off for a weekend, so they keep MAX_SOURCE_AGE_HOURS
+// unless set. Override as PUSHED_DELAY_HOURS=health:24,dayflow:36,computai:36.
+export const PUSHED_SOURCES = ['health', 'dayflow', 'computai'] as const;
+export function parsePushedDelayHours(text: string, fallbackHours: number): Record<string, number> {
+  const hours: Record<string, number> = { health: Math.min(24, fallbackHours), dayflow: fallbackHours, computai: fallbackHours };
+  for (const part of text.split(',').map((item) => item.trim()).filter(Boolean)) {
+    const [name, value] = part.split(':').map((item) => item.trim());
+    const parsed = Number(value);
+    if (!name || !(PUSHED_SOURCES as readonly string[]).includes(name) || !value || !Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(`PUSHED_DELAY_HOURS: expected source:hours for ${PUSHED_SOURCES.join(', ')}, got "${part}"`);
+    }
+    hours[name] = parsed;
+  }
+  return hours;
+}
 const ingestToken = process.env.INGEST_TOKEN ?? '';
 const dayflowToken = process.env.DAYFLOW_TOKEN ?? '';
 if (dayflowToken && dayflowToken.length < 32) throw new Error('DAYFLOW_TOKEN must contain at least 32 characters');
@@ -35,6 +54,7 @@ const invalidSources = sources.filter((source) => !knownSources.includes(source 
 if (invalidSources.length) throw new Error(`Unknown SOURCES: ${invalidSources.join(', ')}`);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be an integer from 1 to 65535');
 if (!Number.isFinite(maxSourceAgeHours) || maxSourceAgeHours <= 0) throw new Error('MAX_SOURCE_AGE_HOURS must be positive');
+const pushedDelayHours = parsePushedDelayHours(process.env.PUSHED_DELAY_HOURS ?? '', maxSourceAgeHours);
 if (!Number.isInteger(refreshIntervalMinutes) || refreshIntervalMinutes < 5 || refreshIntervalMinutes > 1440) {
   throw new Error('REFRESH_INTERVAL_MINUTES must be an integer between 5 and 1440');
 }
@@ -52,6 +72,9 @@ export const config = {
   dayflow: { token: dayflowToken, phoneToken: dayflowPhoneToken, quality: dayflowQuality },
   computai: { token: computaiToken },
   maxSourceAgeHours,
+  // After how many hours without a successful sync a source is shown as
+  // delayed: MAX_SOURCE_AGE_HOURS, or its PUSHED_DELAY_HOURS for device-pushed sources.
+  delayAfterHours: (source: string): number => pushedDelayHours[source] ?? maxSourceAgeHours,
   refreshIntervalMinutes,
   ownerName: process.env.OWNER_NAME ?? 'Sky Hong',
   sources,

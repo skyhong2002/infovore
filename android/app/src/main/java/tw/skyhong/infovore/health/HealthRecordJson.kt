@@ -40,6 +40,19 @@ object HealthRecordJson {
         else -> error("Unsupported Health Connect record: ${record::class.simpleName}")
     }
 
+    /** The time the server stores as end_at: the end of an interval, or an instant's time. */
+    fun endOf(record: Record): Instant = when (record) {
+        is ExerciseSessionRecord -> record.endTime
+        is StepsRecord -> record.endTime
+        is DistanceRecord -> record.endTime
+        is TotalCaloriesBurnedRecord -> record.endTime
+        is HeartRateRecord -> record.endTime
+        is SleepSessionRecord -> record.endTime
+        is WeightRecord -> record.time
+        is BodyFatRecord -> record.time
+        else -> error("Unsupported Health Connect record: ${record::class.simpleName}")
+    }
+
     fun encode(record: Record): JSONObject {
         val (type, start, end, payload) = when (record) {
             is ExerciseSessionRecord -> Encoded(

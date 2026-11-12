@@ -6,7 +6,10 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { Repository } from '../src/data/database.js';
 import { createIngestApp } from '../src/ingest.js';
-import { countByOrigin, HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES, MAX_ORIGIN_COUNTS, MAX_RECONCILE_RECORD_IDS } from '../src/health/types.js';
+import {
+  countByOrigin, HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES, MAX_ORIGIN_COUNTS, MAX_RECONCILE_RECORD_IDS,
+  reconcileConfirmToken,
+} from '../src/health/types.js';
 import type { HealthConnectBatchInput, HealthConnectRecordInput } from '../src/health/types.js';
 
 // Synthetic fixtures only: invented ids, devices and step counts.
@@ -24,6 +27,9 @@ const batch = (syncId: string, deviceId: string, records: HealthConnectRecordInp
   extra: Partial<HealthConnectBatchInput> = {}): HealthConnectBatchInput => ({
   syncId, deviceId, observedAt: received, records, deletedRecordIds: [], ...extra,
 });
+// The confirm token the server names this device's steps rows `stale` with, for the default window.
+const tokenFor = (stale: string[], deviceId = phone, start = windowStart, end = windowEnd) =>
+  reconcileConfirmToken(deviceId, 'steps', Date.parse(start), Date.parse(end), stale);
 const ids = (repository: Repository) => {
   const raw = (repository as unknown as { db: DatabaseSync }).db;
   return (raw.prepare('SELECT record_id FROM health_connect_records ORDER BY record_id').all() as Array<{ record_id: string }>)
@@ -158,7 +164,10 @@ test('The ingest endpoint validates reconcile windows and reports refusals', asy
     const refused = await post(batch('fixture-http-refused', phone, [], { reconcile: reconcile([]) as never }));
     assert.equal(refused.status, 409);
     const refusal = await refused.json() as { reconcile: { status: string; wouldDelete: number; checked: number } };
-    assert.deepEqual(refusal.reconcile, { status: 'rejected', wouldDelete: 30, checked: 30, byOrigin: [{ origin: 'com.garmin.fixture', count: 30 }] });
+    assert.deepEqual(refusal.reconcile, {
+      status: 'rejected', wouldDelete: 30, checked: 30, byOrigin: [{ origin: 'com.garmin.fixture', count: 30 }],
+      confirmToken: tokenFor(seed.map((row) => row.id)),
+    });
     assert.equal(ids(repository).length, 30);
 
     const accepted = await post(batch('fixture-http-ok', phone, [], { reconcile: reconcile(seed.slice(1).map((row) => row.id)) as never }));
@@ -288,10 +297,12 @@ test('A confirmed deletion with the wrong count is refused and deletes nothing',
     const window = { dataType: 'steps' as const, start: windowStart, end: windowEnd, recordIds: stored.slice(0, 5) };
     assert.throws(() => repository.ingestHealthConnect(batch('fixture-confirm-none', phone, [], { reconcile: window }), received),
       (error) => error instanceof HealthReconcileRejected && error.wouldDelete === 25 && error.checked === 30);
+    const token = tokenFor(stored.slice(5));
     for (const expected of [24, 26, 1]) {
       assert.throws(() => repository.ingestHealthConnect(batch(`fixture-confirm-wrong-${expected}`, phone, [], {
-        reconcile: { ...window, confirmDelete: { expected } },
-      }), received), (error) => error instanceof HealthReconcileRejected && error.wouldDelete === 25 && error.checked === 30);
+        reconcile: { ...window, confirmDelete: { expected, token } },
+      }), received), (error) => error instanceof HealthReconcileRejected && error.wouldDelete === 25 && error.checked === 30
+        && error.confirmToken === token);
     }
     assert.equal(ids(repository).length, 30);
     assert.deepEqual(audit(repository), []);
@@ -305,7 +316,10 @@ test('A confirmed deletion with the exact count goes beyond the limits and is au
   try {
     const stored = fillWindow(repository, 30);
     const result = repository.ingestHealthConnect(batch('fixture-confirm-ok', phone, [], {
-      reconcile: { dataType: 'steps', start: windowStart, end: windowEnd, recordIds: stored.slice(0, 5), confirmDelete: { expected: 25 } },
+      reconcile: {
+        dataType: 'steps', start: windowStart, end: windowEnd, recordIds: stored.slice(0, 5),
+        confirmDelete: { expected: 25, token: tokenFor(stored.slice(5)) },
+      },
     }), '2026-09-11T00:00:00.000Z');
     assert.equal(result.deleted, 25);
     assert.deepEqual(result.reconciled, {
@@ -345,9 +359,12 @@ test('No confirmation lifts the hard ceiling of 2,000 deletions', () => {
   const repository = new Repository(':memory:');
   try {
     const over = MAX_CONFIRMED_RECONCILE_DELETES + 1;
-    fillWindow(repository, over);
+    const stored = fillWindow(repository, over);
     assert.throws(() => repository.ingestHealthConnect(batch('fixture-confirm-ceiling', phone, [], {
-      reconcile: { dataType: 'steps', start: windowStart, end: windowEnd, recordIds: [], confirmDelete: { expected: over } },
+      reconcile: {
+        dataType: 'steps', start: windowStart, end: windowEnd, recordIds: [],
+        confirmDelete: { expected: over, token: tokenFor(stored) },
+      },
     }), received), (error) => error instanceof HealthReconcileRejected && error.wouldDelete === over && error.checked === over);
     assert.equal(ids(repository).length, over);
     assert.deepEqual(audit(repository), []);
@@ -356,11 +373,11 @@ test('No confirmation lifts the hard ceiling of 2,000 deletions', () => {
   }
   const exact = new Repository(':memory:');
   try {
-    fillWindow(exact, MAX_CONFIRMED_RECONCILE_DELETES);
+    const stored = fillWindow(exact, MAX_CONFIRMED_RECONCILE_DELETES);
     const result = exact.ingestHealthConnect(batch('fixture-confirm-at-ceiling', phone, [], {
       reconcile: {
         dataType: 'steps', start: windowStart, end: windowEnd, recordIds: [],
-        confirmDelete: { expected: MAX_CONFIRMED_RECONCILE_DELETES },
+        confirmDelete: { expected: MAX_CONFIRMED_RECONCILE_DELETES, token: tokenFor(stored) },
       },
     }), received);
     assert.equal(result.deleted, MAX_CONFIRMED_RECONCILE_DELETES);
@@ -382,6 +399,8 @@ test('Over HTTP, confirmDelete is validated, refusals carry only counts, and old
     for (const [label, confirmDelete] of [
       ['zero', { expected: 0 }], ['negative', { expected: -3 }], ['fraction', { expected: 2.5 }],
       ['string', { expected: '25' }], ['missing', {}], ['extra-key', { expected: 25, force: true }], ['null', null],
+      ['short-token', { expected: 25, token: 'abc' }], ['upper-token', { expected: 25, token: 'A'.repeat(64) }],
+      ['number-token', { expected: 25, token: 7 }],
     ] as const) {
       const response = await post(batch(`fixture-http-confirm-${label}`, phone, [], { reconcile: reconcile([], { confirmDelete }) as never }));
       assert.equal(response.status, 400, label);
@@ -393,20 +412,31 @@ test('Over HTTP, confirmDelete is validated, refusals carry only counts, and old
     const legacy = await post(batch('fixture-http-legacy', phone, [], { reconcile: reconcile(stored.slice(0, 5)) as never }));
     assert.equal(legacy.status, 409);
     const legacyBody = await legacy.json() as Record<string, unknown>;
-    assert.deepEqual(legacyBody.reconcile, { status: 'rejected', wouldDelete: 25, checked: 30, byOrigin: [{ origin: 'com.garmin.fixture', count: 25 }] });
+    const token = tokenFor(stored.slice(5));
+    const refusal = { status: 'rejected', wouldDelete: 25, checked: 30, byOrigin: [{ origin: 'com.garmin.fixture', count: 25 }], confirmToken: token };
+    assert.deepEqual(legacyBody.reconcile, refusal);
+
+    // A confirmation without the token (clients before 0.4.4) is always refused,
+    // even with the right count, and answered with the token to confirm.
+    const untokened = await post(batch('fixture-http-untokened', phone, [], {
+      reconcile: reconcile(stored.slice(0, 5), { confirmDelete: { expected: 25 } }) as never,
+    }));
+    assert.equal(untokened.status, 409);
+    assert.deepEqual((await untokened.json() as Record<string, unknown>).reconcile, refusal);
+    assert.equal(ids(repository).length, 30);
 
     // A wrong count is refused with fresh counts and no record content.
     const mismatch = await post(batch('fixture-http-mismatch', phone, [], {
-      reconcile: reconcile(stored.slice(0, 5), { confirmDelete: { expected: 20 } }) as never,
+      reconcile: reconcile(stored.slice(0, 5), { confirmDelete: { expected: 20, token } }) as never,
     }));
     assert.equal(mismatch.status, 409);
     const mismatchText = await mismatch.text();
-    assert.deepEqual((JSON.parse(mismatchText) as Record<string, unknown>).reconcile, { status: 'rejected', wouldDelete: 25, checked: 30, byOrigin: [{ origin: 'com.garmin.fixture', count: 25 }] });
+    assert.deepEqual((JSON.parse(mismatchText) as Record<string, unknown>).reconcile, refusal);
     assert.ok(!stored.some((id) => mismatchText.includes(id)));
     assert.equal(ids(repository).length, 30);
 
     const confirmed = await post(batch('fixture-http-confirmed', phone, [], {
-      reconcile: reconcile(stored.slice(0, 5), { confirmDelete: { expected: 25 } }) as never,
+      reconcile: reconcile(stored.slice(0, 5), { confirmDelete: { expected: 25, token } }) as never,
     }));
     assert.equal(confirmed.status, 200);
     const body = await confirmed.json() as { deleted: number; reconciled: { confirmed?: boolean; deleted: number } };
@@ -498,15 +528,16 @@ test('A refused or confirmed deletion reports which source apps the deleted rows
     const refused = await post(batch('fixture-origin-refused', phone, [], { reconcile: window as never }));
     assert.equal(refused.status, 409);
     const text = await refused.text();
+    const token = tokenFor(rows.slice(0, 27).map((row) => row.id));
     assert.deepEqual((JSON.parse(text) as { reconcile: unknown }).reconcile,
-      { status: 'rejected', wouldDelete: 27, checked: 30, byOrigin: expectedOrigins });
+      { status: 'rejected', wouldDelete: 27, checked: 30, byOrigin: expectedOrigins, confirmToken: token });
     // Counts and package names only: no record ids or health values.
     assert.ok(!rows.some((row) => text.includes(row.id)));
     assert.ok(!text.includes('com.example.kept'));
     assert.ok(!text.includes('"count":100'));
 
     const confirmed = await post(batch('fixture-origin-confirmed', phone, [], {
-      reconcile: { ...window, confirmDelete: { expected: 27 } } as never,
+      reconcile: { ...window, confirmDelete: { expected: 27, token } } as never,
     }));
     assert.equal(confirmed.status, 200);
     const body = await confirmed.json() as { reconciled: { byOrigin?: unknown; deleted: number } };
@@ -517,6 +548,70 @@ test('A refused or confirmed deletion reports which source apps the deleted rows
     // An ordinary (unconfirmed) reconcile response does not carry it.
     const ordinary = await post(batch('fixture-origin-ordinary', phone, [], { reconcile: window as never }));
     assert.equal((await ordinary.json() as { reconciled: { byOrigin?: unknown } }).reconciled.byOrigin, undefined);
+  } finally {
+    repository.close();
+  }
+});
+
+test('A confirmation deletes only the set of rows the user was shown, never another set of the same size', async () => {
+  // Round-7 reproduction (astra-6): two sources with 25 rows each. The refusal the user confirms
+  // names source A's 25 rows; a later request listing a different keep set (so B's 25 rows would
+  // go) with the same count must not delete anything. Neither may a set of the same source with
+  // one id swapped. Only the exact set the token names is deleted.
+  const repository = new Repository(':memory:');
+  const ingest = createIngestApp(repository);
+  const headers = { 'content-type': 'application/json', authorization: 'Bearer test-token-with-at-least-32-characters' };
+  const post = (body: unknown) => ingest.request('/api/ingest/health-connect', { method: 'POST', headers, body: JSON.stringify(body) });
+  const at = (index: number) => new Date(Date.parse(windowStart) + index * 3_600_000).toISOString();
+  try {
+    const sourceA = Array.from({ length: 25 }, (_, index) => ({ ...steps(`swap-a-${String(index).padStart(2, '0')}`, at(index)), dataOrigin: 'com.source.a' }));
+    const sourceB = Array.from({ length: 25 }, (_, index) => ({ ...steps(`swap-b-${String(index).padStart(2, '0')}`, at(30 + index)), dataOrigin: 'com.source.b' }));
+    assert.equal((await post(batch('fixture-swap-seed', phone, [...sourceA, ...sourceB]))).status, 201);
+    const idsOf = (rows: HealthConnectRecordInput[]) => rows.map((row) => row.id);
+    const window = (recordIds: string[], confirmDelete?: Record<string, unknown>) =>
+      ({ dataType: 'steps', start: windowStart, end: windowEnd, recordIds, ...(confirmDelete ? { confirmDelete } : {}) });
+
+    // The phone lists B: the server would delete A's 25 rows and says so.
+    const refused = await post(batch('fixture-swap-refused', phone, [], { reconcile: window(idsOf(sourceB)) as never }));
+    assert.equal(refused.status, 409);
+    const shown = (await refused.json() as { reconcile: { wouldDelete: number; byOrigin: unknown; confirmToken: string } }).reconcile;
+    assert.equal(shown.wouldDelete, 25);
+    assert.deepEqual(shown.byOrigin, [{ origin: 'com.source.a', count: 25 }]);
+    assert.match(shown.confirmToken, /^[0-9a-f]{64}$/);
+
+    // Same count, other source: B's 25 rows would go instead. Refused, with B's counts and token.
+    const swapped = await post(batch('fixture-swap-other-source', phone, [], {
+      reconcile: window(idsOf(sourceA), { expected: 25, token: shown.confirmToken }) as never,
+    }));
+    assert.equal(swapped.status, 409);
+    const fresh = (await swapped.json() as { reconcile: { wouldDelete: number; byOrigin: unknown; confirmToken: string } }).reconcile;
+    assert.equal(fresh.wouldDelete, 25);
+    assert.deepEqual(fresh.byOrigin, [{ origin: 'com.source.b', count: 25 }]);
+    assert.notEqual(fresh.confirmToken, shown.confirmToken);
+    assert.equal(ids(repository).length, 50);
+
+    // Same source and count, one id replaced: refused too.
+    const oneSwapped = [...idsOf(sourceB).slice(1), sourceA[0]!.id];
+    const replaced = await post(batch('fixture-swap-one-id', phone, [], {
+      reconcile: window(oneSwapped, { expected: 25, token: shown.confirmToken }) as never,
+    }));
+    assert.equal(replaced.status, 409);
+    assert.equal(ids(repository).length, 50);
+
+    // The token is bound to the device and window as well.
+    assert.notEqual(tokenFor(idsOf(sourceA), otherPhone), shown.confirmToken);
+    assert.notEqual(tokenFor(idsOf(sourceA), phone, windowStart, '2026-09-09T00:00:00.000Z'), shown.confirmToken);
+    assert.equal(tokenFor(idsOf(sourceA)), shown.confirmToken);
+    // Order of the ids does not matter; the token names the set.
+    assert.equal(tokenFor([...idsOf(sourceA)].reverse()), shown.confirmToken);
+
+    // The unchanged set with its token is deleted, and only it.
+    const confirmed = await post(batch('fixture-swap-confirmed', phone, [], {
+      reconcile: window(idsOf(sourceB), { expected: 25, token: shown.confirmToken }) as never,
+    }));
+    assert.equal(confirmed.status, 200);
+    assert.equal((await confirmed.json() as { deleted: number }).deleted, 25);
+    assert.deepEqual(ids(repository), idsOf(sourceB));
   } finally {
     repository.close();
   }

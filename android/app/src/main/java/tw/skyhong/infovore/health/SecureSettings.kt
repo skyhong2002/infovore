@@ -152,6 +152,14 @@ class SecureSettings(context: Context) : HealthSyncStore {
         get() = preferences.getInt(KEY_BACKGROUND_FAILURES, 0)
         set(value) { preferences.edit { putInt(KEY_BACKGROUND_FAILURES, value) } }
 
+    /**
+     * When the last full sync (manual or background) finished successfully; null before the
+     * first one or on installs from before 0.4.4 (see [tw.skyhong.infovore.health.ui.StaleSync.lastSuccess]).
+     */
+    var lastSuccessfulSyncMs: Long?
+        get() = preferences.getLong(KEY_LAST_SUCCESS, 0L).takeIf { it > 0 }
+        set(value) { preferences.edit { if (value == null) remove(KEY_LAST_SUCCESS) else putLong(KEY_LAST_SUCCESS, value) } }
+
     /** The user turned on "同步失敗時通知我"; off by default. */
     var notifyOnSyncFailure: Boolean
         get() = preferences.getBoolean(KEY_NOTIFY_ON_FAILURE, false)
@@ -178,6 +186,7 @@ class SecureSettings(context: Context) : HealthSyncStore {
         private const val KEY_RECONCILE_GAPS = "reconcile_gaps"
         private const val KEY_BACKGROUND_FAILURES = "background_sync_failures"
         private const val KEY_NOTIFY_ON_FAILURE = "notify_on_sync_failure"
+        private const val KEY_LAST_SUCCESS = "last_successful_sync_ms"
     }
 }
 

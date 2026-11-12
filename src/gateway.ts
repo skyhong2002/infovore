@@ -3,7 +3,10 @@ import { homeSnapshot } from './home-snapshot.js';
 import { fork, type ChildProcess } from 'node:child_process';
 import { createServer, request, type IncomingHttpHeaders, type ServerResponse } from 'node:http';
 
-export interface SourceHealth { source: string; fresh: boolean; ageMs: number | null; error: string | null }
+// delayed/delayAfterHours: the source's own (informational) delay threshold; absent from older backends.
+export interface SourceHealth {
+  source: string; fresh: boolean; ageMs: number | null; error: string | null; delayed?: boolean; delayAfterHours?: number;
+}
 export interface HealthBody { status: string; maxSourceAgeHours: number; sources: SourceHealth[] }
 export interface HealthSnapshot { capturedAt: number; body: HealthBody }
 
@@ -69,7 +72,9 @@ export function startGateway(options: {
       const elapsed = snapshot ? snapshotAge() : 0;
       const sources = snapshot?.body.sources.map((source) => {
         const ageMs = source.ageMs === null ? null : source.ageMs + elapsed;
-        return { ...source, ageMs, fresh: ageMs !== null && ageMs <= snapshot!.body.maxSourceAgeHours * 3_600_000 };
+        const aged = { ...source, ageMs, fresh: ageMs !== null && ageMs <= snapshot!.body.maxSourceAgeHours * 3_600_000 };
+        if (typeof source.delayAfterHours === 'number') aged.delayed = ageMs === null || ageMs > source.delayAfterHours * 3_600_000;
+        return aged;
       }) ?? [];
       const saturated = inFlight >= maxInFlight;
       const status = error || saturated || !sources.some((source) => source.fresh) ? 'unhealthy'

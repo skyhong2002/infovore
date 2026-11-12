@@ -21,7 +21,7 @@ const fixture = JSON.parse(readFileSync(new URL('./fixtures/health-reconcile-con
       idPrefix: string; count: number; dataType: string; dataOrigin: string;
       firstStart: string; everyMinutes: number; durationMinutes: number;
     };
-    expectedRefusalWithoutConfirmation: Record<string, unknown>;
+    expectedRefusalWithoutConfirmation: Record<string, unknown> & { confirmToken: string };
     expectedResponse: { deleted: number; reconciled: Record<string, unknown> };
     expectedRemainingIds: string[];
     expectedAudit: Record<string, unknown>;
@@ -77,6 +77,9 @@ test('The shared confirmed-deletion case is a valid batch and the field is stric
   assert.equal(healthConnectBatchSchema.safeParse({
     ...request, reconcile: { ...request.reconcile, confirmDelete: { expected: 27, all: true } },
   }).success, false);
+  assert.equal(healthConnectBatchSchema.safeParse({
+    ...request, reconcile: { ...request.reconcile, confirmDelete: { expected: 27, token: 'not-a-digest' } },
+  }).success, false);
 });
 
 test('The shared confirmed-deletion case is refused without confirmation and applied and audited with it', async () => {
@@ -114,6 +117,17 @@ test('The shared confirmed-deletion case is refused without confirmation and app
     const refused = await post({ ...contract.request, syncId: 'fixture-contract-confirm-0000', reconcile: unconfirmed });
     assert.equal(refused.status, 409);
     assert.deepEqual((await refused.json() as { reconcile: unknown }).reconcile, contract.expectedRefusalWithoutConfirmation);
+
+    // The same confirmation without its token (as a 0.4.3 client sends it) is refused with the
+    // same counts and the token, and deletes nothing.
+    const reconcile = contract.request.reconcile as { confirmDelete: { expected: number; token: string } };
+    const untokened = await post({
+      ...contract.request, syncId: 'fixture-contract-confirm-0002',
+      reconcile: { ...reconcile, confirmDelete: { expected: reconcile.confirmDelete.expected } },
+    });
+    assert.equal(untokened.status, 409);
+    assert.deepEqual((await untokened.json() as { reconcile: unknown }).reconcile, contract.expectedRefusalWithoutConfirmation);
+    assert.equal(reconcile.confirmDelete.token, contract.expectedRefusalWithoutConfirmation.confirmToken);
 
     const response = await post(contract.request);
     assert.equal(response.status, 200);

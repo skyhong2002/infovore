@@ -11,8 +11,8 @@ internal object Fixture {
 
     val allPermissions: Set<String> = HealthCatalog.readPermissions
 
-    fun item(id: String, startMs: Long, origin: String = GARMIN) =
-        HealthItem(id, startMs, origin, "{\"id\":${JsonText.quote(id)}}")
+    fun item(id: String, startMs: Long, origin: String = GARMIN, endMs: Long = startMs) =
+        HealthItem(id, startMs, origin, "{\"id\":${JsonText.quote(id)}}", endMs)
 }
 
 internal class FakeStore : HealthSyncStore {

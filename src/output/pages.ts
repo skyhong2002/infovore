@@ -7,6 +7,7 @@ import { activityMeta } from './activity-meta.js';
 import { baseStyles } from './styles.js';
 import { createHash } from 'node:crypto';
 import { dateFormat } from '../data/time.js';
+import { ADAPTIVE_MEDIA_SCRIPT, INFO_SCRIPT, inlineScript, THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT } from './scripts.js';
 
 export function html(value: unknown): string {
   return String(value ?? '').replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&#39;', '"': '&quot;' }[char]!));
@@ -59,81 +60,6 @@ export function info(note: string, label = 'How this is calculated'): string {
   return `<button type="button" class="info" aria-label="${html(label)}" aria-describedby="${id}" aria-expanded="false" aria-controls="${id}"></button><span class="info-tip" id="${id}" role="tooltip">${html(note)}</span>`;
 }
 
-// Positions tooltips inside the viewport (so they never widen the page),
-// toggles them on tap/click for touch screens and closes them on Escape or an
-// outside tap.
-const infoScript = `<script>
-(() => {
-  let pinned = null;
-  const tipFor = (button) => document.getElementById(button.getAttribute('aria-controls'));
-  const place = (button, tip) => {
-    const rect = button.getBoundingClientRect();
-    const width = Math.min(300, window.innerWidth - 24);
-    tip.style.maxWidth = width + 'px';
-    tip.classList.add('open');
-    const tipRect = tip.getBoundingClientRect();
-    const left = Math.max(12, Math.min(rect.left - 8, window.innerWidth - tipRect.width - 12));
-    const below = rect.bottom + 8;
-    const top = below + tipRect.height > window.innerHeight - 8 && rect.top - tipRect.height - 8 > 8 ? rect.top - tipRect.height - 8 : below;
-    tip.style.left = left + 'px';
-    tip.style.top = top + 'px';
-  };
-  const show = (button) => { const tip = tipFor(button); if (tip) place(button, tip); };
-  const hide = (button) => { const tip = tipFor(button); if (tip) tip.classList.remove('open'); button.setAttribute('aria-expanded', 'false'); };
-  const unpin = () => { if (pinned) { hide(pinned); pinned = null; } };
-  document.addEventListener('click', (event) => {
-    const button = event.target.closest && event.target.closest('button.info');
-    if (!button) { unpin(); return; }
-    event.preventDefault();
-    event.stopPropagation();
-    if (pinned === button) { unpin(); return; }
-    unpin();
-    pinned = button;
-    button.setAttribute('aria-expanded', 'true');
-    show(button);
-  });
-  document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    const focused = document.activeElement;
-    document.querySelectorAll('.info-tip.open').forEach((tip) => tip.classList.remove('open'));
-    if (pinned) { pinned.setAttribute('aria-expanded', 'false'); pinned = null; }
-    if (focused && focused.matches && focused.matches('button.info')) focused.dataset.dismissed = '1';
-  });
-  // Hover content stays open while the pointer moves from the button onto the
-  // tooltip (WCAG 1.4.13); it closes shortly after the pointer leaves both.
-  let hideTimer = 0;
-  const ownerOf = (node) => {
-    if (!node || !node.closest) return null;
-    const button = node.closest('button.info');
-    if (button) return button;
-    const tip = node.closest('.info-tip');
-    return tip ? document.querySelector('button.info[aria-controls="' + tip.id + '"]') : null;
-  };
-  document.addEventListener('mouseover', (event) => {
-    const button = ownerOf(event.target);
-    if (!button) return;
-    clearTimeout(hideTimer);
-    if (button !== pinned) { delete button.dataset.dismissed; show(button); }
-  });
-  document.addEventListener('mouseout', (event) => {
-    const button = ownerOf(event.target);
-    if (!button || button === pinned || ownerOf(event.relatedTarget) === button) return;
-    if (button === document.activeElement && !button.dataset.dismissed) return;
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => hide(button), 250);
-  });
-  document.addEventListener('focusin', (event) => {
-    const button = event.target.closest && event.target.closest('button.info');
-    if (button && button !== pinned) { delete button.dataset.dismissed; show(button); }
-  });
-  document.addEventListener('focusout', (event) => {
-    const button = event.target.closest && event.target.closest('button.info');
-    if (button && button !== pinned) hide(button);
-  });
-  window.addEventListener('scroll', unpin, { passive: true });
-  window.addEventListener('resize', unpin);
-})();
-</script>`;
 
 // Change against the previous period, rendered as a signed chip.
 export function delta(current: number, previous: number, format: (value: number) => string): string {
@@ -152,25 +78,6 @@ export function sum(values: number[], from: number, to: number): number {
 
 export type PageKey = 'home' | 'now' | 'platforms' | 'profile' | 'cards' | 'stats' | 'search' | 'api';
 
-const adaptiveMediaScript = `<script>
-  (() => {
-    const applyRatio = (image) => {
-      if (!image.naturalWidth || !image.naturalHeight) return;
-      const naturalRatio = image.naturalWidth / image.naturalHeight;
-      const displayedRatio = Math.min(2, Math.max(0.5, naturalRatio));
-      image.style.setProperty('--media-ratio', String(displayedRatio));
-    };
-    // A cover that fails to load becomes a neutral placeholder instead of a broken-image icon.
-    const placeholder = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-    const fail = (image) => { if (image.dataset.failed) return; image.dataset.failed = '1'; image.classList.add('img-failed'); image.alt = ''; image.src = placeholder; };
-    document.addEventListener('error', (event) => { if (event.target instanceof HTMLImageElement) fail(event.target); }, true);
-    document.querySelectorAll('img').forEach((image) => { if (image.complete && image.naturalWidth === 0 && image.getAttribute('src')) fail(image); });
-    document.querySelectorAll('img[data-adaptive-media]').forEach((image) => {
-      if (image.complete) applyRatio(image);
-      else image.addEventListener('load', () => applyRatio(image), { once: true });
-    });
-  })();
-</script>`;
 
 const navigation: Array<{ key: PageKey; label: string; href: string }> = [
   { key: 'home', label: 'Home', href: '/' },
@@ -181,8 +88,6 @@ const navigation: Array<{ key: PageKey; label: string; href: string }> = [
   { key: 'cards', label: 'Cards', href: '/cards' },
 ];
 
-const themeInit = `<script>(()=>{let t=null;try{t=localStorage.getItem('infovore-theme')}catch{}if(t!=='light'&&t!=='dark')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})()</script>`;
-const themeToggleScript = `<script>document.getElementById('theme-toggle').addEventListener('click',()=>{const r=document.documentElement;const n=r.dataset.theme==='dark'?'light':'dark';r.dataset.theme=n;try{localStorage.setItem('infovore-theme',n)}catch{}})</script>`;
 const themeToggle = `<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle colour theme" title="Toggle theme"><svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>`;
 
 // A stable public page names its own path as canonical (always on the public
@@ -201,7 +106,7 @@ export function shell(title: string, body: string, active: PageKey, extraStyles 
   <meta property="og:type" content="website"><meta property="og:title" content="${html(title)} · infovore"><meta property="og:description" content="${description}"><meta property="og:image" content="${html(config.publicBaseUrl)}/og.png?v=life-rings-muted">
   <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${html(title)} · infovore"><meta name="twitter:description" content="${description}"><meta name="twitter:image" content="${html(config.publicBaseUrl)}/og.png?v=life-rings-muted">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=muted"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=muted"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f3ef"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0f12"><link rel="alternate" type="application/rss+xml" title="infovore" href="/feed.xml"><title>${html(title)} · infovore</title>
-  ${themeInit}<link rel="preload" href="/fonts/Figtree-Regular.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/styles.css?v=${stylesVersion}">${extraStyles ? `<style>${extraStyles}</style>` : ''}</head><body>
+  ${inlineScript(THEME_INIT_SCRIPT)}<link rel="preload" href="/fonts/Figtree-Regular.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/styles.css?v=${stylesVersion}">${extraStyles ? `<style>${extraStyles}</style>` : ''}</head><body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header"><div class="site-header-inner"><a class="site-brand" href="/"><img class="brand-mark" src="/logos/infovore.png?v=muted" alt="" width="36" height="36"><span><strong>infovore</strong><small>Sky's personal infoboard</small></span></a><nav class="site-nav" aria-label="Primary">${nav}</nav><div class="site-tools"><form class="site-search" action="/search" role="search"><input type="search" name="q" placeholder="Search the archive" aria-label="Search the archive" autocomplete="off"><button type="submit" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></form><a class="site-search-link" href="/search" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></a>${themeToggle}</div></div></header>
   <main class="site-main" id="main" tabindex="-1">${body}</main>
@@ -209,7 +114,7 @@ export function shell(title: string, body: string, active: PageKey, extraStyles 
   <div class="footer-group"><span>Explore</span><a href="/">Home</a><a href="/now">Now</a><a href="/platforms">Platforms</a></div>
   <div class="footer-group"><span>Reflect</span><a href="/profile">Archive</a><a href="/stats">Time</a><a href="/wrapped">Wrapped</a><a href="/cards">Cards</a></div>
   <div class="footer-group"><span>Data</span><a href="/search">Search</a><a href="/api">API</a><a href="/feed.xml">RSS</a><a href="/status">Sync status</a><a href="https://github.com/skyhong2002/infovore">Source</a></div></footer>
-  ${themeToggleScript}${adaptiveMediaScript}${infoScript}</body></html>`;
+  ${inlineScript(THEME_TOGGLE_SCRIPT)}${inlineScript(ADAPTIVE_MEDIA_SCRIPT)}${inlineScript(INFO_SCRIPT)}</body></html>`;
 }
 
 export function sourceLabel(source: string): string {

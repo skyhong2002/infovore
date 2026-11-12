@@ -169,8 +169,15 @@ export function createIngestApp(repository: Repository): Hono {
         return c.json({
           error: error.message,
           // byOrigin: source-app counts of the rows it would delete (no ids or values);
-          // clients before 0.4.3 ignore it.
-          reconcile: { status: 'rejected', wouldDelete: error.wouldDelete, checked: error.checked, byOrigin: error.byOrigin },
+          // clients before 0.4.3 ignore it. confirmToken: a digest naming exactly those
+          // rows, which a confirmDelete must send back (clients before 0.4.4 ignore it).
+          reconcile: {
+            status: 'rejected',
+            wouldDelete: error.wouldDelete,
+            checked: error.checked,
+            byOrigin: error.byOrigin,
+            confirmToken: error.confirmToken,
+          },
         }, 409);
       }
       if (error instanceof StorageFailure) return c.json(storageUnavailable, 503);

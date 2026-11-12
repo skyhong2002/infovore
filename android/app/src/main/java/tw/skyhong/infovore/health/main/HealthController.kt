@@ -18,6 +18,7 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import tw.skyhong.infovore.health.HealthConnectSync
 import tw.skyhong.infovore.health.R
@@ -33,6 +34,7 @@ import tw.skyhong.infovore.health.ui.HealthStatus
 import tw.skyhong.infovore.health.ui.HealthUi
 import tw.skyhong.infovore.health.ui.NotifyState
 import tw.skyhong.infovore.health.ui.NotifyStatus
+import tw.skyhong.infovore.health.ui.StaleSync
 import tw.skyhong.infovore.health.ui.SyncPanel
 import tw.skyhong.infovore.health.ui.TimeText
 import tw.skyhong.infovore.health.ui.Tone
@@ -60,6 +62,9 @@ class HealthController(
 
     lateinit var section: CollapsibleSection
         private set
+    private lateinit var staleBox: TextView
+    private lateinit var staleSyncButton: Button
+    private lateinit var staleNotifyButton: Button
     private lateinit var statusBox: TextView
     private lateinit var actionButton: Button
     private lateinit var sleepButton: Button
@@ -106,7 +111,9 @@ class HealthController(
     private val notificationPermissionLauncher = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         settings.notifyOnSyncFailure = ok
         notificationPermissionDenied = !ok
-        renderNotifications()
+        // Also updates the stale-sync box's "開啟通知" button.
+        render()
+        if (ok) catchUpNotifications()
     }
 
     val historyPermissionGranted: Boolean
@@ -117,8 +124,22 @@ class HealthController(
 
     fun build(expanded: Boolean): CollapsibleSection {
         section = CollapsibleSection(kit, host.string(R.string.section_health), expanded)
+        // At the very top: no successful sync for over a day (see StaleSync).
+        staleBox = kit.statusBox().apply { visibility = View.GONE }
+        section.add(staleBox, 4)
+        staleSyncButton = kit.primaryButton("").apply {
+            visibility = View.GONE
+            setOnClickListener { startSync(SyncKind.FULL) }
+        }
+        section.add(staleSyncButton, 8)
+        staleNotifyButton = kit.secondaryButton("").apply {
+            visibility = View.GONE
+            // Only on this tap: the same path as turning on the switch below (asks for the permission).
+            setOnClickListener { onNotifySwitch(true) }
+        }
+        section.add(staleNotifyButton, 4)
         statusBox = kit.statusBox()
-        section.add(statusBox, 4)
+        section.add(statusBox, 12)
         actionButton = kit.primaryButton("").apply { setOnClickListener { performAction() } }
         section.add(actionButton, 8)
 
@@ -251,15 +272,34 @@ class HealthController(
 
         val gaps = reconcile.render(syncReady = ui.syncEnabled, syncHint = ui.syncHint, resultNotice = panel.notice)
 
+        val notificationsOn = settings.notifyOnSyncFailure && SyncFailureNotifier.permissionGranted(activity)
+        val stale = StaleSync.map(
+            lastSuccess = StaleSync.lastSuccess(settings.lastSuccessfulSyncMs, settings.lastStatus, settings.lastSyncFailed),
+            now = now,
+            configured = settings.initialImportDone && connection().problem() == null,
+            busy = panel.busy,
+            syncEnabled = ui.syncEnabled,
+            notificationsOn = notificationsOn,
+        )
+        staleBox.visibility = if (stale == null) View.GONE else View.VISIBLE
+        staleBox.text = stale?.text
+        kit.setTone(staleBox, Tone.WARNING)
+        staleSyncButton.visibility = if (stale == null) View.GONE else View.VISIBLE
+        staleSyncButton.text = stale?.syncLabel
+        staleSyncButton.isEnabled = stale?.syncEnabled == true
+        staleNotifyButton.visibility = if (stale?.notifyLabel == null) View.GONE else View.VISIBLE
+        staleNotifyButton.text = stale?.notifyLabel
+
         val lastSync = TimeText.splitStatus(settings.lastStatus).first
         val summary = buildString {
+            if (stale != null) append(stale.summary).append(" · ")
             append(ui.headline)
             if (gaps != null) append(" · ").append(host.string(R.string.health_summary_unverified))
             if (lastSync != null) append(" · ").append(host.string(R.string.health_summary_last, TimeText.relative(lastSync, now)))
         }
         section.setSummary(
             if (panel.busy) host.string(R.string.sync_in_progress) else summary,
-            SyncPanel.summaryTone(ui.tone, unverified = gaps != null, busy = panel.busy),
+            SyncPanel.summaryTone(ui.tone, unverified = gaps != null || stale != null, busy = panel.busy),
         )
         renderNotifications()
         onRendered()
@@ -300,12 +340,13 @@ class HealthController(
         if (!checked) {
             settings.notifyOnSyncFailure = false
             SyncFailureNotifier.cancel(activity)
-            renderNotifications()
+            render()
             return
         }
         if (SyncFailureNotifier.permissionGranted(activity)) {
             settings.notifyOnSyncFailure = true
-            renderNotifications()
+            render()
+            catchUpNotifications()
         } else {
             // Show the switch as off until the user answers the system dialog.
             updatingNotifySwitch = true
@@ -313,6 +354,12 @@ class HealthController(
             updatingNotifySwitch = false
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    /** Delivers, once, the warnings that already apply now that notifications are on. */
+    private fun catchUpNotifications() {
+        val context = activity.applicationContext
+        activity.lifecycleScope.launch(Dispatchers.IO) { SyncFailureNotifier.catchUp(context, settings) }
     }
 
     fun performAction() {

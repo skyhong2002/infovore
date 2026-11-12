@@ -25,8 +25,14 @@ class ConfirmedDeleteTest {
     private val hour = 3_600_000L
     private val ok = InfovoreApi.UploadResult(0, 0, 0, reconciled = true)
 
-    private fun refused(wouldDelete: Int, checked: Int) =
-        InfovoreApi.HttpStatusException(409, "Infovore HTTP 409", ReconcileRefusal(wouldDelete, checked))
+    private fun refused(wouldDelete: Int, checked: Int, token: String? = TOKEN_A) =
+        InfovoreApi.HttpStatusException(409, "Infovore HTTP 409", ReconcileRefusal(wouldDelete, checked, confirmToken = token))
+
+    private companion object {
+        val TOKEN_A = "a".repeat(64)
+        val TOKEN_B = "b".repeat(64)
+        val DIGEST = "c".repeat(64)
+    }
 
     /** A history scan whose steps window the server refuses: 25 of 27 rows would go. */
     private fun refusedScan(): Harness {
@@ -41,7 +47,13 @@ class ConfirmedDeleteTest {
     fun aRefusalWithCountsIsSavedWithItsWindowButNoIds() {
         val h = refusedScan()
         val gap = h.gaps.single()
-        assertEquals(GapRefusal(scanStart, NOW, wouldDelete = 25, checked = 27, sentIds = 2), gap.refusal)
+        assertEquals(
+            GapRefusal(
+                scanStart, NOW, wouldDelete = 25, checked = 27, sentIds = 2,
+                confirmToken = TOKEN_A, idsDigest = ReconcileWindow.idsDigest(listOf("s1", "s2")),
+            ),
+            gap.refusal,
+        )
         assertTrue(gap.confirmable)
         assertFalse(gap.dismissed)
         // Persisted text holds counts and times only.
@@ -65,6 +77,8 @@ class ConfirmedDeleteTest {
         assertTrue(outcome.summary.unverified.isEmpty())
         // First the refused window, re-read and marked as confirmed; then the ordinary re-verification.
         assertEquals(25, sent[0].confirmDeleteExpected)
+        // The server's token for exactly the rows the user was shown goes back with it.
+        assertEquals(TOKEN_A, sent[0].confirmDeleteToken)
         assertEquals(listOf("s1", "s2"), sent[0].recordIds)
         assertEquals(scanStart, sent[0].startMs)
         assertEquals(NOW, sent[0].endMs)
@@ -94,18 +108,85 @@ class ConfirmedDeleteTest {
         val h = refusedScan()
         h.uploader.onReconcile = { window ->
             assertEquals(25, window.confirmDeleteExpected)
-            throw refused(31, 33)
+            throw refused(31, 33, TOKEN_B)
         }
         val outcome = h.engine().confirmDelete("steps", 25)
         assertEquals(ConfirmOutcome.CountChanged(31, 33), outcome)
         val gap = h.gaps.single()
         assertEquals(31, gap.refusal?.wouldDelete)
         assertEquals(33, gap.refusal?.checked)
+        assertEquals(TOKEN_B, gap.refusal?.confirmToken)
         assertEquals(ReconcileText.confirmMismatch(31), gap.reason)
         // The user has to confirm the new number; the old one is refused locally without sending.
         val windows = h.uploader.windows.size
         assertEquals(ConfirmOutcome.Outdated, h.engine().confirmDelete("steps", 25))
         assertEquals(windows, h.uploader.windows.size)
+    }
+
+    @Test
+    fun aReReadWithTheSameCountButOtherIdsSendsNothing() = runBlocking {
+        val h = refusedScan()
+        // Still two records, but s2 was replaced by s3: the user confirmed a different set.
+        h.reader.pages["steps"] = listOf(listOf(item("s1", scanStart + hour), item("s3", scanStart + 3 * hour)))
+        val windows = h.uploader.windows.size
+        assertEquals(ConfirmOutcome.SourceChanged, h.engine().confirmDelete("steps", 25))
+        assertEquals(windows, h.uploader.windows.size)
+        assertEquals(ReconcileText.CHANGED_BEFORE_CONFIRM, h.gaps.single().reason)
+        assertFalse(h.gaps.single().confirmable)
+    }
+
+    @Test
+    fun theServerRefusingAnotherSetOfTheSameSizeAsksAgainWithTheNewToken() = runBlocking {
+        // Astra's round-7 case from the app's side: same count, but the server's rows to delete
+        // are no longer the set the user was shown (its token differs).
+        val h = refusedScan()
+        h.uploader.onReconcile = { window ->
+            assertEquals(TOKEN_A, window.confirmDeleteToken)
+            throw InfovoreApi.HttpStatusException(
+                409, "Infovore HTTP 409",
+                ReconcileRefusal(25, 27, listOf(OriginCount("com.other.fixture", 25)), TOKEN_B),
+            )
+        }
+        val outcome = h.engine().confirmDelete("steps", 25)
+        assertEquals(ConfirmOutcome.CountChanged(25, 27, sameCount = true), outcome)
+        val gap = h.gaps.single()
+        assertEquals(TOKEN_B, gap.refusal?.confirmToken)
+        assertEquals(listOf(OriginCount("com.other.fixture", 25)), gap.refusal?.byOrigin)
+        assertEquals(ReconcileText.confirmMismatch(25, sameCount = true), gap.reason)
+        assertEquals(ReconcileText.confirmMismatch(25, sameCount = true), ReconcileText.confirmOutcome(outcome))
+        // The new set can be confirmed again (after the user saw it), now with the new token.
+        assertTrue(gap.confirmable)
+        val sent = mutableListOf<ReconcileWindow>()
+        h.uploader.onReconcile = { window ->
+            sent += window
+            InfovoreApi.UploadResult(0, 0, if (window.confirmDeleteExpected != null) 25 else 0, reconciled = true)
+        }
+        assertEquals(25, (h.engine().confirmDelete("steps", 25) as ConfirmOutcome.Deleted).deleted)
+        assertEquals(TOKEN_B, sent.first().confirmDeleteToken)
+    }
+
+    @Test
+    fun aRefusalWithoutAServerTokenCannotBeConfirmedUntilReverified() = runBlocking {
+        val h = Harness()
+        h.reader.pages["steps"] = listOf(listOf(item("s1", scanStart + hour)))
+        h.uploader.onReconcile = { window -> if (window.dataType == "steps") throw refused(25, 27, token = null) else ok }
+        h.engine().run()
+        val gap = h.gaps.single()
+        assertTrue(gap.withinCeiling)
+        assertFalse(gap.confirmable)
+        val windows = h.uploader.windows.size
+        assertEquals(ConfirmOutcome.Outdated, h.engine().confirmDelete("steps", 25))
+        assertEquals(windows, h.uploader.windows.size)
+        val ui = ReconcileStatus.map(h.gaps, Instant.ofEpochMilli(NOW), ZoneOffset.UTC, syncReady = true, syncHint = null)!!
+        val refusal = ui.refusals.single()
+        assertNull(refusal.confirmLabel)
+        assertTrue(refusal.explanation, refusal.explanation.contains(ReconcileText.CONFIRM_NEEDS_REVERIFY))
+        assertNull(ReconcileStatus.confirmDialogs(gap, ZoneOffset.UTC))
+
+        // A gap saved by 0.4.3 (12 fields, no token or digest) is read back the same way.
+        val legacy = ReconcileGaps.decode("steps\t1\t2\t3\tr\t1\t2\t25\t27\t2\t0\tcom.garmin.fixture=25").single()
+        assertEquals(GapRefusal(1, 2, 25, 27, 2, listOf(OriginCount("com.garmin.fixture", 25))), legacy.refusal)
+        assertFalse(legacy.confirmable)
     }
 
     @Test
@@ -168,10 +249,16 @@ class ConfirmedDeleteTest {
 
     @Test
     fun aDismissedGapStaysHiddenOnlyForTheSameRefusal() {
-        val refusal = GapRefusal(100, 200, 25, 27, 2)
+        val refusal = GapRefusal(100, 200, 25, 27, 2, confirmToken = TOKEN_A, idsDigest = DIGEST)
         val dismissed = listOf(ReconcileGap("steps", 100, 300, "x", 1, refusal, dismissed = true))
         val same = ReconcileGaps.record(dismissed, ReconcileGap("steps", 100, 300, "x", 2, refusal))
         assertTrue(same.single().dismissed)
+        // Same counts, other rows: shown again.
+        val otherRows = ReconcileGaps.record(dismissed, ReconcileGap("steps", 100, 300, "x", 2, refusal.copy(confirmToken = TOKEN_B)))
+        assertFalse(otherRows.single().dismissed)
+        // Dismissed before 0.4.4 (no token): the counts decide, as they did.
+        val legacy = listOf(ReconcileGap("steps", 100, 300, "x", 1, refusal.copy(confirmToken = null), dismissed = true))
+        assertTrue(ReconcileGaps.record(legacy, ReconcileGap("steps", 100, 300, "x", 2, refusal)).single().dismissed)
         val larger = ReconcileGaps.record(dismissed, ReconcileGap("steps", 100, 300, "x", 2, refusal.copy(wouldDelete = 40)))
         assertFalse(larger.single().dismissed)
         val otherReason = ReconcileGaps.record(dismissed, ReconcileGap("steps", 100, 300, ReconcileText.READ_FAILED, 2))
@@ -185,10 +272,17 @@ class ConfirmedDeleteTest {
     @Test
     fun theCodecKeepsRefusalsAndReadsTheOldFormat() {
         val gaps = listOf(
-            ReconcileGap("steps", 1_000, 2_000, "r", 1_500, GapRefusal(1_000, 1_800, 25, 27, 2), dismissed = true),
+            ReconcileGap(
+                "steps", 1_000, 2_000, "r", 1_500,
+                GapRefusal(1_000, 1_800, 25, 27, 2, confirmToken = TOKEN_A, idsDigest = DIGEST), dismissed = true,
+            ),
+            ReconcileGap("sleep", 1_000, 2_000, "r", 1_500, GapRefusal(1_000, 1_800, 25, 27, 2)),
             ReconcileGap("heart_rate", 3_000, 4_000, "r2", 3_500),
         )
         assertEquals(gaps, ReconcileGaps.decode(ReconcileGaps.encode(gaps)))
+        // A malformed token or digest is dropped (the refusal then needs a re-verify).
+        val damaged = ReconcileGaps.encode(gaps.take(1)).replace(TOKEN_A, "zz")
+        assertNull(ReconcileGaps.decode(damaged).single().refusal?.confirmToken)
         // 0.4.0 lines (five fields) still decode, without a refusal.
         assertEquals(listOf(ReconcileGap("steps", 1, 2, "ok", 3)), ReconcileGaps.decode("steps\t1\t2\t3\tok"))
         // A damaged refusal is dropped, the gap kept.
@@ -199,7 +293,10 @@ class ConfirmedDeleteTest {
     fun theBoxExplainsTheRefusalAndBothDialogsSpellItOut() {
         val start = Instant.parse("2026-09-01T00:00:00Z").toEpochMilli()
         val end = Instant.parse("2026-09-08T00:00:00Z").toEpochMilli()
-        val gap = ReconcileGap("steps", start, end, ReconcileText.serverRejected(409), NOW, GapRefusal(start, end, 25, 27, 2))
+        val gap = ReconcileGap(
+            "steps", start, end, ReconcileText.serverRejected(409), NOW,
+            GapRefusal(start, end, 25, 27, 2, confirmToken = TOKEN_A, idsDigest = DIGEST),
+        )
         val ui = ReconcileStatus.map(listOf(gap), Instant.ofEpochMilli(NOW), ZoneOffset.UTC, syncReady = true, syncHint = null)!!
         val refusal = ui.refusals.single()
         assertTrue(refusal.explanation, refusal.explanation.contains("伺服器偵測到要刪除 25 筆（窗內共 27 筆），因超過自動上限而保留資料"))
@@ -229,7 +326,7 @@ class ConfirmedDeleteTest {
         h.reader.pages["steps"] = listOf(listOf(item("s1", scanStart + hour)))
         h.uploader.onReconcile = { window ->
             if (window.dataType == "steps") {
-                throw InfovoreApi.HttpStatusException(409, "Infovore HTTP 409", ReconcileRefusal(25, 26, origins))
+                throw InfovoreApi.HttpStatusException(409, "Infovore HTTP 409", ReconcileRefusal(25, 26, origins, TOKEN_A))
             } else {
                 ok
             }
@@ -260,6 +357,10 @@ class ConfirmedDeleteTest {
             "{\"origin\":\"\",\"count\":3},{\"origin\":\"bad.count\",\"count\":0},$entries]}}"
         val refusal = ReconcileRefusal.fromResponse(409, body)!!
         assertEquals(OriginCount.MAX_ENTRIES, refusal.byOrigin.size)
+        // No token in this body; a malformed one is ignored rather than stored.
+        assertNull(refusal.confirmToken)
+        val badToken = body.replace("\"checked\":130", "\"checked\":130,\"confirmToken\":\"../etc\"")
+        assertNull(ReconcileRefusal.fromResponse(409, badToken)!!.confirmToken)
         assertEquals(OriginCount("com.example.app0_x_y_z", 15), refusal.byOrigin.first())
         val gap = ReconcileGap("steps", 1, 2, "r", 3, GapRefusal(1, 2, 120, 130, 4, refusal.byOrigin))
         assertEquals(gap, ReconcileGaps.decode(ReconcileGaps.encode(listOf(gap))).single())
@@ -270,8 +371,13 @@ class ConfirmedDeleteTest {
         val window = ReconcileWindow("steps", 0, 1_000, listOf("a"))
         val plain = MiniJson.parse(window.toJson()) as Map<*, *>
         assertFalse("confirmDelete" in plain)
-        val confirmed = MiniJson.parse(window.copy(confirmDeleteExpected = 7).toJson()) as Map<*, *>
-        assertEquals(mapOf("expected" to 7.0), confirmed["confirmDelete"])
+        val confirmed = MiniJson.parse(window.copy(confirmDeleteExpected = 7, confirmDeleteToken = TOKEN_A).toJson()) as Map<*, *>
+        assertEquals(mapOf("expected" to 7.0, "token" to TOKEN_A), confirmed["confirmDelete"])
         assertEquals(listOf("dataType", "start", "end", "recordIds", "confirmDelete"), confirmed.keys.toList())
+        // The digest names the set: order does not matter, any change does.
+        assertEquals(ReconcileWindow.idsDigest(listOf("a", "b")), ReconcileWindow.idsDigest(listOf("b", "a")))
+        assertFalse(ReconcileWindow.idsDigest(listOf("a", "b")) == ReconcileWindow.idsDigest(listOf("a", "c")))
+        assertFalse(ReconcileWindow.idsDigest(listOf("ab", "c")) == ReconcileWindow.idsDigest(listOf("a", "bc")))
+        assertTrue(ReconcileWindow.idsDigest(emptyList()).matches(Regex("[0-9a-f]{64}")))
     }
 }

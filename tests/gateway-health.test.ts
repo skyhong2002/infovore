@@ -43,12 +43,14 @@ test('snapshot lifecycle is fail-closed at startup, on read error, stale metadat
   assert.equal((await probe()).status, 503);
   await publish({ body: body([
     { source: 'synthetic-a', ageMs: 0, fresh: true, error: null },
-    { source: 'synthetic-b', ageMs: 3_599_999, fresh: true, error: null },
+    { source: 'synthetic-b', ageMs: 3_599_999, fresh: true, error: null, delayed: false, delayAfterHours: 1 },
   ]) });
   await delay(10);
   const aged = await probe().then((r) => r.json()) as any;
   assert.equal(aged.status, 'degraded');
   assert.equal(aged.sources[1].fresh, false, 'source ages continue advancing without a new DB read');
+  assert.equal(aged.sources[1].delayed, true, 'the per-source delay ages the same way');
+  assert.equal(aged.sources[0].delayed, undefined, 'a backend without per-source thresholds is passed through');
   const error = once(gateway.child, 'message'); gateway.child.send({ type: 'error' }); await error;
   const failed = await probe();
   assert.equal(failed.status, 503);

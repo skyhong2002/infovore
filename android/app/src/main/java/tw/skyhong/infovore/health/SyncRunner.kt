@@ -73,6 +73,7 @@ object SyncRunner {
             if (kind == SyncKind.FULL) {
                 settings.lastStatus = "${Instant.now()}：同步完成，新增 ${summary.inserted}、更新 ${summary.updated}、刪除 ${summary.deleted}${ReconcileText.note(summary.unverified)}"
                 settings.lastSyncFailed = false
+                settings.lastSuccessfulSyncMs = System.currentTimeMillis()
                 settings.initialImportDone = true
                 SyncFailureNotifier.record(context, settings, SyncFailureAlerts.Outcome.SUCCESS)
             }

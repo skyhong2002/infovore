@@ -123,7 +123,12 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `POST /api/ingest/health-connect` — authenticated private Health Connect batches
 - `POST /api/ingest/computai/reports` — authenticated ComputAI 30-day report
 - `POST /mcp` — stateless MCP Streamable HTTP endpoint
-- `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`)
+- `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`).
+  Each source has `fresh` (within `MAX_SOURCE_AGE_HOURS`, which alone decides the
+  overall status) and, since this release, `delayed`/`delayAfterHours`: its own
+  delay threshold, shorter for device-pushed Health (24 h, `PUSHED_DELAY_HOURS`).
+  `/status` and `/status.json` carry the same two fields and the page and the
+  homepage cards use them
 - `GET /robots.txt` — served from gateway memory (never proxied, so a busy
   backend cannot 5xx it); disallows `/api/` and `/mcp` and names the sitemap
 - `GET /sitemap.xml` — stable public HTML pages only: Home, Now, Time, Platforms
@@ -133,6 +138,14 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 Every stable public page carries a self-referencing `<link rel="canonical">` on
 `PUBLIC_BASE_URL` (default `https://$DOMAIN`), ignoring the request host and
 query string. `/search` results are `noindex, follow` and claim no canonical.
+
+Every response carries a Content-Security-Policy whose `script-src` allows
+inline scripts only by SHA-256 hash (no `'unsafe-inline'`; Cloudflare's beacon
+host stays allowed). Inline scripts therefore live as fixed strings in
+`src/output/scripts.ts` and are emitted with `inlineScript()`; data reaches them
+through the DOM, never by interpolation, and inline event handlers are not
+used. `tests/inline-scripts.test.ts` crawls the pages and checks every inline
+script against the header.
 
 Embed a card anywhere with `<img src="…/card/kitsu.webp">`.
 

@@ -3,7 +3,7 @@ import { measureRead } from './data/read-timing.js';
 import { buildNowCard } from './output/now.js';
 import { buildCloudTerms, buildWordCloudCard, type CloudEntry, type CloudTerm } from './output/cloud.js';
 import { platformOverview, platformSync } from './output/overview.js';
-import { notFoundPage, publicError, statusPage } from './output/status.js';
+import { notFoundPage, publicError, statusPage, type StatusSource } from './output/status.js';
 import { securityHeaders } from './security-headers.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js';
@@ -193,8 +193,8 @@ async function refreshAll(): Promise<void> {
 const app = new Hono();
 // HTML and SVG cards are large and highly compressible; Traefik does not compress.
 app.use('*', compress());
-// Baseline hardening for every response; pages use inline styles/scripts, so
-// no CSP here. Framing is limited to this origin.
+// Baseline hardening (including the CSP, see security-headers.ts) for every
+// response. Framing is limited to this origin.
 app.use('*', async (c, next) => {
   await next();
   for (const [name, value] of Object.entries(securityHeaders)) c.header(name, value);
@@ -207,30 +207,32 @@ const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('
 app.get('/healthz', (c) => {
   const now = Date.now();
   const maxAgeMs = config.maxSourceAgeHours * 60 * 60 * 1000;
-  const sources: Array<{
-    source: string;
-    fresh: boolean;
-    ageMs: number | null;
-    error: string | null;
-  }> = activeSources.map((name) => {
-    const entry = getCache(`data:${name}`);
-    const ageMs = entry ? now - entry.fetchedAt : null;
-    return { source: name, fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: entry?.error ?? null };
+  // `fresh` (MAX_SOURCE_AGE_HOURS) decides the overall status as before;
+  // `delayed` uses the source's own threshold (shorter for Health, which a
+  // phone pushes) and only informs: a phone that stopped syncing is not an
+  // outage of this service, so it never turns healthy into degraded early.
+  const entry = (source: string, ageMs: number | null, error: string | null) => {
+    const delayAfterHours = config.delayAfterHours(source);
+    return {
+      source, fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error,
+      delayed: ageMs === null || ageMs > delayAfterHours * 3_600_000, delayAfterHours,
+    };
+  };
+  const sources: Array<ReturnType<typeof entry>> = activeSources.map((name) => {
+    const cached = getCache(`data:${name}`);
+    return entry(name, cached ? now - cached.fetchedAt : null, cached?.error ?? null);
   });
   if (config.healthConnect.token && config.sourceEnabled('health')) {
     const lastSyncedAt = repository.healthConnectStatus().lastSyncedAt;
-    const ageMs = lastSyncedAt ? now - Date.parse(lastSyncedAt) : null;
-    sources.push({ source: 'health', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+    sources.push(entry('health', lastSyncedAt ? now - Date.parse(lastSyncedAt) : null, null));
   }
   if (dayflowEnabled) {
     const synced = repository.dayflow.status().lastSyncedAt;
-    const ageMs = synced ? now - Date.parse(synced) : null;
-    sources.push({ source: 'dayflow', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+    sources.push(entry('dayflow', synced ? now - Date.parse(synced) : null, null));
   }
   if (computaiEnabled) {
     const synced = repository.computai.status().lastSyncedAt;
-    const ageMs = synced ? now - Date.parse(synced) : null;
-    sources.push({ source: 'computai', fresh: ageMs !== null && ageMs <= maxAgeMs, ageMs, error: null });
+    sources.push(entry('computai', synced ? now - Date.parse(synced) : null, null));
   }
   const freshCount = sources.filter((source) => source.fresh).length;
   const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';
@@ -645,7 +647,7 @@ app.get('/', (c) => measureRead('homepage', () => {
     platformOverviews: [
       ...sections.map(section => ({ ...platformOverview(section.source, section.logo ?? `/logos/${section.source}.png`,
         section.source === 'health' ? healthSnapshot : getCache<SourceSnapshot<unknown>>(`data:${section.source}`)?.data, now),
-        sync: platformSync(sourceSyncedAt(section.source), config.maxSourceAgeHours, now) })),
+        sync: platformSync(sourceSyncedAt(section.source), config.delayAfterHours(section.source), now) })),
       ...(sourceCounts.events ? [platformOverview('events', '', manualEventsSnapshot(), now)] : []),
     ],
     timeSpent: repository.timeSpent(),
@@ -778,22 +780,21 @@ app.get('/cards', (c) => {
   return c.html(shell(`${config.ownerName} · cards`, `${intro}<div class="card-gallery">${body}</div>`, 'cards', '', { path: '/cards' }));
 });
 
-function statusSources(): Array<{ source: string; lastFetched: string | null; error: string | null; json: string }> {
+// delayed: no successful sync for longer than the source's delayAfterHours
+// (MAX_SOURCE_AGE_HOURS, or shorter for device-pushed Health; see config).
+function statusSources(now = Date.now()): StatusSource[] {
+  const source = (name: string, lastFetched: string | null, error: string | null, json: string): StatusSource => {
+    const delayAfterHours = config.delayAfterHours(name);
+    const delayed = lastFetched === null || now - Date.parse(lastFetched) > delayAfterHours * 3_600_000;
+    return { source: name, lastFetched, error, json, delayed, delayAfterHours };
+  };
   const sources = activeSources.map((name) => {
     const entry = getCache(`data:${name}`);
-    return {
-      source: name,
-      lastFetched: entry ? new Date(entry.fetchedAt).toISOString() : null,
-      error: publicError(entry?.error),
-      json: `/api/${name}.json`,
-    };
+    return source(name, entry ? new Date(entry.fetchedAt).toISOString() : null, publicError(entry?.error), `/api/${name}.json`);
   });
-  if (config.healthConnect.token) {
-    const status = repository.healthConnectStatus();
-    sources.push({ source: 'health', lastFetched: status.lastSyncedAt, error: null, json: '/api/health.json' });
-  }
-  if (dayflowEnabled) sources.push({ source: 'dayflow', lastFetched: repository.dayflow.status().lastSyncedAt, error: null, json: '/api/dayflow.json' });
-  if (computaiEnabled) sources.push({ source: 'computai', lastFetched: repository.computai.status().lastSyncedAt, error: null, json: '/api/computai.json' });
+  if (config.healthConnect.token) sources.push(source('health', repository.healthConnectStatus().lastSyncedAt, null, '/api/health.json'));
+  if (dayflowEnabled) sources.push(source('dayflow', repository.dayflow.status().lastSyncedAt, null, '/api/dayflow.json'));
+  if (computaiEnabled) sources.push(source('computai', repository.computai.status().lastSyncedAt, null, '/api/computai.json'));
   return sources;
 }
 

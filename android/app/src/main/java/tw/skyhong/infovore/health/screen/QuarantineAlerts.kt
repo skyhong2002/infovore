@@ -8,6 +8,10 @@ package tw.skyhong.infovore.health.screen
  *
  * One notification per step up ([Level.NEAR], then [Level.FULL]); nothing repeats while the
  * level stays the same, and the notification is removed once the user brought it back down.
+ *
+ * What is kept between runs is the level last *notified* ([Decision.notified]), not the level
+ * seen: while notifications are off (the opt-in, or the system permission) a warning is not
+ * counted as given, so turning them on later still delivers the current one, once.
  */
 object QuarantineAlerts {
     /** Share of the limit at which the "almost full" warning is shown. */
@@ -21,6 +25,8 @@ object QuarantineAlerts {
         val notify: Boolean,
         /** Remove a notification shown for a higher level. */
         val clear: Boolean,
+        /** The level to keep as last notified: raised only by a notification, lowered with [level]. */
+        val notified: Level,
     )
 
     fun level(rejected: Int, maxRejected: Int): Level = when {
@@ -32,12 +38,20 @@ object QuarantineAlerts {
     /** The count at which [Level.NEAR] starts. */
     fun nearThreshold(maxRejected: Int): Int = ((maxRejected.toLong() * NEAR_PERCENT + 99) / 100).toInt()
 
-    fun next(previous: Level, rejected: Int, maxRejected: Int, notificationsEnabled: Boolean): Decision {
+    /**
+     * The decision for the current counts, given the level last notified ([notified]).
+     * [notificationsEnabled]: the user's opt-in and POST_NOTIFICATIONS both hold, so a posted
+     * notification is actually shown. Also used right after notifications are turned on, to
+     * deliver a warning that applies already (see QuarantineNotifier.catchUp).
+     */
+    fun next(notified: Level, rejected: Int, maxRejected: Int, notificationsEnabled: Boolean): Decision {
         val level = level(rejected, maxRejected)
+        val notify = notificationsEnabled && level > notified
         return Decision(
             level = level,
-            notify = notificationsEnabled && level > previous,
-            clear = level < previous,
+            notify = notify,
+            clear = level < notified,
+            notified = if (notify) level else minOf(level, notified),
         )
     }
 

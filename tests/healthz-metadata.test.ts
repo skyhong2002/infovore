@@ -125,6 +125,8 @@ test('healthz reads metadata without entering cold snapshot/card middleware', as
     assert.equal(body.status, 'degraded');
     assert.deepEqual(body.sources.find((source) => source.source === 'kitsu'), {
       source: 'kitsu', fresh: false, ageMs: maxAge + 1, error: null,
+      // Additive (0.4.4): a fetched source's delay threshold is the same age limit.
+      delayed: true, delayAfterHours: maxAge / 3_600_000,
     });
   });
   await t.test('all stale sources remain unhealthy', async () => {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { SourceSnapshot } from '../data/types.js';
 
@@ -44,9 +45,13 @@ export const MAX_CONFIRMED_RECONCILE_DELETES = 2000;
 // a row reaching the window end or beyond is never deleted by that window.
 //
 // confirmDelete (optional): the user saw a 409 refusal for this window and
-// explicitly confirmed deleting exactly `expected` rows. The deletion limits
-// are then lifted only if the window would delete exactly that many rows and no
-// more than MAX_CONFIRMED_RECONCILE_DELETES; any other count is refused (409).
+// explicitly confirmed deleting exactly `expected` rows, the set that refusal's
+// `confirmToken` names (see reconcileConfirmToken). The deletion limits are then
+// lifted only if the window would delete exactly that set (same token, same
+// count) and no more than MAX_CONFIRMED_RECONCILE_DELETES; anything else is
+// refused (409) with fresh counts and a fresh token. A confirmation without a
+// token (clients before 0.4.4) is always refused: a count alone does not say
+// which rows the user saw.
 const healthReconcileSchema = z.object({
   dataType: z.enum(healthDataTypes),
   start: isoTimestamp,
@@ -54,6 +59,7 @@ const healthReconcileSchema = z.object({
   recordIds: z.array(z.string().min(1).max(256)).max(MAX_RECONCILE_RECORD_IDS),
   confirmDelete: z.object({
     expected: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    token: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   }).strict().optional(),
 }).strict().superRefine((window, context) => {
   if (!(Date.parse(window.start) < Date.parse(window.end))) {
@@ -122,10 +128,29 @@ export interface HealthConnectIngestResult {
   reconciled?: HealthReconcileResult;
 }
 
+// Names the exact set of rows a reconcile window would delete, so a later
+// confirmation can only delete the set the user was shown: SHA-256 over the
+// device, data type, window bounds (epoch ms) and the sorted record ids. It
+// reveals no record id; equal tokens mean the same window and the same rows.
+export function reconcileConfirmToken(
+  deviceId: string, dataType: string, startMs: number, endMs: number, recordIds: Iterable<string>,
+): string {
+  const ids = [...recordIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return createHash('sha256')
+    .update(JSON.stringify(['infovore-reconcile-confirm-v1', deviceId, dataType, startMs, endMs, ids]))
+    .digest('hex');
+}
+
 // Thrown when a reconcile window would delete an implausible share of the
-// stored rows; the whole batch is rolled back and nothing is deleted.
+// stored rows (or a confirmation does not match); the whole batch is rolled
+// back and nothing is deleted. confirmToken names the rows it would delete.
 export class HealthReconcileRejected extends Error {
-  constructor(readonly wouldDelete: number, readonly checked: number, readonly byOrigin: HealthOriginCount[] = []) {
+  constructor(
+    readonly wouldDelete: number,
+    readonly checked: number,
+    readonly byOrigin: HealthOriginCount[] = [],
+    readonly confirmToken = '',
+  ) {
     super(`Reconcile refused: it would delete ${wouldDelete} of ${checked} stored records in the window`);
     this.name = 'HealthReconcileRejected';
   }

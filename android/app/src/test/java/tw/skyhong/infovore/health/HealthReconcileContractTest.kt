@@ -84,7 +84,10 @@ class HealthReconcileContractTest {
         }
         assertTrue(reconcilePlanner.add(items).isEmpty())
         val window = requireNotNull(reconcilePlanner.finish())
-            .copy(confirmDeleteExpected = (planner["confirmDeleteExpected"] as Double).toInt())
+            .copy(
+                confirmDeleteExpected = (planner["confirmDeleteExpected"] as Double).toInt(),
+                confirmDeleteToken = planner["confirmDeleteToken"] as String,
+            )
 
         val produced = MiniJson.parse(
             HealthBatchJson.body(
@@ -126,8 +129,20 @@ class HealthReconcileContractTest {
         }
         assertEquals(origins, refusal.byOrigin)
         assertEquals(refusal.wouldDelete, refusal.byOrigin.sumOf { it.count })
-        // A server before 0.4.3 sends no byOrigin: same counts, no origins.
-        val legacy = org.json.JSONObject().put("reconcile", org.json.JSONObject(raw.toString()).apply { remove("byOrigin") }).toString()
+        // The token the app must send back with its confirmation (the fixture's request does).
+        assertEquals(expected["confirmToken"], refusal.confirmToken)
+        assertEquals(
+            refusal.confirmToken,
+            (case["request"].obj()["reconcile"].obj()["confirmDelete"].obj())["token"],
+        )
+        // A server before 0.4.3 sends no byOrigin (nor a token): same counts, no origins.
+        val legacy = org.json.JSONObject().put(
+            "reconcile",
+            org.json.JSONObject(raw.toString()).apply {
+                remove("byOrigin")
+                remove("confirmToken")
+            },
+        ).toString()
         assertEquals(ReconcileRefusal(refusal.wouldDelete, refusal.checked), ReconcileRefusal.fromResponse(409, legacy))
         assertEquals(null, ReconcileRefusal.fromResponse(400, body))
     }

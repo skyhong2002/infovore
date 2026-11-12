@@ -7,11 +7,13 @@ import type { DatabaseSync } from 'node:sqlite';
 // The activity identity includes the exact endTime (and the track id), so
 // both shapes used to land as separate rows. A floored row is the same play
 // as a seconds-precision row in the same minute with the same track id, or
-// with the same title (and artist, when both carry one). Two floored rows are
-// the same play only under the same track id: two short songs sharing a title
-// can both end in one minute, and with no seconds to go on, a different id is
-// the only evidence left. Two rows that both keep their seconds are never
-// merged: those are separate plays.
+// with the same title and the same artist. Without an artist on either side
+// only the track id can tell: a common title ("Intro") is no evidence that two
+// plays ending in one minute are one. Two floored rows are the same play only
+// under the same track id: two short songs sharing a title can both end in one
+// minute, and with no seconds to go on, a different id is the only evidence
+// left. Two rows that both keep their seconds are never merged: those are
+// separate plays.
 
 export interface StatsfmPlay {
   id: string;
@@ -43,7 +45,9 @@ export function samePlay(a: StatsfmPlay, b: StatsfmPlay): boolean {
   if (a.sourceItemId && a.sourceItemId === b.sourceItemId) return true;
   if (aFloored && bFloored) return false;
   if (canonical(a.title) !== canonical(b.title)) return false;
-  return !a.artist || !b.artist || canonical(a.artist) === canonical(b.artist);
+  // A missing artist leaves only the title, which is not enough (same track id was checked above).
+  if (!a.artist.trim() || !b.artist.trim()) return false;
+  return canonical(a.artist) === canonical(b.artist);
 }
 
 // Rows to keep first: a seconds-precision row, then the earliest seen.

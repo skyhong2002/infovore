@@ -50,8 +50,11 @@ class HealthSyncEngine(
         /** Re-reading found different records than the refused request listed: nothing was sent. */
         data object SourceChanged : ConfirmOutcome
 
-        /** The server counted [wouldDelete] instead of the confirmed number: nothing was deleted. */
-        data class CountChanged(val wouldDelete: Int, val checked: Int) : ConfirmOutcome
+        /**
+         * The server would now delete other rows than confirmed: [wouldDelete] instead of the
+         * confirmed number, or ([sameCount]) as many but not the same set. Nothing was deleted.
+         */
+        data class CountChanged(val wouldDelete: Int, val checked: Int, val sameCount: Boolean = false) : ConfirmOutcome
 
         /** The server did not accept or report the confirmation (e.g. an older server): nothing was deleted. */
         data class NotAccepted(val reason: String) : ConfirmOutcome
@@ -234,11 +237,13 @@ class HealthSyncEngine(
     /**
      * Deletes, after the user explicitly confirmed it, exactly [expected] server rows of the
      * window the server refused for [dataType] (see [GapRefusal]). Nothing is sent unless the
-     * saved refusal still says [expected] and a fresh, complete read of that window lists exactly
-     * as many records as the refused request did; the server then deletes only if its own count is
-     * still exactly [expected] (and within [ReconcileWindow.MAX_CONFIRMED_DELETES]). Any mismatch
-     * updates the gap so the user has to confirm the new numbers. After a confirmed deletion the
-     * rest of the gap is re-verified under the normal limits.
+     * saved refusal still says [expected], carries the server's confirm token, and a fresh,
+     * complete read of that window lists exactly the same set of record ids as the refused
+     * request did (compared by [ReconcileWindow.idsDigest]); the server then deletes only if the
+     * rows it would delete are still exactly the set its token names (same count, within
+     * [ReconcileWindow.MAX_CONFIRMED_DELETES]). Any mismatch updates the gap so the user has to
+     * confirm the new numbers. After a confirmed deletion the rest of the gap is re-verified under
+     * the normal limits.
      */
     suspend fun confirmDelete(dataType: String, expected: Int, onProgress: (String) -> Unit = {}): ConfirmOutcome {
         onProgress("檢查連線設定與 Health Connect 權限…")
@@ -263,19 +268,24 @@ class HealthSyncEngine(
         var pageToken: String? = null
         do {
             val page = reader.readPage(dataType, refusal.startMs, refusal.endMs, pageToken, ascending = true)
-            windows += planner.add(page.items.map { ReconcilePlanner.Item(it.id, it.startMs) })
+            windows += planner.add(page.items.map { ReconcilePlanner.Item(it.id, it.startMs, it.endMs) })
             pageToken = page.nextPageToken?.takeIf(String::isNotEmpty)
         } while (pageToken != null)
         planner.finish()?.let(windows::add)
         val window = windows.singleOrNull()
-        if (planner.failure != null || window == null || window.recordIds.size != refusal.sentIds) {
+        if (planner.failure != null || window == null || window.recordIds.size != refusal.sentIds ||
+            ReconcileWindow.idsDigest(window.recordIds) != refusal.idsDigest
+        ) {
             replaceGap(dataType) { it.copy(reason = ReconcileText.CHANGED_BEFORE_CONFIRM, refusal = null, checkedAtMs = clock()) }
             return ConfirmOutcome.SourceChanged
         }
 
         onProgress("刪除已確認的 $expected 筆${type.label}資料…")
         val result = try {
-            upload(emptyList(), emptyList(), onProgress, window.copy(confirmDeleteExpected = expected))
+            upload(
+                emptyList(), emptyList(), onProgress,
+                window.copy(confirmDeleteExpected = expected, confirmDeleteToken = refusal.confirmToken),
+            )
         } catch (refused: InfovoreApi.HttpStatusException) {
             val counts = refused.refusal
             return when {
@@ -291,19 +301,22 @@ class HealthSyncEngine(
                     ConfirmOutcome.Deleted(0, rest)
                 }
                 refused.status == 409 && counts != null -> {
+                    val sameCount = counts.wouldDelete == expected
                     replaceGap(dataType) {
                         it.copy(
-                            reason = ReconcileText.confirmMismatch(counts.wouldDelete),
+                            reason = ReconcileText.confirmMismatch(counts.wouldDelete, sameCount),
                             refusal = refusal.copy(
                                 wouldDelete = counts.wouldDelete,
                                 checked = counts.checked,
                                 sentIds = window.recordIds.size,
                                 byOrigin = counts.byOrigin,
+                                confirmToken = counts.confirmToken,
+                                idsDigest = ReconcileWindow.idsDigest(window.recordIds),
                             ),
                             checkedAtMs = clock(),
                         )
                     }
-                    ConfirmOutcome.CountChanged(counts.wouldDelete, counts.checked)
+                    ConfirmOutcome.CountChanged(counts.wouldDelete, counts.checked, sameCount)
                 }
                 refused.status == 400 || refused.status == 409 -> {
                     replaceGap(dataType) { it.copy(reason = ReconcileText.CONFIRM_UNSUPPORTED, refusal = null, checkedAtMs = clock()) }
@@ -377,7 +390,11 @@ class HealthSyncEngine(
                     unverified = ReconcileText.serverRejected(refused.status)
                     // Kept so the user can review (and, within the server's ceiling, confirm) it.
                     refusal = refused.refusal?.let {
-                        GapRefusal(window.startMs, window.endMs, it.wouldDelete, it.checked, window.recordIds.size, it.byOrigin)
+                        GapRefusal(
+                            window.startMs, window.endMs, it.wouldDelete, it.checked, window.recordIds.size, it.byOrigin,
+                            confirmToken = it.confirmToken,
+                            idsDigest = ReconcileWindow.idsDigest(window.recordIds),
+                        )
                     }
                     return
                 }
@@ -408,7 +425,7 @@ class HealthSyncEngine(
                 }
             }
             if (planner != null) {
-                sendWindows(planner.add(response.items.map { ReconcilePlanner.Item(it.id, it.startMs) }))
+                sendWindows(planner.add(response.items.map { ReconcilePlanner.Item(it.id, it.startMs, it.endMs) }))
             }
             processed += response.items.size
             onProgress("${type.label}：已處理 $processed 筆")

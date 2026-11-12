@@ -25,7 +25,9 @@ import type {
   HealthReconcileInput,
   HealthReconcileResult,
 } from '../health/types.js';
-import { countByOrigin, HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES } from '../health/types.js';
+import {
+  countByOrigin, HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES, reconcileConfirmToken,
+} from '../health/types.js';
 
 // A reconcile window may delete up to this many rows without question; above
 // it, the deletion must stay within this share of the window's stored rows and
@@ -1654,7 +1656,8 @@ export class Repository {
   // the range end), so their absence proves nothing. Runs
   // inside the ingest transaction; an implausibly large deletion throws
   // HealthReconcileRejected so the caller rolls everything back. With
-  // confirmDelete, the count must equal what the user confirmed and stay within
+  // confirmDelete, the rows to delete must be exactly the set the refusal's
+  // confirmToken named (same token and count) and stay within
   // MAX_CONFIRMED_RECONCILE_DELETES; the confirmed deletion is then written to
   // health_connect_confirmed_deletes in the same transaction.
   private reconcileHealthWindow(
@@ -1687,16 +1690,24 @@ export class Repository {
     // Which source apps the rows to delete came from, so the user confirming a
     // refused deletion sees more than a count (package names and counts only).
     const byOrigin = () => countByOrigin(stale.map((row) => row.data_origin));
+    // Names exactly these rows; a confirmation must bring it back unchanged.
+    const token = () => reconcileConfirmToken(
+      deviceId, window.dataType, startMs, endMs, stale.map((row) => row.record_id),
+    );
+    const refuse = () => new HealthReconcileRejected(stale.length, inWindow.length, byOrigin(), token());
     const confirmed = window.confirmDelete;
     if (confirmed) {
-      // Exactly what the user confirmed, under the hard ceiling; anything else
-      // (the source changed since, or too much) is refused with fresh counts.
-      if (stale.length !== confirmed.expected || stale.length > MAX_CONFIRMED_RECONCILE_DELETES) {
-        throw new HealthReconcileRejected(stale.length, inWindow.length, byOrigin());
+      // Exactly the rows the user confirmed, under the hard ceiling; anything
+      // else (the source changed since, a different set of the same size, a
+      // confirmation without a token, or too much) is refused with fresh
+      // counts and a fresh token.
+      if (stale.length !== confirmed.expected || stale.length > MAX_CONFIRMED_RECONCILE_DELETES
+        || confirmed.token === undefined || confirmed.token !== token()) {
+        throw refuse();
       }
     } else if (stale.length > RECONCILE_MAX_SILENT_DELETES
       && (stale.length > inWindow.length * RECONCILE_MAX_DELETE_SHARE || stale.length > RECONCILE_MAX_DELETES)) {
-      throw new HealthReconcileRejected(stale.length, inWindow.length, byOrigin());
+      throw refuse();
     }
     let deleted = 0;
     for (const row of stale) {

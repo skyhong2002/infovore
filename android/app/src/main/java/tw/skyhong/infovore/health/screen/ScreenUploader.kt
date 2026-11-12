@@ -97,8 +97,11 @@ object ScreenUploader {
         return moved
     }
 
-    /** After the user dealt with the quarantine: removes a warning that no longer applies. */
-    private fun recheckQuarantine(context: Context) {
+    /**
+     * After the user dealt with the quarantine, or turned notifications on: removes a warning
+     * that no longer applies, or shows one that does and was not shown yet.
+     */
+    fun recheckQuarantine(context: Context) {
         val queue = ObservationQueue.get(context)
         QuarantineNotifier.record(context.applicationContext, queue.countRejected(), queue.count(currentDestination(context)))
     }

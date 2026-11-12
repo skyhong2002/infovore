@@ -52,6 +52,19 @@ class SyncFailureAlertsTest {
     }
 
     @Test
+    fun turningNotificationsOnDeliversAWarningThatAlreadyApplies() {
+        // Three failures counted while notifications were off: nothing was posted ...
+        val decisions = runPeriods(List(3) { Outcome.FINAL_FAILURE }, enabled = false)
+        assertTrue(decisions.none { it.notify })
+        // ... and turning them on shows it at once.
+        assertTrue(SyncFailureAlerts.catchUp(decisions.last().failures, notificationsEnabled = true))
+        assertFalse(SyncFailureAlerts.catchUp(decisions.last().failures, notificationsEnabled = false))
+        // Below the threshold there is nothing to catch up on.
+        assertFalse(SyncFailureAlerts.catchUp(SyncFailureAlerts.THRESHOLD - 1, notificationsEnabled = true))
+        assertFalse(SyncFailureAlerts.catchUp(0, notificationsEnabled = true))
+    }
+
+    @Test
     fun theTextHasCountsOnly() {
         val text = SyncFailureAlerts.title() + SyncFailureAlerts.text(3)
         assertTrue(text.contains("連續失敗 3 次"))

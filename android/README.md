@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.4.3) reads selected records from Android Health Connect and
+This private companion (current version 0.4.4) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -68,6 +68,17 @@ always starts collapsed. Each section header shows its current state.
   only the failure count, never health values, error details or tokens. Any
   successful full sync resets the count and removes the notification. The same
   switch also covers the screen recorder's quarantine (see 手機 Dayflow).
+  Since 0.4.4 a warning that already applies when notifications are turned on
+  (the switch, or the permission granted) is shown at once, once: three or more
+  failed background syncs, or a quarantine at 80% or full. A warning counts as
+  shown only when both the switch and the permission allowed it.
+- A background sync that never runs (the system restricted the app, or it was
+  force-stopped) cannot notify anyone. So since 0.4.4, when the app is opened
+  more than 24 hours after the last successful full sync, the top of the health
+  section says so (and the collapsed header shows **超過 24 小時未同步**), with
+  **立即同步** and, when notifications are off, **開啟通知** (only on that tap;
+  notifications are never turned on automatically). The server's `/status`
+  page marks Health delayed after the same 24 hours.
 - The UI supports TalkBack (section headings, expand/collapse state, field
   labels and errors), large fonts, 48 dp touch targets, dark mode, and
   edge-to-edge insets.
@@ -119,8 +130,17 @@ source while no change token covered them would otherwise stay on the server.
 So during such a scan, once every page of a data type in the scan window
 `[start, end)` has been read successfully, the app also sends reconcile
 windows: `{dataType, start, end, recordIds}` listing every record id that
-starts in the window (long histories are split into windows of at most 2,000
-ids, cut only between distinct start times; the server accepts at most 5,000).
+starts in the window (long histories are split into windows of about 2,000
+ids; the server accepts at most 5,000). Since 0.4.4 a window is cut only at a
+time no record read so far lies across: where the records before the cut end
+(at least just after the last of their starts), and no later than the next
+record starts. A record deleted at the source between two windows then starts
+inside the later window and is deleted by it; before 0.4.4 the cut was the next
+record's start, so a deleted record ending there belonged to no window and
+stayed on the server. When long, overlapping records leave no such time within
+5,000 ids, the type is reported unverified (**紀錄彼此重疊過多，無法安全分段核實**)
+rather than cut across a record. Descending reads (sleep) can only avoid the
+record just before the cut, which is enough for non-overlapping sessions.
 In the same transaction the server deletes only rows that came from this
 device (`deviceId`), have that data type, start in `[start, end)`, end before
 `end`, and are not listed. A row that reaches the window end or beyond is never
@@ -130,7 +150,7 @@ be): Health Connect may leave such records out of a complete read (the official
 end), so their absence proves nothing. The cost is the other way round: such a
 record deleted at the source stays on the server until a later reconcile window
 contains it entirely, typically the next history scan, which ends at that
-scan's "now"; a re-verified gap that ends at a past time does not remove a
+scan's "now" (internal cuts no longer leave such records behind, see above); a re-verified gap that ends at a past time does not remove a
 sleep session crossing that time. It refuses the window (HTTP 409, nothing
 deleted) when that would remove more than 20 rows and either more than 10% of
 the device's stored rows in the window or more than 200 rows, and answers 400 to malformed or oversized
@@ -177,18 +197,27 @@ and offers two choices:
 - **我確認來源端已刪除，刪除這 N 筆**: two dialogs, the first naming the data
   type, the time range, the count and (when reported) the source apps, the second stating that it cannot be
   undone. Only then does the app re-read that window completely. If the
-  re-read lists a different number of records than the refused request did,
-  nothing is sent and the reminder asks the user to re-verify and confirm the
-  new numbers. Otherwise it sends the window with
-  `reconcile.confirmDelete: {"expected": N}`. The server deletes only when its
-  own count is still exactly N and at most 2,000
+  re-read lists a different set of records than the refused request did (the
+  app keeps a SHA-256 digest of the ids it sent, not the ids, so the same
+  number of different records counts as different too), nothing is sent and
+  the reminder asks the user to re-verify and confirm the new numbers.
+  Otherwise it sends the window with
+  `reconcile.confirmDelete: {"expected": N, "token": "<confirmToken>"}`, where
+  `confirmToken` (since 0.4.4) is what the server's 409 named exactly the rows
+  it would delete with: SHA-256 over the device, data type, window and the
+  sorted ids of those rows (no id can be read back from it). The server deletes
+  only when the rows it would now delete still give the same token (so the
+  very same rows, not only as many), there are exactly N and at most 2,000
   (`MAX_CONFIRMED_RECONCILE_DELETES`), and in the same transaction writes an
   audit row to `health_connect_confirmed_deletes` (migration 20: time, device
   id, data type, window, deleted and checked counts; no record ids or health
   values). The confirmed response also carries `reconciled.byOrigin`. Any other
-  count gets a 409 with the new `wouldDelete`/`checked`/`byOrigin` (never record
-  content), nothing is deleted, and the reminder shows the new
-  number for a fresh confirmation. After a confirmed deletion the rest of the
+  count or set of rows, and a confirmation without a token (as 0.4.3 sends
+  it), gets a 409 with the new `wouldDelete`/`checked`/`byOrigin`/`confirmToken`
+  (never record content), nothing is deleted, and the reminder shows the new
+  numbers and source apps for a fresh confirmation. A refusal saved by 0.4.3
+  has no token: the app offers no confirmation for it until **重新核實** fetches
+  a fresh one. After a confirmed deletion the rest of the
   gap is re-verified under the normal limits. Above 2,000 rows the app offers
   no confirmation at all. A server older than 0.4.1 rejects the unknown field
   (HTTP 400) and deletes nothing.
@@ -284,7 +313,8 @@ header) and once when full: with **同步失敗時通知我** on and the permiss
 granted, a notification on the **同步問題** channel (counts only: rejected and
 pending records, never screen content or app names) opens this section, and is
 removed once the user brings the quarantine back down. With notifications off,
-the section shows the state and suggests turning them on. If every record of a
+the section shows the state and suggests turning them on; turning them on then
+delivers the current warning once (0.4.4). If every record of a
 batch is rejected, the run stops after quarantining that batch so a
 server-side problem cannot drain the queue.
 
