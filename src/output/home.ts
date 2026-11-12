@@ -245,7 +245,7 @@ function shareBar(entries: TimeEntry[], windowKey: 'last28d' | 'allTime', label:
     return { entry, seconds, share, name, color: platformColors[entry.source] ?? '#8caacb', href: entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${entry.source}` };
   });
   const percent = (share: number) => share < 0.005 ? '<1%' : `${Math.round(share * 100)}%`;
-  return `<section class="share-bar" aria-labelledby="share-bar-title"><div class="share-bar-head"><strong id="share-bar-title">Where the time went</strong><span>${html(label)} · ${html(timeAmount(total))} summed per platform, so overlapping time counts once for each platform (unlike “Time recorded”, which counts it once)</span></div>
+  return `<section class="share-bar" aria-labelledby="share-bar-title"><div class="share-bar-head"><strong id="share-bar-title">Where the time went</strong><span>${html(label)} · ${html(timeAmount(total))} summed per platform, so overlapping time counts once for each platform (unlike “Time recorded”, which counts it once). Includes computer activity, sleep and AI agents, which the <a href="/stats">Time page</a> leaves out</span></div>
     <div class="share-track" aria-hidden="true">${segments.map((segment) => `<span style="flex:${segment.share.toFixed(4)} 0 0;background:${segment.color}" title="${html(segment.name)} · ${html(timeAmount(segment.seconds))} · ${percent(segment.share)}"></span>`).join('')}</div>
     <ul class="share-legend">${segments.map((segment) => `<li><a href="${html(segment.href)}"><i style="background:${segment.color}" aria-hidden="true"></i>${html(segment.name)} <b>${percent(segment.share)}</b><span class="visually-hidden"> · ${html(timeAmount(segment.seconds))}</span></a></li>`).join('')}</ul></section>`;
 }

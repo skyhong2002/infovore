@@ -258,7 +258,7 @@ const widgets = `
 .site-search-link{border:1px solid var(--line);border-radius:10px;display:none;height:40px;width:40px}
 .share-bar{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);margin-top:12px;padding:14px 18px 12px}
 .share-bar-head{align-items:baseline;display:flex;gap:12px;justify-content:space-between;margin-bottom:10px}
-.share-bar-head strong{font-size:14px;white-space:nowrap}.share-bar-head span{color:var(--quiet);font-size:12px}
+.share-bar-head strong{font-size:14px;white-space:nowrap}.share-bar-head a{display:inline-block;padding:3px 0}.share-bar-head span{color:var(--quiet);font-size:12px}
 .share-track{border-radius:6px;display:flex;gap:2px;height:14px;overflow:hidden}
 .share-track span{display:block;height:100%;min-width:2px}
 .share-legend{color:var(--muted);display:flex;flex-wrap:wrap;gap:2px 6px;font-size:13px;list-style:none;margin:8px 0 0;padding:0}

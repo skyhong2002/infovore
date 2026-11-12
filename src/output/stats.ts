@@ -66,7 +66,7 @@ export function statsPage(ownerName: string, summary: TimeSpentSummary, daily: D
   const totalSeries = daily.days.map((_, index) => Object.values(daily.sources).reduce((total, series) => total + (series[index] ?? 0), 0));
   const intro = `<section class="page-intro"><div><div class="eyebrow">Aggregated view</div><h1>Time</h1>
     <p>How much time this system has recorded ${html(ownerName)} spending with each connected platform — like a cross-platform stats.fm.</p></div>
-    <div class="page-intro-aside">Overlapping activity is counted per platform, so totals can exceed wall-clock time.</div></section>`;
+    <div class="page-intro-aside">Media platforms only: games, shows, anime, books, music and YouTube. Computer activity (Dayflow), sleep and AI agent time are not in this table, so its totals are smaller than the overview's “Where the time went”; see <a href="/platforms/dayflow">Dayflow</a>, <a href="/platforms/health#sleep">Sleep</a> and <a href="/platforms/computai">AI agents</a>. Overlapping activity is counted per platform, so totals can exceed wall-clock time.</div></section>`;
   const headline = `<div class="metric-grid">${WINDOW_COLUMNS.map(({ key, title }) => {
     const note = WINDOW_NOTES[key];
     const trend = key === 'last28d' && totalSeries.some(Boolean)
