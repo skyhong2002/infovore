@@ -146,6 +146,9 @@ class ViewKit(private val context: Context) {
             } else {
                 isSingleLine = true
             }
+            // setSingleLine/minLines switch TextView's own minimum to a line count, dropping the
+            // minHeight above; the View-level minimum below survives them, so the field stays ≥48dp.
+            minimumHeight = dp(48)
         }
         labelView.labelFor = id
         val message = liveText(Style.CAPTION).apply { setPadding(dp(4), dp(2), 0, 0) }

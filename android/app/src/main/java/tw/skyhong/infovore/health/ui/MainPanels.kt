@@ -27,20 +27,40 @@ enum class ConnectionSummary(val tone: Tone) {
 }
 
 /** "同步失敗時通知我": what the switch shows and which note explains it. */
-enum class NotifyState { ON, PERMISSION_REVOKED, DENIED, OFF }
+enum class NotifyState {
+    ON,
+    PERMISSION_REVOKED,
+    DENIED,
+    OFF,
 
-data class NotifyUi(val checked: Boolean, val state: NotifyState, val tone: Tone)
+    /** On in the app, but Infovore's notifications or the "同步問題" channel are off in system settings. */
+    BLOCKED,
+}
+
+data class NotifyUi(
+    val checked: Boolean,
+    val state: NotifyState,
+    val tone: Tone,
+) {
+    /** Offer a button to the system notification settings. */
+    val showSettingsButton: Boolean get() = state == NotifyState.BLOCKED
+}
 
 object NotifyStatus {
-    /** [on]: the setting; [permission]: POST_NOTIFICATIONS granted; [justDenied]: the user just refused it. */
-    fun map(on: Boolean, permission: Boolean, justDenied: Boolean): NotifyUi {
+    /**
+     * [on]: the setting; [permission]: POST_NOTIFICATIONS granted; [justDenied]: the user just
+     * refused it; [blocked]: the permission is granted but the system would still not show the
+     * notifications (Infovore's notifications or the "同步問題" channel turned off).
+     */
+    fun map(on: Boolean, permission: Boolean, justDenied: Boolean, blocked: Boolean = false): NotifyUi {
         val state = when {
+            on && permission && blocked -> NotifyState.BLOCKED
             on && permission -> NotifyState.ON
             on -> NotifyState.PERMISSION_REVOKED
             justDenied -> NotifyState.DENIED
             else -> NotifyState.OFF
         }
-        val tone = if ((on && !permission) || justDenied) Tone.WARNING else Tone.NEUTRAL
+        val tone = if (state == NotifyState.BLOCKED || (on && !permission) || justDenied) Tone.WARNING else Tone.NEUTRAL
         return NotifyUi(checked = on && permission, state = state, tone = tone)
     }
 }

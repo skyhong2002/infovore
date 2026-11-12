@@ -7,4 +7,5 @@
     <item name="history_days_input" type="id" />
     <item name="phone_token_input" type="id" />
     <item name="exclusions_input" type="id" />
+    <item name="screen_dropped" type="id" />
 </resources>

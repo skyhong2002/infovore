@@ -1,5 +1,6 @@
 package tw.skyhong.infovore.health.ui
 
+import tw.skyhong.infovore.health.screen.DropLog
 import tw.skyhong.infovore.health.screen.ObservationQueue
 import tw.skyhong.infovore.health.screen.QuarantineAlerts
 import java.time.Instant
@@ -27,6 +28,13 @@ data class ScreenInputs(
     val maxRejected: Int = ObservationQueue.MAX_REJECTED,
     /** "同步失敗時通知我" is on and POST_NOTIFICATIONS granted: quarantine warnings reach the user in the background. */
     val notificationsOn: Boolean = true,
+    /**
+     * When [notificationsOn] is false: the opt-in and permission are on, so it is system settings
+     * (Infovore's notifications or the "同步問題" channel) that block them.
+     */
+    val notificationsBlocked: Boolean = false,
+    /** Records the queue deleted before upload (seven days, 40 MB) since the user last reset it. */
+    val dropped: DropLog = DropLog(),
 )
 
 enum class ScreenState { OFF, NEEDS_SERVICE, PAUSED, RECORDING }
@@ -57,6 +65,8 @@ data class ScreenUi(
      * them on, so the next warning also reaches the user in the background. Null otherwise.
      */
     val notificationHint: String? = null,
+    /** Explains the records deleted before upload ([ScreenInputs.dropped]); null when none were. */
+    val droppedNote: String? = null,
 )
 
 /** Maps phone screen-recording settings to UI text. Never changes any setting itself. */
@@ -66,6 +76,18 @@ object ScreenStatus {
 
     const val NOTIFICATION_HINT =
         "「同步失敗時通知我」目前關閉，所以 App 不在前景時不會提醒這個狀態。建議到「健康資料同步」區塊開啟它：被拒收的紀錄接近或達到上限時會發出通知（只含筆數，不含畫面內容）。"
+
+    const val NOTIFICATION_BLOCKED_HINT =
+        "Infovore 的通知（或「同步問題」通知類別）已在系統設定中關閉，所以 App 不在前景時不會提醒這個狀態。建議到「健康資料同步」區塊按「開啟通知設定」開啟：被拒收的紀錄接近或達到上限時會發出通知（只含筆數，不含畫面內容）。"
+
+    /** "已因過期淘汰 N 筆、因容量淘汰 M 筆（最近：…）" plus what that means. Counts and times only. */
+    fun droppedNote(dropped: DropLog, now: Instant, zone: ZoneId, use24Hour: Boolean): String? {
+        if (dropped.isEmpty) return null
+        val last = dropped.lastMs?.let { TimeText.friendly(Instant.ofEpochMilli(it), now, zone, use24Hour) } ?: "時間不明"
+        return "已因過期淘汰 ${dropped.expired} 筆、因容量淘汰 ${dropped.overCapacity} 筆（最近：$last）。" +
+            "這些畫面紀錄在上傳前已從手機佇列刪除（超過 7 天未能上傳，或待傳佇列超過 40 MB 時刪除最舊的），" +
+            "不會再上傳，網站的時間軸在那段期間會有缺口。成功上傳不會清除這個計數；確認後可按「重設淘汰計數」歸零。"
+    }
 
     private fun rejectedNote(input: ScreenInputs, full: Boolean): String = buildString {
         append(input.rejected).append(" 筆畫面紀錄被伺服器拒收（HTTP 400，格式不被接受）。它們已移出上傳佇列，不會自動再送出，")
@@ -147,7 +169,8 @@ object ScreenStatus {
             QuarantineAlerts.Level.FULL -> " · 上傳已停止"
             QuarantineAlerts.Level.NEAR -> " · 被拒收 ${input.rejected} 筆"
             QuarantineAlerts.Level.NONE -> ""
-        } + if (input.pending > 0) " · 佇列 ${input.pending} 筆" else ""
+        } + (if (input.pending > 0) " · 佇列 ${input.pending} 筆" else "") +
+            if (input.dropped.isEmpty) "" else " · 已淘汰 ${input.dropped.total} 筆"
         val uploadHint = when {
             !input.tokenConfigured -> "需先儲存 DAYFLOW_PHONE_TOKEN"
             quarantineFull -> "被拒收的紀錄已達上限 ${input.maxRejected} 筆，已停止上傳"
@@ -174,7 +197,12 @@ object ScreenStatus {
             rejectedNote = if (input.rejected > 0) rejectedNote(input, quarantineFull) else null,
             requeueLabel = if (input.requeueable > 0) "放回佇列重送（${input.requeueable} 筆）" else null,
             quarantineFull = quarantineFull,
-            notificationHint = if (quarantineLevel != QuarantineAlerts.Level.NONE && !input.notificationsOn) NOTIFICATION_HINT else null,
+            droppedNote = droppedNote(input.dropped, now, input.zone, input.use24Hour),
+            notificationHint = when {
+                quarantineLevel == QuarantineAlerts.Level.NONE || input.notificationsOn -> null
+                input.notificationsBlocked -> NOTIFICATION_BLOCKED_HINT
+                else -> NOTIFICATION_HINT
+            },
         )
     }
 }

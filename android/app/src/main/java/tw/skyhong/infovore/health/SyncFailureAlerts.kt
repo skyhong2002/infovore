@@ -8,6 +8,10 @@ package tw.skyhong.infovore.health
  * [THRESHOLD] consecutive failures span about 18 hours of the six-hourly schedule: well before
  * the public page reports the data as stale after 36 hours. Any successful full sync, manual or
  * background, resets the count and removes the notification.
+ *
+ * A warning counts as delivered only when it was posted while the system would show it (the
+ * permission, Infovore's notifications and the "同步問題" channel all on, see [delivery]); one
+ * that could not be shown is delivered once they are on again ([catchUp]).
  */
 object SyncFailureAlerts {
     const val THRESHOLD = 3
@@ -43,10 +47,41 @@ object SyncFailureAlerts {
     }
 
     /**
-     * Right after notifications were turned on (opt-in and permission): whether the failures
-     * already counted call for the warning now, instead of only at the next failed run.
+     * When notifications were turned on (the opt-in, or the permission granted) or may have been
+     * unblocked in system settings (the app came back to the foreground): whether the failures
+     * already counted call for the warning now, instead of only at the next failed run. A warning
+     * already delivered ([notified]) is not repeated.
      */
-    fun catchUp(failures: Int, notificationsEnabled: Boolean): Boolean = notificationsEnabled && failures >= THRESHOLD
+    fun catchUp(failures: Int, notificationsEnabled: Boolean, notified: Boolean = false): Boolean =
+        notificationsEnabled && failures >= THRESHOLD && !notified
+
+    /** Whether a notification on the "同步問題" channel would actually be shown. */
+    enum class Delivery {
+        SHOWN,
+
+        /** POST_NOTIFICATIONS is not granted. */
+        NO_PERMISSION,
+
+        /** The user turned off all of Infovore's notifications in system settings. */
+        APP_BLOCKED,
+
+        /** The user turned off only the "同步問題" channel in system settings. */
+        CHANNEL_BLOCKED,
+        ;
+
+        val shown: Boolean get() = this == SHOWN
+    }
+
+    /**
+     * [channelBlocked]: the channel exists with importance NONE. A channel not created yet is
+     * created at its default importance when the first notification is posted, so it does not block.
+     */
+    fun delivery(permission: Boolean, appEnabled: Boolean, channelBlocked: Boolean): Delivery = when {
+        !permission -> Delivery.NO_PERMISSION
+        !appEnabled -> Delivery.APP_BLOCKED
+        channelBlocked -> Delivery.CHANNEL_BLOCKED
+        else -> Delivery.SHOWN
+    }
 
     /** Whether a failed attempt (0-based [runAttemptCount]) is the last one WorkManager runs this period. */
     fun isFinalAttempt(runAttemptCount: Int): Boolean = runAttemptCount >= MAX_RETRIES

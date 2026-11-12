@@ -73,6 +73,8 @@ class ScreenController(
     private lateinit var rejectedBox: TextView
     private lateinit var requeueRejectedButton: Button
     private lateinit var deleteRejectedButton: Button
+    private lateinit var droppedBox: TextView
+    private lateinit var resetDroppedButton: Button
 
     private var justSaved = false
     private var updatingSwitch = false
@@ -127,6 +129,19 @@ class ScreenController(
             setOnClickListener { confirmDeleteRejected() }
         }
         section.add(deleteRejectedButton, 4)
+        // Records the queue itself deleted before upload (seven days, 40 MB): counts only, kept
+        // until the user resets them.
+        droppedBox = kit.statusBox().apply {
+            id = R.id.screen_dropped
+            visibility = View.GONE
+            kit.setTone(this, Tone.WARNING)
+        }
+        section.add(droppedBox, 8)
+        resetDroppedButton = kit.secondaryButton(host.string(R.string.action_reset_dropped)).apply {
+            visibility = View.GONE
+            setOnClickListener { confirmResetDropped() }
+        }
+        section.add(resetDroppedButton, 4)
 
         // Step 1: token and exclusions
         section.add(kit.heading(Style.SUBHEAD, host.string(R.string.screen_step_settings)), 20)
@@ -309,7 +324,9 @@ class ScreenController(
                 otherDestinationPending = queue.countOtherDestinations(destination),
                 rejected = queue.countRejected(),
                 requeueable = queue.countRequeueable(destination),
-                notificationsOn = host.settings.notifyOnSyncFailure && SyncFailureNotifier.permissionGranted(host.activity),
+                notificationsOn = SyncFailureNotifier.notificationsOn(host.activity, host.settings),
+                notificationsBlocked = host.settings.notifyOnSyncFailure && SyncFailureNotifier.permissionGranted(host.activity),
+                dropped = queue.dropLog(),
             ),
         )
         rejectedBox.text = listOfNotNull(ui.rejectedNote, ui.notificationHint).joinToString("\n\n")
@@ -321,6 +338,9 @@ class ScreenController(
         otherDestinationBox.text = ui.otherDestinationNote
         otherDestinationBox.visibility = if (ui.otherDestinationNote == null) View.GONE else View.VISIBLE
         deleteOtherDestinationButton.visibility = otherDestinationBox.visibility
+        droppedBox.text = ui.droppedNote
+        droppedBox.visibility = if (ui.droppedNote == null) View.GONE else View.VISIBLE
+        resetDroppedButton.visibility = droppedBox.visibility
         statusBox.text = listOfNotNull(ui.headline, ui.nextStep).joinToString("\n")
         kit.setTone(statusBox, ui.tone)
         details.text = ui.details
@@ -428,6 +448,26 @@ class ScreenController(
                 if (moved == null) host.string(R.string.screen_records_busy)
                 else host.string(R.string.requeue_rejected_done, moved),
             )
+            render()
+        }
+    }
+
+    /** Zeroes, after confirmation, the counts of records the queue dropped. Deletes nothing. */
+    private fun confirmResetDropped() {
+        val queue = ObservationQueue.get(host.activity)
+        val seen = queue.dropLog()
+        if (seen.isEmpty) {
+            render()
+            return
+        }
+        host.confirm(
+            DialogText(
+                host.string(R.string.reset_dropped_title),
+                host.string(R.string.reset_dropped_message, seen.expired, seen.overCapacity),
+                host.string(R.string.reset_dropped_ok),
+            ),
+        ) {
+            if (!queue.resetDropLog(seen)) host.toast(host.string(R.string.reset_dropped_changed))
             render()
         }
     }

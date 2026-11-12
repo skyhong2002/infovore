@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import tw.skyhong.infovore.health.HealthConnectAccess
 import tw.skyhong.infovore.health.HealthConnectSync
 import tw.skyhong.infovore.health.R
 import tw.skyhong.infovore.health.SyncFailureAlerts
@@ -78,6 +79,7 @@ class HealthController(
     private lateinit var lastSleepText: TextView
     private lateinit var notifySwitch: SwitchCompat
     private lateinit var notifyNote: TextView
+    private lateinit var notifySettingsButton: Button
 
     private var availability: HealthConnectAvailability? = null
 
@@ -134,8 +136,11 @@ class HealthController(
         section.add(staleSyncButton, 8)
         staleNotifyButton = kit.secondaryButton("").apply {
             visibility = View.GONE
-            // Only on this tap: the same path as turning on the switch below (asks for the permission).
-            setOnClickListener { onNotifySwitch(true) }
+            // Only on this tap: the same path as turning on the switch below (asks for the permission),
+            // or, when they are on but blocked in system settings, the settings to unblock them.
+            setOnClickListener {
+                if (notifyBlocked()) openNotificationSettings() else onNotifySwitch(true)
+            }
         }
         section.add(staleNotifyButton, 4)
         statusBox = kit.statusBox()
@@ -188,12 +193,17 @@ class HealthController(
         section.add(notifySwitch, 8)
         notifyNote = kit.liveText(Style.CAPTION).apply { setPadding(kit.dp(4), 0, 0, 0) }
         section.add(notifyNote)
+        notifySettingsButton = kit.secondaryButton(host.string(R.string.action_open_notification_settings)).apply {
+            visibility = View.GONE
+            setOnClickListener { openNotificationSettings() }
+        }
+        section.add(notifySettingsButton, 4)
         return section
     }
 
     /** Re-reads availability and permissions; they can change in system settings while we are away. */
     suspend fun refresh() {
-        val status = HealthConnectAvailability.fromSdkStatus(HealthConnectClient.getSdkStatus(activity))
+        val status = HealthConnectAvailability.fromSdkStatus(HealthConnectAccess.sdkStatus(activity))
         availability = status
         if (status != HealthConnectAvailability.AVAILABLE) {
             granted = null
@@ -201,7 +211,7 @@ class HealthController(
             return
         }
         try {
-            val client = HealthConnectClient.getOrCreate(activity)
+            val client = HealthConnectAccess.client(activity)
             granted = client.permissionController.getGrantedPermissions()
             backgroundSupported = client.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) ==
                 HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
@@ -272,7 +282,10 @@ class HealthController(
 
         val gaps = reconcile.render(syncReady = ui.syncEnabled, syncHint = ui.syncHint, resultNotice = panel.notice)
 
-        val notificationsOn = settings.notifyOnSyncFailure && SyncFailureNotifier.permissionGranted(activity)
+        // One NotificationManager query per render (renders follow every sync progress line).
+        val delivery = SyncFailureNotifier.delivery(activity)
+        val notificationsOn = settings.notifyOnSyncFailure && delivery.shown
+        val blocked = notifyBlocked(delivery)
         val stale = StaleSync.map(
             lastSuccess = StaleSync.lastSuccess(settings.lastSuccessfulSyncMs, settings.lastStatus, settings.lastSyncFailed),
             now = now,
@@ -288,7 +301,11 @@ class HealthController(
         staleSyncButton.text = stale?.syncLabel
         staleSyncButton.isEnabled = stale?.syncEnabled == true
         staleNotifyButton.visibility = if (stale?.notifyLabel == null) View.GONE else View.VISIBLE
-        staleNotifyButton.text = stale?.notifyLabel
+        staleNotifyButton.text = if (stale?.notifyLabel != null && blocked) {
+            host.string(R.string.action_open_notification_settings)
+        } else {
+            stale?.notifyLabel
+        }
 
         val lastSync = TimeText.splitStatus(settings.lastStatus).first
         val summary = buildString {
@@ -301,7 +318,7 @@ class HealthController(
             if (panel.busy) host.string(R.string.sync_in_progress) else summary,
             SyncPanel.summaryTone(ui.tone, unverified = gaps != null || stale != null, busy = panel.busy),
         )
-        renderNotifications()
+        renderNotifications(delivery)
         onRendered()
     }
 
@@ -315,12 +332,13 @@ class HealthController(
         }
     }
 
-    private fun renderNotifications() {
+    private fun renderNotifications(delivery: SyncFailureAlerts.Delivery) {
         if (!::notifySwitch.isInitialized) return
         val notify = NotifyStatus.map(
             on = settings.notifyOnSyncFailure,
-            permission = SyncFailureNotifier.permissionGranted(activity),
+            permission = delivery != SyncFailureAlerts.Delivery.NO_PERMISSION,
             justDenied = notificationPermissionDenied,
+            blocked = delivery == SyncFailureAlerts.Delivery.APP_BLOCKED || delivery == SyncFailureAlerts.Delivery.CHANNEL_BLOCKED,
         )
         updatingNotifySwitch = true
         notifySwitch.isChecked = notify.checked
@@ -330,7 +348,11 @@ class HealthController(
             NotifyState.PERMISSION_REVOKED -> host.string(R.string.notify_permission_revoked)
             NotifyState.DENIED -> host.string(R.string.notify_denied)
             NotifyState.OFF -> host.string(R.string.notify_off, SyncFailureAlerts.THRESHOLD)
+            NotifyState.BLOCKED -> host.string(
+                if (delivery == SyncFailureAlerts.Delivery.CHANNEL_BLOCKED) R.string.notify_blocked_channel else R.string.notify_blocked_app,
+            )
         }
+        notifySettingsButton.visibility = if (notify.showSettingsButton) View.VISIBLE else View.GONE
         if (notify.tone == Tone.NEUTRAL) notifyNote.setTextColor(kit.color(R.color.text_secondary)) else kit.setTone(notifyNote, notify.tone, tintBackground = false)
     }
 
@@ -356,8 +378,20 @@ class HealthController(
         }
     }
 
-    /** Delivers, once, the warnings that already apply now that notifications are on. */
-    private fun catchUpNotifications() {
+    /** On in the app, permission granted, but Infovore's notifications or the channel are off in system settings. */
+    private fun notifyBlocked(delivery: SyncFailureAlerts.Delivery = SyncFailureNotifier.delivery(activity)): Boolean =
+        settings.notifyOnSyncFailure && delivery != SyncFailureAlerts.Delivery.NO_PERMISSION && !delivery.shown
+
+    private fun openNotificationSettings() {
+        host.openSafely(SyncFailureNotifier.settingsIntent(activity, SyncFailureNotifier.delivery(activity)))
+    }
+
+    /**
+     * Delivers, once, the warnings that already apply and were not shown yet: when notifications
+     * were just turned on, and whenever the app returns to the foreground (they may have been
+     * turned back on in system settings meanwhile).
+     */
+    fun catchUpNotifications() {
         val context = activity.applicationContext
         activity.lifecycleScope.launch(Dispatchers.IO) { SyncFailureNotifier.catchUp(context, settings) }
     }
@@ -376,7 +410,7 @@ class HealthController(
         grantedBeforeRequest = granted.orEmpty()
         permissionRequestHadNoEffect = false
         try {
-            permissionLauncher.launch(permissionsToRequest(HealthConnectClient.getOrCreate(activity)))
+            permissionLauncher.launch(permissionsToRequest(HealthConnectAccess.client(activity)))
         } catch (_: ActivityNotFoundException) {
             openHealthConnectSettings()
         }

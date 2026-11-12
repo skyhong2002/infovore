@@ -80,7 +80,7 @@ typealias SyncSummary = HealthSyncEngine.SyncSummary
  * Unit tests pass a FakeHealthConnectClient (androidx.health.connect:connect-testing).
  */
 class HealthConnectReader(private val client: HealthConnectClient) : HealthReader {
-    constructor(context: Context) : this(HealthConnectClient.getOrCreate(context))
+    constructor(context: Context) : this(HealthConnectAccess.client(context))
 
     override suspend fun grantedPermissions(): Set<String> = client.permissionController.getGrantedPermissions()
 

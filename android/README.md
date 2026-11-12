@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.4.4) reads selected records from Android Health Connect and
+This private companion (current version 0.4.5) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -72,6 +72,16 @@ always starts collapsed. Each section header shows its current state.
   (the switch, or the permission granted) is shown at once, once: three or more
   failed background syncs, or a quarantine at 80% or full. A warning counts as
   shown only when both the switch and the permission allowed it.
+  Since 0.4.5 it also counts as shown only when the system would display it:
+  the permission, Infovore's notifications and the **同步問題** channel must
+  all be on in system settings. If the user turned off Infovore's
+  notifications or only that channel, nothing is recorded as notified, the
+  switch's note says notifications are blocked and offers **開啟通知設定**
+  (the channel's or the app's notification settings), and the warnings that
+  still apply are delivered once, the next time the app comes back to the
+  foreground with them allowed again. A warning that was shown and then hidden
+  by the system is delivered again the same way. Each still shows once: one the
+  user swiped away is not repeated.
 - A background sync that never runs (the system restricted the app, or it was
   force-stopped) cannot notify anyone. So since 0.4.4, when the app is opened
   more than 24 hours after the last successful full sync, the top of the health
@@ -307,14 +317,25 @@ destination's seven-day limit (the queue persists the stop period in
 dropped for their age, and after the user deals with the quarantine they get
 the rest of their seven days to upload. The 40 MB cap still applies throughout
 and drops the oldest records first, so a stop lasting long enough still loses
-records; records of other destinations keep the plain seven-day rule. The
+records; records of other destinations keep the plain seven-day rule.
+Since 0.4.5 the queue keeps a lasting count of what it dropped before upload,
+in `screen-queue/drop-log` (counts and times only, never content, app names or
+destinations): how many records were dropped for being older than seven days,
+how many by the 40 MB cap, and when each last happened. The section shows
+**已因過期淘汰 N 筆、因容量淘汰 M 筆（最近：…）** (and **已淘汰 N 筆** on the
+collapsed header) until the user presses **重設淘汰計數** and confirms; a
+successful upload, an app restart or the user's own deletions never clear or
+add to it. If more records are dropped between showing the counts and the
+confirmation, nothing is reset and the new counts are shown first. The
 quarantine warns once at 80% (400 records, **被拒收 N 筆** on the collapsed
 header) and once when full: with **同步失敗時通知我** on and the permission
 granted, a notification on the **同步問題** channel (counts only: rejected and
 pending records, never screen content or app names) opens this section, and is
 removed once the user brings the quarantine back down. With notifications off,
 the section shows the state and suggests turning them on; turning them on then
-delivers the current warning once (0.4.4). If every record of a
+delivers the current warning once (0.4.4). If the opt-in is on but Infovore's
+notifications or the channel are off in system settings, the section says so
+instead, and the warning is delivered once they are back on (0.4.5). If every record of a
 batch is rejected, the run stops after quarantining that batch so a
 server-side problem cannot drain the queue.
 
@@ -360,6 +381,32 @@ records that lie fully inside the time range (ending before its end), and its
 these matters. A record the fake leaves out because it reaches the window end
 is not deleted by the server, which only deletes rows ending before the window
 end (`tests/health-reconcile.test.ts` covers that case).
+
+The tests in `src/test/.../robo/` run the real app on Robolectric 4.16.1 (SDK 34,
+the minSdk; SDK 35+ would need JDK 21), still inside `testDebugUnitTest`:
+
+- `MainActivityUiTest` starts `MainActivity` and checks each section (first-run
+  steps, connection, health, the reconcile reminder, the screen recorder):
+  visible texts, which sections start collapsed, TalkBack headings, state
+  descriptions and field errors, that every visible control is at least 48 dp,
+  field validation, the unsaved-changes dialog on back, the stale-sync warning,
+  the notification tap's section, the drop-log box and its reset; and that the
+  screen renders at font scale 1.3 in dark mode.
+- `NotificationsTest` checks what reaches Android's NotificationManager:
+  channel, text without secrets, the tap's target and extra, private
+  visibility, and that a warning blocked by the permission, Infovore's
+  notifications or the channel is not counted and is delivered once allowed.
+- `BackgroundWorkTest` uses WorkManager's test driver: both periodic works are
+  scheduled at start-up with a network constraint, `SyncWorker` retries while a
+  manual sync holds the lock, and only final attempts count toward the warning.
+
+Health Connect does not exist on Robolectric: the tests give
+`HealthConnectAccess` a `FakeHealthConnectClient`, and a stand-in
+`AndroidKeyStore` provider lets the unchanged `KeystoreCipher` save tokens.
+Nothing in them reaches a network (endpoints are `.example` names, and a fake
+with no permissions fails a sync before any request). They do not replace a
+check on a real phone: system notification rendering, OEM background limits,
+real Health Connect and TalkBack itself are not exercised.
 
 ### Private HTTP host
 

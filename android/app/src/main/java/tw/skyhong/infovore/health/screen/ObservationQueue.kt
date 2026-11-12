@@ -50,7 +50,8 @@ data class Observation(
  *
  * Retention: the oldest records beyond [maxTotalBytes] (40 MB) are always dropped, and records older
  * than [MAX_AGE_MS] too, except that time during which a full quarantine ([maxRejected]) stopped
- * uploads does not count toward the current destination's seven days (see [AgeHold]).
+ * uploads does not count toward the current destination's seven days (see [AgeHold]). How many
+ * records each rule deleted, and when, is kept in a [DropLog] until the user resets it.
  */
 class ObservationQueue internal constructor(
     private val root: File,
@@ -113,18 +114,40 @@ class ObservationQueue internal constructor(
         val hold = QueueRetention.nextHold(previous, destination?.let(::bucketName), countRejected() >= maxRejected, nowMs)
         if (hold != previous) writeAgeHold(hold)
         val all = allDirs().flatMap(::files).sortedBy { it.name }
+        var expired = 0
         val fresh = all.filter { file ->
             val held = hold?.takeIf { it.bucket == file.parentFile?.name }
             val stale = capturedAt(file)?.let { QueueRetention.isStale(it, nowMs, held) } ?: true
-            if (stale) file.delete()
+            if (stale && file.delete()) expired++
             !stale
         }
         var total = fresh.sumOf { it.length() }
+        var overCapacity = 0
         for (file in fresh) {
             if (total <= maxTotalBytes) break
             total -= file.length()
-            file.delete()
+            if (file.delete()) overCapacity++
         }
+        if (expired > 0 || overCapacity > 0) writeDropLog(dropLog().add(expired, overCapacity, nowMs))
+    }
+
+    /** What pruning has deleted before upload since the user last reset it ([DropLog]). */
+    @Synchronized
+    fun dropLog(): DropLog = DropLog.decode(runCatching { File(root, DROP_LOG_FILE).readText(Charsets.UTF_8) }.getOrNull())
+
+    /**
+     * Clears the [DropLog] after the user confirmed they have seen [seen]; returns false, and
+     * clears nothing, when more records were dropped since (the new totals are shown first).
+     */
+    @Synchronized
+    fun resetDropLog(seen: DropLog): Boolean {
+        if (dropLog() != seen) return false
+        File(root, DROP_LOG_FILE).delete()
+        return true
+    }
+
+    private fun writeDropLog(log: DropLog) {
+        runCatching { File(root, DROP_LOG_FILE).writeText(log.encode(), Charsets.UTF_8) }
     }
 
     /** Oldest-first entries for [destination], skipping and deleting unreadable files. */
@@ -277,6 +300,9 @@ class ObservationQueue internal constructor(
 
         /** Not a .json file and not a directory, so no listing of records ever sees it. */
         private const val AGE_HOLD_FILE = "age-hold"
+
+        /** The [DropLog]; like [AGE_HOLD_FILE], never seen as a record. */
+        private const val DROP_LOG_FILE = "drop-log"
 
         /** A stable directory name for a normalised destination, without putting the URL in a path. */
         internal fun bucketName(destination: String): String {

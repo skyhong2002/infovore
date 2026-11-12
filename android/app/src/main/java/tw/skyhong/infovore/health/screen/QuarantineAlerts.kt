@@ -42,16 +42,24 @@ object QuarantineAlerts {
      * The decision for the current counts, given the level last notified ([notified]).
      * [notificationsEnabled]: the user's opt-in and POST_NOTIFICATIONS both hold, so a posted
      * notification is actually shown. Also used right after notifications are turned on, to
-     * deliver a warning that applies already (see QuarantineNotifier.catchUp).
+     * deliver a warning that applies already (see QuarantineNotifier.catchUp). [hidden]: the
+     * system would not show it (the permission, Infovore's notifications or the "同步問題" channel
+     * is off in system settings): nothing is posted and nothing counts as notified, so the warning
+     * is delivered once they are on again.
      */
-    fun next(notified: Level, rejected: Int, maxRejected: Int, notificationsEnabled: Boolean): Decision {
+    fun next(notified: Level, rejected: Int, maxRejected: Int, notificationsEnabled: Boolean, hidden: Boolean = false): Decision {
         val level = level(rejected, maxRejected)
-        val notify = notificationsEnabled && level > notified
+        val notify = notificationsEnabled && !hidden && level > notified
         return Decision(
             level = level,
             notify = notify,
             clear = level < notified,
-            notified = if (notify) level else minOf(level, notified),
+            notified = when {
+                notify -> level
+                // The system hides whatever was shown, so it is shown again once allowed.
+                hidden -> Level.NONE
+                else -> minOf(level, notified)
+            },
         )
     }
 

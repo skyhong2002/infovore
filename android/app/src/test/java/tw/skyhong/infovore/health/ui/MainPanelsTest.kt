@@ -27,6 +27,13 @@ class MainPanelsTest {
         assertEquals(NotifyUi(false, NotifyState.PERMISSION_REVOKED, Tone.WARNING), NotifyStatus.map(on = true, permission = false, justDenied = false))
         assertEquals(NotifyUi(false, NotifyState.DENIED, Tone.WARNING), NotifyStatus.map(on = false, permission = false, justDenied = true))
         assertEquals(NotifyUi(false, NotifyState.OFF, Tone.NEUTRAL), NotifyStatus.map(on = false, permission = true, justDenied = false))
+        // On, permission granted, but blocked in system settings: a warning and a way to the settings.
+        val blocked = NotifyStatus.map(on = true, permission = true, justDenied = false, blocked = true)
+        assertEquals(NotifyUi(true, NotifyState.BLOCKED, Tone.WARNING), blocked)
+        assertTrue(blocked.showSettingsButton)
+        assertFalse(NotifyStatus.map(on = true, permission = true, justDenied = false).showSettingsButton)
+        // Without the opt-in there is nothing to unblock.
+        assertEquals(NotifyState.OFF, NotifyStatus.map(on = false, permission = true, justDenied = false, blocked = true).state)
     }
 
     @Test

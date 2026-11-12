@@ -55,6 +55,11 @@
     <string name="requeue_rejected_others">另有 %1$d 筆屬於其他目的地或已超過 7 天，會留在隔離區，只能刪除。</string>
     <string name="requeue_rejected_ok">放回佇列</string>
     <string name="requeue_rejected_done">已放回 %1$d 筆紀錄到上傳佇列</string>
+    <string name="action_reset_dropped">重設淘汰計數</string>
+    <string name="reset_dropped_title">重設淘汰計數？</string>
+    <string name="reset_dropped_message">已因過期淘汰 %1$d 筆、因容量淘汰 %2$d 筆的計數會歸零。這只清除計數，不會刪除或恢復任何紀錄（被淘汰的紀錄已經刪除）。</string>
+    <string name="reset_dropped_ok">歸零</string>
+    <string name="reset_dropped_changed">剛才又有紀錄被淘汰，請先看更新後的計數</string>
     <string name="screen_records_busy">畫面記錄正在上傳，請稍後再試</string>
     <string name="connection_summary_ready">已設定 · %1$s</string>
     <string name="connection_summary_unsaved">有未儲存的變更</string>
@@ -80,6 +85,9 @@
     <string name="notify_on">背景同步連續失敗 %1$d 次（約 %2$d 小時）時通知；同步成功後自動清除。被拒收的畫面紀錄接近或達到上限時也會通知。</string>
     <string name="notify_denied">未取得通知權限，所以不會通知。如要開啟，請到 Android 設定 → 應用程式 → Infovore → 通知 允許後再開啟此開關。</string>
     <string name="notify_permission_revoked">通知權限已在系統設定中關閉，因此不會通知；請重新開啟此開關或到系統設定允許通知。</string>
+    <string name="notify_blocked_app">Infovore 的通知已在系統設定中關閉，所以目前不會顯示任何提醒（App 內的狀態照常顯示）。請按「開啟通知設定」允許通知；回到 App 後會補發仍然存在的警告。</string>
+    <string name="notify_blocked_channel">「同步問題」通知類別已在系統設定中關閉，所以目前不會顯示這些提醒（App 內的狀態照常顯示）。請按「開啟通知設定」開啟它；回到 App 後會補發仍然存在的警告。</string>
+    <string name="action_open_notification_settings">開啟通知設定</string>
     <string name="notification_channel_sync">同步問題</string>
     <string name="notification_channel_sync_description">背景健康資料同步連續失敗，或畫面紀錄上傳因被拒收的紀錄過多而停止時提醒</string>
     <string name="sync_blocked_invalid_inputs">連線設定有未修正的錯誤，請先修正後再同步</string>

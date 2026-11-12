@@ -11,8 +11,8 @@ android {
         applicationId = "tw.skyhong.infovore.health"
         minSdk = 34
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.4.4"
+        versionCode = 18
+        versionName = "0.4.5"
 
         // The one private host plain HTTP may reach (see android/README.md, "Private HTTP host").
         // It must match the <domain> in res/xml/network_security_config.xml; a unit test checks it.
@@ -37,6 +37,9 @@ android {
     kotlinOptions { jvmTarget = "17" }
 
     buildFeatures { buildConfig = true }
+
+    // Robolectric tests (src/test/.../robo) inflate the real resources and manifest.
+    testOptions { unitTests.isIncludeAndroidResources = true }
 }
 
 dependencies {
@@ -53,4 +56,11 @@ dependencies {
     testImplementation("androidx.health.connect:connect-testing:1.0.0-alpha03")
     // The real org.json, so HealthRecordJson runs in JVM tests (android.jar only has stubs).
     testImplementation("org.json:json:20251224")
+    // UI and system-integration tests on the JVM: MainActivity, notifications, WorkManager.
+    // Robolectric runs them on SDK 34 (see src/test/resources/robolectric.properties).
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("androidx.test:core-ktx:1.7.0")
+    // Must match work-runtime-ktx above.
+    //noinspection GradleDependency
+    testImplementation("androidx.work:work-testing:2.10.0")
 }

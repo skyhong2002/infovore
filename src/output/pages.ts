@@ -146,22 +146,32 @@ function activityCard(activity: Activity, context?: CardContext, now = new Date(
     return `<article class="card entry health-activity" id="activity-${html(activity.id)}"><img src="/logos/healthconnect.png" alt="Health Connect logo" width="48" height="48"><div><span class="pill">Health · ${html(activity.status)}</span><h3><a href="/platforms/health${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a></h3><div class="muted health-activity-summary" title="${html(summary)}">${html(summary)}</div><time datetime="${html(when)}">${html(date)}${clock ? ` · ${clock} GMT+8${activity.status === 'sleep' ? ' · 醒來' : ''}` : ' · 每日彙總'}</time></div></article>`;
   }
   const parsedWhen = new Date(when);
-  const date = /^\d{4}-\d{2}-\d{2}/.test(when)
+  const iso = /^\d{4}-\d{2}-\d{2}/.test(when) && Number.isFinite(parsedWhen.getTime());
+  // Shown in Taipei time and labelled so; a machine-readable <time> carries the instant.
+  const date = iso
     ? dateFormat('en', { timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric' }).format(parsedWhen)
       + (activity.occurredAtPrecision === 'exact' ? ` · ${dateFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(parsedWhen)}` : '')
+      + ' GMT+8'
     : when;
+  const dateMarkup = iso ? `<time datetime="${html(when)}">${html(date)}</time>` : html(date);
   const progress = activity.extra.watchedEpisodes != null && activity.extra.totalEpisodes
     ? `${activity.extra.watchedEpisodes}/${activity.extra.totalEpisodes} ep`
     : activity.extra.progress ? `progress ${activity.extra.progress}` : '';
   const next = activity.extra.nextToWatch ? `next ${activity.extra.nextToWatch}` : '';
   const age = relativeAge(when, now);
-  // `meta` is HTML-escaped piecewise: activityMeta() already returns safe markup.
+  // `meta` is HTML-escaped piecewise: activityMeta() already returns safe markup. The title
+  // attribute repeats it as text; the visible copy marks the date up as <time>.
   const meta = context === 'current' || context === 'paused'
     ? [sourceLabel(activity.source), progress, next, age ? `last progress ${age}` : date].filter(Boolean).map(html).join(' · ')
     : context === 'queued'
       ? [sourceLabel(activity.source), activity.extra.author ? `by ${activity.extra.author}` : '', age ? `added ${age}` : ''].filter(Boolean).map(html).join(' · ')
       : [html(sourceLabel(activity.source)), activityMeta(activity), html(date)].filter(Boolean).join(' · ');
-  return `<article class="card entry${context ? ` entry-${context}` : ''}" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted entry-meta" title="${meta}">${meta}</div></div></article>`;
+  const visibleMeta = context === 'current' || context === 'paused'
+    ? [sourceLabel(activity.source), progress, next].map(html).concat(age ? [html(`last progress ${age}`)] : [dateMarkup]).filter(Boolean).join(' · ')
+    : context === 'queued'
+      ? meta
+      : [html(sourceLabel(activity.source)), activityMeta(activity), dateMarkup].filter(Boolean).join(' · ');
+  return `<article class="card entry${context ? ` entry-${context}` : ''}" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted entry-meta" title="${meta}">${visibleMeta}</div></div></article>`;
 }
 
 
@@ -208,34 +218,28 @@ export interface ApiDocs {
 
 export function apiPage(ownerName: string, docs: ApiDocs): string {
   const row = (path: string, description: string, params = '') => `<tr><td><code>${html(path)}</code></td><td>${description}${params ? `<br><span class="muted">${params}</span>` : ''}</td></tr>`;
+  // Each endpoint table scrolls inside its own named, focusable region, so a long path or
+  // value never widens the page on a narrow phone; cells also wrap long tokens (styles.ts).
+  const table = (id: string, title: string, note: string, rows: string) =>
+    `<h2 id="${id}">${title}</h2>${note}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="${id}"><table>
+    <thead><tr><th scope="col">Endpoint</th><th scope="col">Returns</th></tr></thead><tbody>
+    ${rows}
+    </tbody></table></div>`;
   const intro = `<section class="page-intro"><div><div class="eyebrow">Data access</div><h1>API</h1><p>Everything on this site is also available as JSON, RSS and image cards. Read-only, no key, no rate limit beyond good manners.</p></div><div class="page-intro-aside">Base URL <code>${html(docs.baseUrl)}</code></div></section>`;
   const rules = `<section class="card"><p class="muted">All endpoints are <code>GET</code> and return UTF-8 JSON unless noted. Times are ISO 8601 in UTC; "a day" means a Taipei (UTC+8) calendar day. Only <em>public</em> activities are exposed: raw health samples, private events and Dayflow screen text never leave the server. Responses are not cached by the server, but the data behind them refreshes hourly, so please do not poll faster than that. Content belongs to the original platforms; credit "${html(ownerName)} · infovore" when you reuse it.</p></section>`;
-  const activities = `<h2>Activities</h2><table>
-    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
-    ${row('/api/activities.json', 'A page of public activities, newest first, as <code>{ data, total, limit, offset }</code>.', 'Query: <code>q</code> text match on title and metadata · <code>source</code> platform id · <code>kind</code> media kind · <code>status</code> · <code>since</code>/<code>until</code> ISO instants · <code>limit</code> (1–500, default 100) · <code>offset</code> (0–9,007,199,254,740,991, default 0). Finite values are rounded down and clamped; non-numeric or infinite values use the defaults.')}
+  const activities = table('api-activities', 'Activities', '', `${row('/api/activities.json', 'A page of public activities, newest first, as <code>{ data, total, limit, offset }</code>.', 'Query: <code>q</code> text match on title and metadata · <code>source</code> platform id · <code>kind</code> media kind · <code>status</code> · <code>since</code>/<code>until</code> ISO instants · <code>limit</code> (1–500, default 100) · <code>offset</code> (0–9,007,199,254,740,991, default 0). Finite values are rounded down and clamped; non-numeric or infinite values use the defaults.')}
     ${row('/feed.json', 'The latest 100 activities in the same shape.', 'Query: <code>limit</code>, with the same normalization as activities')}
     ${row('/feed.xml', 'RSS 2.0 feed of the latest 100 activities.')}
-    ${row('/api/wrapped/<year>.json', 'A year-in-review summary: totals by source and kind, most active titles, average rating.', 'Years 2000–2200')}
-    </tbody></table>`;
-  const time = `<h2>Time</h2><table>
-    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
-    ${row('/api/time-spent.json', 'Recorded time per platform across seven windows (<code>last24h</code>, <code>last28d</code>, <code>day</code>, <code>week</code>, <code>month</code>, <code>year</code>, <code>allTime</code>) in seconds, each marked <code>measured</code> or <code>estimated</code>, plus <code>daily</code>: seconds per Taipei day for the last 28 days per source.')}
-    </tbody></table>`;
-  const mirrors = `<h2>Platform mirrors</h2><p class="muted">The last snapshot pulled from each connected platform, as <code>{ fetchedAt, data }</code> where <code>data</code> carries <code>profile</code>, <code>stats</code>, <code>entries</code> and a platform-specific <code>extra</code>.</p><table>
-    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
-    ${docs.sources.map((source) => row(`/api/${source}.json`, `${html(sourceLabel(source))} snapshot.`)).join('')}
-    </tbody></table>`;
-  const cards = `<h2>Cards</h2><p class="muted">Rendered share cards, in <code>.svg</code> (vector), <code>.png</code> and <code>.webp</code>. Pass <code>?scale=2</code> for retina rasters where supported.</p><table>
-    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
-    ${['now', 'word-cloud', 'word-cloud-plain', 'activity-rhythm', ...docs.cards].map((card) => row(`/card/${card}.svg`, `${html(card)} card`)).join('')}
-    </tbody></table>`;
-  const service = `<h2>Service</h2><table>
-    <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
-    ${row('/status.json', 'Collector status as JSON: refresh schedule, public activity count, latest run per source with its error category only (no upstream details), card list, and each source\'s last fetch.')}
+    ${row('/api/wrapped/<year>.json', 'A year-in-review summary: totals by source and kind, most active titles, average rating.', 'Years 2000–2200')}`);
+  const time = table('api-time', 'Time', '', row('/api/time-spent.json', 'Recorded time per platform across seven windows (<code>last24h</code>, <code>last28d</code>, <code>day</code>, <code>week</code>, <code>month</code>, <code>year</code>, <code>allTime</code>) in seconds, each marked <code>measured</code> or <code>estimated</code>, plus <code>daily</code>: seconds per Taipei day for the last 28 days per source.'));
+  const mirrors = table('api-mirrors', 'Platform mirrors', '<p class="muted">The last snapshot pulled from each connected platform, as <code>{ fetchedAt, data }</code> where <code>data</code> carries <code>profile</code>, <code>stats</code>, <code>entries</code> and a platform-specific <code>extra</code>.</p>',
+    docs.sources.map((source) => row(`/api/${source}.json`, `${html(sourceLabel(source))} snapshot.`)).join(''));
+  const cards = table('api-cards', 'Cards', '<p class="muted">Rendered share cards, in <code>.svg</code> (vector), <code>.png</code> and <code>.webp</code>. Pass <code>?scale=2</code> for retina rasters where supported.</p>',
+    ['now', 'word-cloud', 'word-cloud-plain', 'activity-rhythm', ...docs.cards].map((card) => row(`/card/${card}.svg`, `${html(card)} card`)).join(''));
+  const service = table('api-service', 'Service', '', `${row('/status.json', 'Collector status as JSON: refresh schedule, public activity count, latest run per source with its error category only (no upstream details), card list, and each source\'s last fetch.')}
     ${row('/status', 'The same freshness information as a readable HTML page for browsers; requests without <code>text/html</code> in <code>Accept</code> get the JSON above.')}
     ${row('/healthz', '<code>healthy</code>, <code>degraded</code> or <code>unhealthy</code> (HTTP 503) from source freshness.')}
-    ${row('/mcp', '<code>POST</code>, not <code>GET</code>: Model Context Protocol endpoint (JSON-RPC) exposing the archive as tools for AI agents.')}
-    </tbody></table>`;
+    ${row('/mcp', '<code>POST</code>, not <code>GET</code>: Model Context Protocol endpoint (JSON-RPC) exposing the archive as tools for AI agents.')}`);
   const examples = `<h2 id="api-examples">Examples</h2><pre tabindex="0" role="region" aria-labelledby="api-examples"><code># Everything with "Daft Punk" in it, last 90 days
 curl -s '${html(docs.baseUrl)}/api/activities.json?q=Daft%20Punk&since=2026-07-06T00:00:00Z' | jq '.data[] | {title, source, occurredAt}'
 

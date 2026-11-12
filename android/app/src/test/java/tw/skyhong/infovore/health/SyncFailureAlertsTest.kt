@@ -80,4 +80,21 @@ class SyncFailureAlertsTest {
             HealthCatalog.all.map { it.key }.toSet(),
         )
     }
+
+    @Test
+    fun aDeliveredWarningIsNotRepeatedByCatchUp() {
+        assertTrue(SyncFailureAlerts.catchUp(3, notificationsEnabled = true, notified = false))
+        assertFalse(SyncFailureAlerts.catchUp(3, notificationsEnabled = true, notified = true))
+        assertFalse(SyncFailureAlerts.catchUp(3, notificationsEnabled = false, notified = false))
+    }
+
+    @Test
+    fun deliveryNamesWhatBlocksTheNotification() {
+        assertEquals(SyncFailureAlerts.Delivery.SHOWN, SyncFailureAlerts.delivery(permission = true, appEnabled = true, channelBlocked = false))
+        assertEquals(SyncFailureAlerts.Delivery.NO_PERMISSION, SyncFailureAlerts.delivery(permission = false, appEnabled = false, channelBlocked = true))
+        assertEquals(SyncFailureAlerts.Delivery.APP_BLOCKED, SyncFailureAlerts.delivery(permission = true, appEnabled = false, channelBlocked = true))
+        assertEquals(SyncFailureAlerts.Delivery.CHANNEL_BLOCKED, SyncFailureAlerts.delivery(permission = true, appEnabled = true, channelBlocked = true))
+        assertTrue(SyncFailureAlerts.Delivery.SHOWN.shown)
+        assertFalse(SyncFailureAlerts.Delivery.CHANNEL_BLOCKED.shown)
+    }
 }

@@ -94,6 +94,19 @@ class QuarantineAlertsTest {
     }
 
     @Test
+    fun aWarningTheSystemHidesIsNotCountedAndIsDeliveredWhenShownAgain() {
+        // Opted in, but the channel (or Infovore's notifications) is off in system settings.
+        val hidden = QuarantineAlerts.next(Level.NONE, 500, 500, notificationsEnabled = true, hidden = true)
+        assertFalse(hidden.notify)
+        assertEquals(Level.NONE, hidden.notified)
+        // Shown earlier, then hidden: forgotten, so it comes back once allowed.
+        assertEquals(Level.NONE, QuarantineAlerts.next(Level.FULL, 500, 500, notificationsEnabled = true, hidden = true).notified)
+        val back = QuarantineAlerts.next(Level.NONE, 500, 500, notificationsEnabled = true, hidden = false)
+        assertTrue(back.notify)
+        assertEquals(Level.FULL, back.notified)
+    }
+
+    @Test
     fun theNotifiedLevelOnlyRisesWithANotificationAndFallsWithTheCounts() {
         val held = QuarantineAlerts.next(Level.FULL, 450, 500, notificationsEnabled = false)
         assertTrue(held.clear)
@@ -245,5 +258,8 @@ class QuarantineAlertsTest {
         assertEquals("記錄中 · 上傳已停止 · 佇列 5 筆", full.summary)
         assertTrue(full.notificationHint != null)
         assertNull(ScreenStatus.map(base.copy(rejected = 500, notificationsOn = true)).notificationHint)
+        // Opted in, but blocked in system settings: the hint points there instead.
+        val blocked = ScreenStatus.map(base.copy(rejected = 500, notificationsOn = false, notificationsBlocked = true)).notificationHint!!
+        assertTrue(blocked, blocked.contains("系統設定中關閉") && blocked.contains("開啟通知設定"))
     }
 }

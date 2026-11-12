@@ -101,6 +101,8 @@ class MainActivity : AppCompatActivity() {
             health.render()
         }
         screen.render()
+        // Notifications may have been turned back on in system settings: deliver what was missed.
+        health.catchUpNotifications()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

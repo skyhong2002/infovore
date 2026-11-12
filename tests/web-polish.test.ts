@@ -6,6 +6,7 @@ import { homePage, syncAge, type HomepageData } from '../src/output/home.js';
 import { activityMeta, eventStatusLabel } from '../src/output/activity-meta.js';
 import { platformSync } from '../src/output/overview.js';
 import { publicError, statusPage } from '../src/output/status.js';
+import { searchPage } from '../src/output/pages.js';
 import type { Activity } from '../src/data/types.js';
 
 const base: HomepageData = {
@@ -181,7 +182,62 @@ test('the API page code block is keyboard scrollable and named, and /status is d
   assert.equal(pre.attr('tabindex'), '0');
   assert.equal(pre.attr('role'), 'region');
   assert.equal($(`#${pre.attr('aria-labelledby')}`).text(), 'Examples');
-  const service = $('.api-doc h2').filter((_, h2) => $(h2).text() === 'Service').next('table').text();
+  const service = $('.table-scroll[aria-labelledby="api-service"] table').text();
   assert.match(service, /\/status\.json[\s\S]*as JSON[\s\S]*\/status[\s\S]*HTML page/);
   assert.match(service, /\/mcpPOST, not GET/);
+});
+
+test('every API table scrolls inside its own named, focusable region and stacks on phones', async () => {
+  const $ = load(await (await app.request('/api')).text());
+  const tables = $('.api-doc table');
+  assert.equal(tables.length, 5);
+  tables.each((_, table) => {
+    const region = $(table).parent();
+    assert.ok(region.hasClass('table-scroll'), 'the table sits in a scroll region');
+    assert.equal(region.attr('tabindex'), '0');
+    assert.equal(region.attr('role'), 'region');
+    const heading = $(`#${region.attr('aria-labelledby')}`);
+    assert.equal(heading.prop('tagName'), 'H2');
+    assert.ok(heading.text().length > 0);
+    assert.equal($(table).find('thead th[scope="col"]').length, 2);
+  });
+  assert.deepEqual(tables.map((_, table) => $(table).parent().attr('aria-labelledby')).get(),
+    ['api-activities', 'api-time', 'api-mirrors', 'api-cards', 'api-service']);
+  const css = await (await app.request('/styles.css')).text();
+  assert.match(css, /\.api-doc \.table-scroll\{max-width:100%;overflow-x:auto/);
+  assert.match(css, /@media\(max-width:560px\)\{\.api-doc thead\{clip:rect\(0 0 0 0\)/);
+});
+
+test('each /status card names its columns for phones: state, last successful sync, note, data', () => {
+  const page = load(statusPage({ ownerName: 'Sample', maxSourceAgeHours: 36, intervalMinutes: 60, nextScheduledAt: null, running: [], now: new Date('2026-11-12T08:00:00Z'),
+    sources: [{ source: 'kitsu', lastFetched: '2026-11-12T07:00:00Z', error: null, json: '/api/kitsu.json' },
+      { source: 'health', lastFetched: null, error: null, json: '/api/health.json', delayAfterHours: 24 }] }));
+  page('tbody tr').each((_, row) => {
+    assert.deepEqual(page(row).find('td > .status-label').map((__, label) => page(label).text()).get(),
+      ['State', 'Last successful sync', 'Note', 'Data']);
+  });
+  const css = page('style').text();
+  // Hidden where the column headers show; visible (the state chip's read-only) once they are hidden.
+  assert.match(css, /\.status-label\{display:none\}@media\(max-width:640px\)\{\.status-label\{[^}]*display:block/);
+  assert.match(css, /\.status-table td:nth-child\(2\) \.status-label\{clip:rect\(0 0 0 0\)/);
+  assert.doesNotMatch(css, /Raw data/);
+});
+
+test('search cards mark their dates up as <time> in GMT+8', () => {
+  const activity = (id: string, occurredAt: string, precision: Activity['occurredAtPrecision']): Activity => ({
+    id, dedupeKey: id, source: 'kitsu', sourceItemId: id, type: 'library', mediaKind: 'anime', title: `Synthetic ${id}`, image: '',
+    status: 'current', occurredAt, occurredAtPrecision: precision, rating: null, visibility: 'public', extra: {},
+    firstSeenAt: occurredAt, lastSeenAt: occurredAt,
+  });
+  const $ = load(searchPage('Sample', { query: 'synthetic', source: '', kind: '' },
+    { data: [activity('a', '2026-11-12T15:30:00.000Z', 'exact'), activity('b', '2026-11-10T00:00:00.000Z', 'day')], total: 2, limit: 48, offset: 0 },
+    { kitsu: 2 }, []));
+  const times = $('.entry-meta time');
+  assert.equal(times.length, 2);
+  assert.equal(times.eq(0).attr('datetime'), '2026-11-12T15:30:00.000Z');
+  // 15:30 UTC is 23:30 in Taipei.
+  assert.equal(times.eq(0).text(), 'Nov 12, 2026 · 23:30 GMT+8');
+  assert.equal(times.eq(1).text(), 'Nov 10, 2026 GMT+8');
+  // The tooltip keeps plain text.
+  assert.doesNotMatch($('.entry-meta').first().attr('title') ?? '', /</);
 });
