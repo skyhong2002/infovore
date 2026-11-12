@@ -21,12 +21,21 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
         settings.lastSyncFailed = false
         settings.initialImportDone = true
         SyncRunner.coordinator.clearFailure(SyncKind.FULL)
+        SyncFailureNotifier.record(applicationContext, settings, SyncFailureAlerts.Outcome.SUCCESS)
         Result.success()
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {
         settings.lastStatus = "${Instant.now()}：背景同步失敗：${ErrorText.describe(error)}"
         settings.lastSyncFailed = true
-        if (runAttemptCount < 4) Result.retry() else Result.failure()
+        // Network and HTTP 5xx/503 failures are retried here and again next period; only a run
+        // WorkManager gives up on counts towards the "同步問題" notification.
+        val final = SyncFailureAlerts.isFinalAttempt(runAttemptCount)
+        SyncFailureNotifier.record(
+            applicationContext,
+            settings,
+            if (final) SyncFailureAlerts.Outcome.FINAL_FAILURE else SyncFailureAlerts.Outcome.RETRY,
+        )
+        if (final) Result.failure() else Result.retry()
     }
 }

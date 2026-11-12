@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.3.2) reads selected records from Android Health Connect and
+This private companion (current version 0.4.0) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -15,7 +15,7 @@ is disabled, and the server keeps raw Health Connect records outside the public
 activity, feed, and MCP projections. Infovore's Health platform page uses only
 safe aggregates and recent workout summaries.
 
-## App layout (0.3.2)
+## App layout (0.4.0)
 
 The screen is split into a **開始使用** checklist (connection → Health Connect
 permission → first sync, with a button for the next step) and three collapsible
@@ -59,6 +59,14 @@ always starts collapsed. Each section header shows its current state.
   reason and **重試**.
 - Times are shown as relative time plus the local date and time, following the
   phone's 12/24-hour setting.
+- **同步失敗時通知我** (off by default): when turned on, the app asks for the
+  Android notification permission (never at start-up; a denial is explained in
+  place). After three consecutive background syncs that WorkManager gives up on
+  (about 18 hours, well before the public page reports the data as stale after
+  36 hours) it posts one notification on the **同步問題** channel that opens the
+  health section. Retries within one six-hour period do not count. The text has
+  only the failure count, never health values, error details or tokens. Any
+  successful full sync resets the count and removes the notification.
 - The UI supports TalkBack (section headings, expand/collapse state, field
   labels and errors), large fonts, 48 dp touch targets, dark mode, and
   edge-to-edge insets.
@@ -120,10 +128,25 @@ the device's stored rows in the window or more than 200 rows, and answers 400 to
 windows. Batches without `reconcile` behave exactly as before.
 
 A type that could not be fully re-verified (the server refused or does not
-support reconciling, or the read was out of order) is named in the sync
-result as **未重新核實**; its rows are left as they were. Reconciling runs only
-inside history scans and only with the read permissions a full sync already
-requires; incremental syncs and **只同步睡眠** are unchanged. Server rows
+support reconciling, the read was out of order, a Health Connect page failed to
+read, or the read permission may not cover the whole window) is named in the
+sync result as **未重新核實**; its rows are left as they were. Reconciling runs
+only inside history scans and only with the read permissions a full sync
+already requires; incremental syncs and **只同步睡眠** are unchanged.
+
+Since 0.4.0 each such type is also saved as `{dataType, window, reason}` (no
+health values, no record ids) and shown in the health section, separately from
+the last sync result, as **歷史尚未完整核實：步數、心率…** with each reason and
+the last attempt. It stays until a reconcile pass of that type completes over a
+window covering it: a later successful incremental sync, a sleep-only sync or
+restarting the app never clears it. **重新核實** re-reads only those windows and
+sends only their reconcile windows (no record uploads), under the same server
+limits; if the server refuses again (HTTP 409) the warning stays with the new
+reason. A window older than 30 days is not re-verified without the history
+permission. Network failures and HTTP 5xx (including the server's retryable
+503) are not recorded as unverified: the sync fails, keeps its progress, and
+reads and reconciles that type again on the next run. Changing the destination
+discards the saved windows (the new destination gets a full rescan). Server rows
 uploaded before 0.3.2 are tied to a device only when every earlier sync came
 from a single device; otherwise they are never reconciled until the app
 uploads them again.
@@ -181,7 +204,16 @@ items older than seven days are dropped) and uploaded in batches of at most 40
 items and 6 MB to `POST /api/ingest/dayflow-phone/observations`: every five
 minutes from the service while online, every 15 minutes via WorkManager as a
 fallback, and on **立即上傳**. Files are deleted only after the server
-acknowledges a batch; observation ids make retries idempotent.
+acknowledges them; observation ids make retries idempotent. Network failures
+and HTTP 5xx (including the server's retryable 503 for storage failures) keep
+every record for the next run. When the server rejects a batch as invalid
+(HTTP 400), the app splits it in halves and resends each half until it has
+found the individual records the server rejects; only those are moved to a
+local quarantine (`screen-queue/rejected/`), every valid record still uploads.
+Quarantined records are never sent again and never deleted automatically: the
+section shows **N 筆畫面紀錄被伺服器拒收** with **刪除被拒收的紀錄**, which asks
+before deleting them. If every record of a batch is rejected, the run stops
+after quarantining that batch so a server-side problem cannot drain the queue.
 
 Each observation is filed under the sync destination saved when it was
 captured. An upload run reads the endpoint, phone token and device id once at
@@ -209,6 +241,12 @@ Install JDK 17 and Android SDK platform 36, then run:
 cd android
 ./gradlew assembleDebug lintDebug testDebugUnitTest
 ```
+
+The unit tests run on the JVM: the sync logic (`HealthSyncEngine`) is tested
+through the narrow `HealthReader` / `HealthUploader` interfaces with fake
+implementations, and `HealthReconcileContractTest` checks the app's reconcile
+payload field by field against `tests/fixtures/health-reconcile-contract.json`,
+which the server's `tests/health-reconcile-contract.test.ts` parses and ingests.
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions
 also publishes it as the `infovore-health-debug` workflow artifact.

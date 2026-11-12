@@ -70,14 +70,28 @@ object ScreenUploader {
         return removed
     }
 
+    /**
+     * Deletes, after the user confirmed, the observations the server rejected; returns how many,
+     * or null when an upload is running.
+     */
+    fun deleteRejected(context: Context): Int? {
+        var removed: Int? = null
+        tryExclusive { removed = ObservationQueue.get(context).removeRejected() }
+        return removed
+    }
+
     private fun record(settings: ScreenSettings, outcome: ScreenUploadEngine.Outcome) {
-        val now = Instant.now()
-        settings.lastUploadStatus = when {
-            outcome.error != null && outcome.sent > 0 ->
-                "$now：已送出 ${outcome.sent} 筆後失敗：${outcome.error}"
-            outcome.error != null -> "$now：${outcome.error}"
-            outcome.sent == 0 -> "$now：沒有待上傳的資料"
-            else -> "$now：已送出 ${outcome.sent} 筆（新增 ${outcome.accepted}、重複 ${outcome.duplicates}）"
+        settings.lastUploadStatus = "${Instant.now()}：${describe(outcome)}"
+    }
+
+    /** One line for an upload run's result; also used for the manual upload's result. */
+    fun describe(outcome: ScreenUploadEngine.Outcome): String {
+        val rejected = if (outcome.rejected > 0) "；${outcome.rejected} 筆被伺服器拒收（已隔離，未上傳）" else ""
+        return when {
+            outcome.error != null && outcome.sent > 0 -> "已送出 ${outcome.sent} 筆後失敗：${outcome.error}$rejected"
+            outcome.error != null -> "${outcome.error}$rejected"
+            outcome.sent == 0 && outcome.rejected == 0 -> "沒有待上傳的資料"
+            else -> "已送出 ${outcome.sent} 筆（新增 ${outcome.accepted}、重複 ${outcome.duplicates}）$rejected"
         }
     }
 }

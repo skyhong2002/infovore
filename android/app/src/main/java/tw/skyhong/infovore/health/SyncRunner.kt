@@ -33,11 +33,18 @@ object SyncRunner {
                 if (kind == SyncKind.FULL) settings.lastStatus = text
                 progress(text)
             }
-            val summary = if (kind == SyncKind.SLEEP) sync.runSleep(report) else sync.run(report)
+            val summary = when (kind) {
+                SyncKind.SLEEP -> sync.runSleep(report)
+                SyncKind.FULL -> sync.run(report)
+                // Re-verification has its own persistent status (the saved gaps); it never
+                // touches the general sync status.
+                SyncKind.REVERIFY -> sync.reverify(progress)
+            }
             if (kind == SyncKind.FULL) {
                 settings.lastStatus = "${Instant.now()}：同步完成，新增 ${summary.inserted}、更新 ${summary.updated}、刪除 ${summary.deleted}${ReconcileText.note(summary.unverified)}"
                 settings.lastSyncFailed = false
                 settings.initialImportDone = true
+                SyncFailureNotifier.record(context, settings, SyncFailureAlerts.Outcome.SUCCESS)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled

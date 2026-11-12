@@ -135,7 +135,40 @@ class ObservationQueue internal constructor(
         entries.forEach { it.file.delete() }
     }
 
+    /**
+     * Moves observations the server rejected (HTTP 400, one by one) out of the upload queue into
+     * `screen-queue/rejected/`. They are never uploaded, pruned or deleted automatically; only
+     * [removeRejected], after the user confirms, deletes them.
+     */
+    @Synchronized
+    fun quarantine(entries: List<Entry>) {
+        val dir = rejectedDir().apply { mkdirs() }
+        for (entry in entries) {
+            val target = File(dir, entry.file.name)
+            if (!entry.file.renameTo(target)) {
+                // Never leave a rejected record in the queue, where it would block every later one.
+                target.writeText(entry.json, Charsets.UTF_8)
+                entry.file.delete()
+            }
+        }
+    }
+
+    /** Observations the server rejected, kept until the user deletes them. */
+    @Synchronized
+    fun countRejected(): Int = files(rejectedDir()).size
+
+    /** Deletes every rejected observation; returns how many. */
+    @Synchronized
+    fun removeRejected(): Int {
+        var removed = 0
+        for (file in files(rejectedDir())) if (file.delete()) removed++
+        return removed
+    }
+
     private fun bucket(destination: String): File = File(root, bucketName(destination))
+
+    // Not a "d-" bucket, so uploads, pruning and destination clean-up never touch it.
+    private fun rejectedDir(): File = File(root, REJECTED_DIR)
 
     private fun allDirs(): List<File> =
         listOf(root) + root.listFiles { file -> file.isDirectory && file.name.startsWith(BUCKET_PREFIX) }.orEmpty()
@@ -165,6 +198,7 @@ class ObservationQueue internal constructor(
         const val MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
         const val MAX_TOTAL_BYTES = 40L * 1024 * 1024
         private const val BUCKET_PREFIX = "d-"
+        private const val REJECTED_DIR = "rejected"
 
         /** A stable directory name for a normalised destination, without putting the URL in a path. */
         internal fun bucketName(destination: String): String {

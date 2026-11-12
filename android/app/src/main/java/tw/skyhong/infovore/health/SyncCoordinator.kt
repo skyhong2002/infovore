@@ -9,7 +9,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
-enum class SyncKind { SLEEP, FULL }
+enum class SyncKind {
+    SLEEP,
+    FULL,
+
+    /** Re-send the reconcile windows that could not be verified earlier (see [ReconcileGaps]). */
+    REVERIFY,
+}
 
 data class SyncState(
     /** The manual sync that is running (or waiting for the background sync to finish). */

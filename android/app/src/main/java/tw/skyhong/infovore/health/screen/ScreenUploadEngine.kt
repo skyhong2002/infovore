@@ -55,14 +55,30 @@ class ScreenUploadEngine(
     private val maxBatchBytes: Long = MAX_BATCH_BYTES,
     private val maxBatchesPerRun: Int = MAX_BATCHES_PER_RUN,
 ) {
-    data class Outcome(val sent: Int, val accepted: Int, val duplicates: Int, val remaining: Int, val error: String?)
+    /**
+     * [rejected]: observations the server refused (HTTP 400) one by one in this run, moved to the
+     * queue's quarantine. [error] stops the run and leaves everything not yet confirmed queued.
+     */
+    data class Outcome(
+        val sent: Int,
+        val accepted: Int,
+        val duplicates: Int,
+        val remaining: Int,
+        val error: String?,
+        val rejected: Int = 0,
+    )
+
+    private class Totals {
+        var sent = 0
+        var accepted = 0
+        var duplicates = 0
+        var rejected = 0
+    }
 
     fun upload(target: ScreenTarget): Outcome {
         queue.prune()
         target.problem()?.let { return Outcome(0, 0, 0, queue.count(target.destination), it) }
-        var sent = 0
-        var accepted = 0
-        var duplicates = 0
+        val totals = Totals()
         var error: String? = null
         for (round in 1..maxBatchesPerRun) {
             val entries = queue.read(target.destination, maxBatchCount)
@@ -70,46 +86,71 @@ class ScreenUploadEngine(
             val batch = Batching.split(entries, maxBatchCount, maxBatchBytes) {
                 it.json.toByteArray(StandardCharsets.UTF_8).size.toLong()
             }.first()
-            val body = buildString {
-                append("{\"schemaVersion\":1,\"deviceId\":")
-                append(JsonText.quote(target.deviceId))
-                append(",\"observations\":[")
-                batch.forEachIndexed { index, entry ->
-                    if (index > 0) append(',')
-                    append(entry.json)
-                }
-                append("]}")
-            }.toByteArray(StandardCharsets.UTF_8)
+            val rejectedBefore = totals.rejected
             try {
-                val response = transport.post(target, body)
-                queue.remove(batch)
-                sent += batch.size
-                accepted += response.accepted
-                duplicates += response.duplicates
-            } catch (failure: InfovoreApi.HttpStatusException) {
-                if (failure.status == 400) {
-                    // The server rejected this content and always will: drop it instead of
-                    // blocking every later observation behind it.
-                    queue.remove(batch)
-                    error = "已捨棄 ${batch.size} 筆無效資料：${failure.message}"
-                } else {
-                    // 401/413/503…: keep the batch and stop until the next scheduled run.
-                    error = failure.message
+                deliver(target, batch, totals)
+                if (batch.size > 1 && totals.rejected - rejectedBefore == batch.size) {
+                    // Every observation of the batch was refused: likely a problem with the request
+                    // itself rather than its content. Stop instead of probing the whole queue.
+                    error = REJECTED_WHOLE_BATCH
                 }
+            } catch (failure: InfovoreApi.HttpStatusException) {
+                // 401/403/404/413…: keep everything not yet confirmed and stop until the next run.
+                error = failure.message
             } catch (failure: IOException) {
+                // Network failures and HTTP 408/429/5xx (including the server's retryable 503 for
+                // storage failures): keep everything and retry on the next run.
                 error = failure.message ?: failure.javaClass.simpleName
             } catch (failure: IllegalArgumentException) {
                 error = failure.message
             }
             if (error != null) break
         }
-        return Outcome(sent, accepted, duplicates, queue.count(target.destination), error)
+        return Outcome(totals.sent, totals.accepted, totals.duplicates, queue.count(target.destination), error, totals.rejected)
     }
+
+    /**
+     * Sends [batch]; files are deleted only after the server confirms them. On HTTP 400 the batch
+     * is split in halves and each half is sent again, down to single observations, so only the
+     * observations the server itself rejects are quarantined and every valid one still uploads.
+     * Any other failure propagates and stops the run.
+     */
+    private fun deliver(target: ScreenTarget, batch: List<ObservationQueue.Entry>, totals: Totals) {
+        try {
+            val response = transport.post(target, body(target, batch))
+            queue.remove(batch)
+            totals.sent += batch.size
+            totals.accepted += response.accepted
+            totals.duplicates += response.duplicates
+        } catch (failure: InfovoreApi.HttpStatusException) {
+            if (failure.status != 400) throw failure
+            if (batch.size == 1) {
+                queue.quarantine(batch)
+                totals.rejected++
+                return
+            }
+            val middle = batch.size / 2
+            deliver(target, batch.subList(0, middle), totals)
+            deliver(target, batch.subList(middle, batch.size), totals)
+        }
+    }
+
+    private fun body(target: ScreenTarget, batch: List<ObservationQueue.Entry>): ByteArray = buildString {
+        append("{\"schemaVersion\":1,\"deviceId\":")
+        append(JsonText.quote(target.deviceId))
+        append(",\"observations\":[")
+        batch.forEachIndexed { index, entry ->
+            if (index > 0) append(',')
+            append(entry.json)
+        }
+        append("]}")
+    }.toByteArray(StandardCharsets.UTF_8)
 
     companion object {
         const val MAX_BATCH_COUNT = 40
         const val MAX_BATCH_BYTES = 6L * 1024 * 1024
         const val MAX_BATCHES_PER_RUN = 50
+        const val REJECTED_WHOLE_BATCH = "伺服器拒收了整批畫面紀錄（已隔離，未刪除）；暫停上傳到下次執行"
     }
 }
 

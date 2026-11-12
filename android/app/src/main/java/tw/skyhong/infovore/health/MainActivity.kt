@@ -1,5 +1,6 @@
 package tw.skyhong.infovore.health
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
@@ -20,6 +21,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
@@ -53,6 +55,7 @@ import tw.skyhong.infovore.health.ui.HealthInputs
 import tw.skyhong.infovore.health.ui.HealthStatus
 import tw.skyhong.infovore.health.ui.HealthUi
 import tw.skyhong.infovore.health.ui.InputValidation
+import tw.skyhong.infovore.health.ui.ReconcileStatus
 import tw.skyhong.infovore.health.ui.ScreenInputs
 import tw.skyhong.infovore.health.ui.ScreenStatus
 import tw.skyhong.infovore.health.ui.BackgroundSync
@@ -110,6 +113,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var syncRetryButton: Button
     private lateinit var lastSyncText: TextView
     private lateinit var lastSleepText: TextView
+    private lateinit var reconcileBox: TextView
+    private lateinit var reverifyButton: Button
+    private lateinit var reverifyHint: TextView
+    private lateinit var notifySwitch: SwitchCompat
+    private lateinit var notifyNote: TextView
 
     // Phone screen recording
     private lateinit var screenSection: CollapsibleSection
@@ -129,6 +137,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var screenRetryButton: Button
     private lateinit var otherDestinationBox: TextView
     private lateinit var deleteOtherDestinationButton: Button
+    private lateinit var rejectedBox: TextView
+    private lateinit var deleteRejectedButton: Button
 
     private var availability: HealthConnectAvailability? = null
     private var granted: Set<String>? = null
@@ -141,6 +151,9 @@ class MainActivity : AppCompatActivity() {
     private var reimportDaysAfterSave: Int? = null
     private var screenJustSaved = false
     private var updatingSwitch = false
+    private var updatingNotifySwitch = false
+    /** Set when the user just denied the notification permission, to explain it once. */
+    private var notificationPermissionDenied = false
     private var healthUi: HealthUi? = null
 
     // Decrypted once and refreshed on save, so typing never triggers a Keystore operation per keystroke.
@@ -157,6 +170,13 @@ class MainActivity : AppCompatActivity() {
             permissionRequestHadNoEffect = newlyGranted.isEmpty() && missing.isNotEmpty()
             renderHealth()
         }
+    }
+
+    // Asked only when the user turns on "同步失敗時通知我", never at app start.
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        settings.notifyOnSyncFailure = granted
+        notificationPermissionDenied = !granted
+        renderNotifications()
     }
 
     private val backCallback = object : OnBackPressedCallback(false) {
@@ -176,6 +196,21 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, backCallback)
         observeModel()
         renderAll()
+        handleOpenIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleOpenIntent(intent)
+    }
+
+    /** The "同步問題" notification opens the health section. */
+    private fun handleOpenIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_HEALTH, false) != true) return
+        intent.removeExtra(EXTRA_OPEN_HEALTH)
+        healthSection.setExpanded(true)
+        scrollTo(healthSection.root)
     }
 
     override fun onResume() {
@@ -323,6 +358,23 @@ class MainActivity : AppCompatActivity() {
         healthActionButton = kit.primaryButton("").apply { setOnClickListener { performHealthAction() } }
         section.add(healthActionButton, 8)
 
+        // Persistent until a re-verification completes; independent of the last sync's result.
+        reconcileBox = kit.statusBox().apply {
+            visibility = View.GONE
+            setTextIsSelectable(true)
+        }
+        section.add(reconcileBox, 12)
+        reverifyButton = kit.secondaryButton(getString(R.string.action_reverify)).apply {
+            visibility = View.GONE
+            setOnClickListener { startSync(SyncKind.REVERIFY) }
+        }
+        section.add(reverifyButton, 4)
+        reverifyHint = kit.text(Style.CAPTION).apply {
+            visibility = View.GONE
+            setPadding(kit.dp(4), kit.dp(4), 0, 0)
+        }
+        section.add(reverifyHint)
+
         section.add(kit.heading(Style.SUBHEAD, getString(R.string.health_sync_heading)), 20)
         section.add(kit.text(Style.CAPTION, getString(R.string.health_sync_explainer)), 4)
         sleepButton = kit.secondaryButton(getString(R.string.action_sync_sleep)).apply {
@@ -356,6 +408,16 @@ class MainActivity : AppCompatActivity() {
         lastSleepText = kit.text(Style.BODY).apply { setTextIsSelectable(true) }
         section.add(lastSleepText, 8)
         section.add(kit.text(Style.CAPTION, getString(R.string.health_background_note)), 12)
+
+        notifySwitch = SwitchCompat(this).apply {
+            text = getString(R.string.label_notify_switch)
+            textSize = 16f
+            minHeight = kit.dp(48)
+            setOnCheckedChangeListener { _, checked -> onNotifySwitch(checked) }
+        }
+        section.add(notifySwitch, 8)
+        notifyNote = kit.liveText(Style.CAPTION).apply { setPadding(kit.dp(4), 0, 0, 0) }
+        section.add(notifyNote)
     }
 
     private fun buildScreenSection(section: CollapsibleSection) {
@@ -383,6 +445,17 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { confirmDeleteOtherDestination() }
         }
         section.add(deleteOtherDestinationButton, 4)
+        // Records the server rejected (HTTP 400): quarantined, never sent, only deleted on request.
+        rejectedBox = kit.statusBox().apply {
+            visibility = View.GONE
+            kit.setTone(this, Tone.WARNING)
+        }
+        section.add(rejectedBox, 8)
+        deleteRejectedButton = kit.secondaryButton(getString(R.string.action_delete_rejected)).apply {
+            visibility = View.GONE
+            setOnClickListener { confirmDeleteRejected() }
+        }
+        section.add(deleteRejectedButton, 4)
 
         // Step 1: token and exclusions
         section.add(kit.heading(Style.SUBHEAD, getString(R.string.screen_step_settings)), 20)
@@ -733,7 +806,14 @@ class MainActivity : AppCompatActivity() {
         syncProgressText.text = sync.progress ?: if (sync.backgroundRunning) getString(R.string.background_sync_in_progress) else null
         syncErrorBox.visibility = if (sync.error != null && !running) View.VISIBLE else View.GONE
         syncErrorBox.text = sync.error?.let {
-            getString(if (sync.failed == SyncKind.SLEEP) R.string.sync_failed_sleep else R.string.sync_failed_full, it)
+            getString(
+                when (sync.failed) {
+                    SyncKind.SLEEP -> R.string.sync_failed_sleep
+                    SyncKind.REVERIFY -> R.string.sync_failed_reverify
+                    else -> R.string.sync_failed_full
+                },
+                it,
+            )
         }
         kit.setTone(syncErrorBox, Tone.ERROR)
         syncRetryButton.visibility = if (sync.failed != null && !running) View.VISIBLE else View.GONE
@@ -746,13 +826,68 @@ class MainActivity : AppCompatActivity() {
         lastSleepText.text = getString(R.string.last_sleep_sync, TimeText.humanizeStatus(settings.lastSleepStatus, now, zone, use24Hour))
         kit.setTone(lastSleepText, if (HealthStatus.sleepStatusFailed(settings.lastSleepStatus)) Tone.ERROR else Tone.NEUTRAL, tintBackground = false)
 
+        val gaps = ReconcileStatus.map(
+            ReconcileGaps.decode(settings.reconcileGapsText), now, zone,
+            syncReady = ui.syncEnabled, syncHint = ui.syncHint,
+        )
+        reconcileBox.visibility = if (gaps == null) View.GONE else View.VISIBLE
+        reverifyButton.visibility = reconcileBox.visibility
+        if (gaps != null) {
+            reconcileBox.text = listOf(gaps.headline, gaps.detail).joinToString("\n")
+            kit.setTone(reconcileBox, Tone.WARNING)
+            reverifyButton.isEnabled = gaps.reverifyEnabled
+        }
+        reverifyHint.text = gaps?.reverifyHint
+        reverifyHint.visibility = if (gaps?.reverifyHint == null) View.GONE else View.VISIBLE
+
         val lastSync = TimeText.splitStatus(settings.lastStatus).first
         val summary = buildString {
             append(ui.headline)
+            if (gaps != null) append(" · ").append(getString(R.string.health_summary_unverified))
             if (lastSync != null) append(" · ").append(getString(R.string.health_summary_last, TimeText.relative(lastSync, now)))
         }
-        healthSection.setSummary(if (busy) getString(R.string.sync_in_progress) else summary, if (busy) Tone.NEUTRAL else ui.tone)
+        val summaryTone = if (gaps != null && ui.tone == Tone.OK) Tone.WARNING else ui.tone
+        healthSection.setSummary(if (busy) getString(R.string.sync_in_progress) else summary, if (busy) Tone.NEUTRAL else summaryTone)
+        renderNotifications()
         renderSetup()
+    }
+
+    private fun renderNotifications() {
+        if (!::notifySwitch.isInitialized) return
+        val permission = SyncFailureNotifier.permissionGranted(this)
+        val on = settings.notifyOnSyncFailure
+        updatingNotifySwitch = true
+        notifySwitch.isChecked = on && permission
+        updatingNotifySwitch = false
+        notifyNote.text = when {
+            on && permission -> getString(R.string.notify_on, SyncFailureAlerts.THRESHOLD, SyncFailureAlerts.THRESHOLD * SyncFailureAlerts.PERIOD_HOURS)
+            on -> getString(R.string.notify_permission_revoked)
+            notificationPermissionDenied -> getString(R.string.notify_denied)
+            else -> getString(R.string.notify_off, SyncFailureAlerts.THRESHOLD)
+        }
+        val tone = if ((on && !permission) || notificationPermissionDenied) Tone.WARNING else Tone.NEUTRAL
+        if (tone == Tone.NEUTRAL) notifyNote.setTextColor(kit.color(R.color.text_secondary)) else kit.setTone(notifyNote, tone, tintBackground = false)
+    }
+
+    private fun onNotifySwitch(checked: Boolean) {
+        if (updatingNotifySwitch) return
+        notificationPermissionDenied = false
+        if (!checked) {
+            settings.notifyOnSyncFailure = false
+            SyncFailureNotifier.cancel(this)
+            renderNotifications()
+            return
+        }
+        if (SyncFailureNotifier.permissionGranted(this)) {
+            settings.notifyOnSyncFailure = true
+            renderNotifications()
+        } else {
+            // Show the switch as off until the user answers the system dialog.
+            updatingNotifySwitch = true
+            notifySwitch.isChecked = false
+            updatingNotifySwitch = false
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     private fun performHealthAction() {
@@ -809,6 +944,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val ui = healthUi
+        // Re-verification reads the same types as a full sync, so it needs the same permissions.
         val allowed = if (kind == SyncKind.SLEEP) ui?.sleepEnabled else ui?.syncEnabled
         if (allowed != true) {
             renderHealth()
@@ -970,8 +1106,12 @@ class MainActivity : AppCompatActivity() {
                 zone = ZoneId.systemDefault(),
                 use24Hour = use24Hour,
                 otherDestinationPending = queue.countOtherDestinations(destination),
+                rejected = queue.countRejected(),
             ),
         )
+        rejectedBox.text = ui.rejectedNote
+        rejectedBox.visibility = if (ui.rejectedNote == null) View.GONE else View.VISIBLE
+        deleteRejectedButton.visibility = rejectedBox.visibility
         otherDestinationBox.text = ui.otherDestinationNote
         otherDestinationBox.visibility = if (ui.otherDestinationNote == null) View.GONE else View.VISIBLE
         deleteOtherDestinationButton.visibility = otherDestinationBox.visibility
@@ -1043,6 +1183,30 @@ class MainActivity : AppCompatActivity() {
                     this,
                     if (removed == null) getString(R.string.delete_other_destination_busy)
                     else getString(R.string.delete_other_destination_done, removed),
+                    Toast.LENGTH_LONG,
+                ).show()
+                renderScreen()
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    /** Deletes, after confirmation, the records the server rejected. Never re-sends them. */
+    private fun confirmDeleteRejected() {
+        val count = ObservationQueue.get(this).countRejected()
+        if (count == 0) {
+            renderScreen()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.delete_rejected_title)
+            .setMessage(getString(R.string.delete_rejected_message, count))
+            .setPositiveButton(R.string.delete_other_destination_ok) { _, _ ->
+                val removed = ScreenUploader.deleteRejected(this)
+                Toast.makeText(
+                    this,
+                    if (removed == null) getString(R.string.delete_other_destination_busy)
+                    else getString(R.string.delete_rejected_done, removed),
                     Toast.LENGTH_LONG,
                 ).show()
                 renderScreen()
@@ -1154,11 +1318,13 @@ class MainActivity : AppCompatActivity() {
 
     // endregion
 
-    private companion object {
-        const val PAUSE_MS = 60 * 60_000L
-        const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
-        const val STATE_CONNECTION_OPEN = "connection_open"
-        const val STATE_HEALTH_OPEN = "health_open"
-        const val STATE_SCREEN_OPEN = "screen_open"
+    companion object {
+        /** Intent extra: expand and scroll to the health section (from the sync-problem notification). */
+        const val EXTRA_OPEN_HEALTH = "tw.skyhong.infovore.health.OPEN_HEALTH"
+        private const val PAUSE_MS = 60 * 60_000L
+        private const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
+        private const val STATE_CONNECTION_OPEN = "connection_open"
+        private const val STATE_HEALTH_OPEN = "health_open"
+        private const val STATE_SCREEN_OPEN = "screen_open"
     }
 }

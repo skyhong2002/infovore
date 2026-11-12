@@ -1,7 +1,5 @@
 package tw.skyhong.infovore.health
 
-import androidx.health.connect.client.records.Record
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -17,25 +15,25 @@ import java.util.UUID
 class InfovoreApi(endpoint: String) {
     val endpoint: String = endpoint.trim().trimEnd('/')
 
+    /** [records] are encoded records ([HealthRecordJson.encode]); the body is built by [HealthBatchJson]. */
     fun upload(
         token: String,
         deviceId: String,
-        records: List<Record>,
+        records: List<String>,
         deletedRecordIds: List<String>,
         reconcile: ReconcileWindow? = null,
         onRetry: (attempt: Int, message: String) -> Unit = { _, _ -> },
     ): UploadResult {
         require(token.length >= 32) { "請先輸入至少 32 字元的 HEALTH_CONNECT_TOKEN" }
         validateEndpoint()
-        val body = JSONObject()
-            .put("syncId", UUID.randomUUID().toString())
-            .put("deviceId", deviceId)
-            .put("observedAt", java.time.Instant.now().toString())
-            .put("records", JSONArray(records.map(HealthRecordJson::encode)))
-            .put("deletedRecordIds", JSONArray(deletedRecordIds))
-            .apply { if (reconcile != null) put("reconcile", JSONObject(reconcile.toJson())) }
-            .toString()
-            .toByteArray(StandardCharsets.UTF_8)
+        val body = HealthBatchJson.body(
+            syncId = UUID.randomUUID().toString(),
+            deviceId = deviceId,
+            observedAt = java.time.Instant.now(),
+            recordJson = records,
+            deletedRecordIds = deletedRecordIds,
+            reconcile = reconcile,
+        ).toByteArray(StandardCharsets.UTF_8)
 
         val response = postJson("/api/ingest/health-connect", token, body, onRetry)
         return UploadResult(

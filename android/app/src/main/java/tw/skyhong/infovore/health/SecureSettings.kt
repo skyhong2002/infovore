@@ -12,7 +12,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class SecureSettings(context: Context) {
+class SecureSettings(context: Context) : HealthSyncStore {
     private val preferences = context.getSharedPreferences("infovore_health", Context.MODE_PRIVATE)
     private val cipher = KeystoreCipher(KEY_ALIAS)
 
@@ -33,12 +33,12 @@ class SecureSettings(context: Context) {
             return created
         }
 
-    var changesToken: String?
+    override var changesToken: String?
         get() = preferences.getString(KEY_CHANGES_TOKEN, null)
         set(value) { preferences.edit { putString(KEY_CHANGES_TOKEN, value) } }
 
     /** Days of history read during the initial scan and each sleep refresh. */
-    var historyDays: Int
+    override var historyDays: Int
         get() = preferences.getInt(KEY_HISTORY_DAYS, DEFAULT_HISTORY_DAYS).coerceIn(1, MAX_HISTORY_DAYS)
         set(value) { preferences.edit { putInt(KEY_HISTORY_DAYS, value.coerceIn(1, MAX_HISTORY_DAYS)) } }
 
@@ -76,6 +76,9 @@ class SecureSettings(context: Context) {
             putString(KEY_ENDPOINT, newEndpoint.trim().trimEnd('/'))
             remove(KEY_CHANGES_TOKEN)
             removeHistoryScan()
+            // Unverified windows belong to the old destination; the new one gets a full rescan.
+            remove(KEY_RECONCILE_GAPS)
+            remove(KEY_BACKGROUND_FAILURES)
             putBoolean(KEY_FIRST_SYNC_DONE, false)
             putBoolean(KEY_LAST_SYNC_FAILED, false)
             if (status == null) remove(KEY_LAST_STATUS) else putString(KEY_LAST_STATUS, status)
@@ -83,7 +86,7 @@ class SecureSettings(context: Context) {
     }
 
     /** An interrupted history scan to resume, or null. See [HistoryScan]. */
-    val historyScan: HistoryScan?
+    override val historyScan: HistoryScan?
         get() {
             val token = preferences.getString(KEY_SCAN_TOKEN, null) ?: return null
             return HistoryScan(
@@ -95,7 +98,7 @@ class SecureSettings(context: Context) {
             )
         }
 
-    fun saveHistoryScan(scan: HistoryScan) {
+    override fun saveHistoryScan(scan: HistoryScan) {
         preferences.edit {
             putString(KEY_SCAN_TOKEN, scan.changesToken)
             putLong(KEY_SCAN_START, scan.startMs)
@@ -106,7 +109,7 @@ class SecureSettings(context: Context) {
     }
 
     /** Ends a scan: its token becomes the sync cursor and the saved progress goes, in one write. */
-    fun finishHistoryScan(changesToken: String) {
+    override fun finishHistoryScan(changesToken: String) {
         preferences.edit {
             putString(KEY_CHANGES_TOKEN, changesToken)
             removeHistoryScan()
@@ -114,7 +117,7 @@ class SecureSettings(context: Context) {
     }
 
     /** Forgets the cursor and any interrupted scan, e.g. after Health Connect expired the token. */
-    fun resetChangesToken() {
+    override fun resetChangesToken() {
         preferences.edit {
             remove(KEY_CHANGES_TOKEN)
             removeHistoryScan()
@@ -132,9 +135,27 @@ class SecureSettings(context: Context) {
     /** History is uploaded and a cursor exists, but the first full sync has not finished yet. */
     val initialImportPartial: Boolean get() = !initialImportDone && changesToken != null
 
-    var lastSleepStatus: String
+    override var lastSleepStatus: String
         get() = preferences.getString("last_sleep_status", "睡眠尚未檢查") ?: "睡眠尚未檢查"
         set(value) { preferences.edit { putString("last_sleep_status", value) } }
+
+    /**
+     * Windows whose deletions could not be re-verified ([ReconcileGaps] format): data types, times
+     * and reasons only, never health values or record ids. Plain preferences (backup is disabled).
+     */
+    override var reconcileGapsText: String
+        get() = preferences.getString(KEY_RECONCILE_GAPS, "").orEmpty()
+        set(value) { preferences.edit { if (value.isEmpty()) remove(KEY_RECONCILE_GAPS) else putString(KEY_RECONCILE_GAPS, value) } }
+
+    /** Consecutive background syncs that finally failed (see [SyncFailureAlerts]). */
+    var backgroundFailures: Int
+        get() = preferences.getInt(KEY_BACKGROUND_FAILURES, 0)
+        set(value) { preferences.edit { putInt(KEY_BACKGROUND_FAILURES, value) } }
+
+    /** The user turned on "同步失敗時通知我"; off by default. */
+    var notifyOnSyncFailure: Boolean
+        get() = preferences.getBoolean(KEY_NOTIFY_ON_FAILURE, false)
+        set(value) { preferences.edit { putBoolean(KEY_NOTIFY_ON_FAILURE, value) } }
 
     companion object {
         const val DEFAULT_ENDPOINT = "https://infovore.skyhong.tw"
@@ -154,6 +175,9 @@ class SecureSettings(context: Context) {
         private const val KEY_SCAN_END = "history_scan_end"
         private const val KEY_SCAN_DESTINATION = "history_scan_destination"
         private const val KEY_SCAN_COMPLETED = "history_scan_completed"
+        private const val KEY_RECONCILE_GAPS = "reconcile_gaps"
+        private const val KEY_BACKGROUND_FAILURES = "background_sync_failures"
+        private const val KEY_NOTIFY_ON_FAILURE = "notify_on_sync_failure"
     }
 }
 

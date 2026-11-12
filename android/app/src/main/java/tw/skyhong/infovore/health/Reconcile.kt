@@ -156,4 +156,6 @@ object ReconcileText {
 
     const val NOT_REPORTED = "伺服器未回報對帳結果（可能是舊版伺服器）"
     const val PERMISSION_WINDOW = "讀取權限無法確保涵蓋整個範圍"
+    const val READ_FAILED = "讀取 Health Connect 中斷，尚未完成核實"
+    const val NO_READ_PERMISSION = "尚未授權讀取此類資料"
 }

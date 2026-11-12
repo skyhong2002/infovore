@@ -17,6 +17,8 @@ data class ScreenInputs(
     val use24Hour: Boolean = true,
     /** Queued for a previous (or unknown) destination; never uploaded automatically. */
     val otherDestinationPending: Int = 0,
+    /** Rejected by the server (HTTP 400) and quarantined; never uploaded or deleted automatically. */
+    val rejected: Int = 0,
 )
 
 enum class ScreenState { OFF, NEEDS_SERVICE, PAUSED, RECORDING }
@@ -36,6 +38,8 @@ data class ScreenUi(
     val uploadHint: String?,
     /** Explains records left from an earlier destination, or null when there are none. */
     val otherDestinationNote: String? = null,
+    /** Explains quarantined records the server rejected, or null when there are none. */
+    val rejectedNote: String? = null,
 )
 
 /** Maps phone screen-recording settings to UI text. Never changes any setting itself. */
@@ -83,6 +87,9 @@ object ScreenStatus {
             if (input.otherDestinationPending > 0) {
                 append("\n舊目的地：").append(input.otherDestinationPending).append(" 筆（不會上傳）")
             }
+            if (input.rejected > 0) {
+                append("\n被拒收：").append(input.rejected).append(" 筆（已隔離，不會上傳）")
+            }
         }
         val summary = when (state) {
             ScreenState.OFF -> "關閉"
@@ -109,6 +116,12 @@ object ScreenStatus {
             otherDestinationNote = if (input.otherDestinationPending > 0) {
                 "${input.otherDestinationPending} 筆待傳紀錄屬於舊目的地（變更同步目的地前，或 0.3.2 版以前擷取），" +
                     "不會送到目前的目的地。不需要時可刪除。"
+            } else {
+                null
+            },
+            rejectedNote = if (input.rejected > 0) {
+                "${input.rejected} 筆畫面紀錄被伺服器拒收（HTTP 400，格式不被接受）。它們已移出上傳佇列，不會再送出，" +
+                    "也不會自動刪除；其他紀錄照常上傳。確認不需要後可刪除。"
             } else {
                 null
             },

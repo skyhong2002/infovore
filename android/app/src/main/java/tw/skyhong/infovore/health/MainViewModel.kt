@@ -44,14 +44,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun uploadScreen() = runScreenTask(ScreenTask.UPLOAD) {
         val outcome = ScreenUploader.uploadPending(getApplication())
         val error = outcome.error
+        val rejected = if (outcome.rejected > 0) "${outcome.rejected} 筆被伺服器拒收，已移到隔離區（未刪除）。" else ""
         when {
             error != null && outcome.sent > 0 ->
-                ScreenTaskState(result = "已送出 ${outcome.sent} 筆後失敗：$error", tone = Tone.ERROR, failed = ScreenTask.UPLOAD)
-            error != null -> ScreenTaskState(result = "上傳失敗：$error", tone = Tone.ERROR, failed = ScreenTask.UPLOAD)
-            outcome.sent == 0 -> ScreenTaskState(result = "沒有待上傳的紀錄。", tone = Tone.NEUTRAL)
+                ScreenTaskState(result = "已送出 ${outcome.sent} 筆後失敗：$error$rejected", tone = Tone.ERROR, failed = ScreenTask.UPLOAD)
+            error != null -> ScreenTaskState(result = "上傳失敗：$error$rejected", tone = Tone.ERROR, failed = ScreenTask.UPLOAD)
+            outcome.sent == 0 && outcome.rejected == 0 -> ScreenTaskState(result = "沒有待上傳的紀錄。", tone = Tone.NEUTRAL)
             else -> ScreenTaskState(
-                result = "已送出 ${outcome.sent} 筆（新增 ${outcome.accepted}、重複 ${outcome.duplicates}），佇列剩 ${outcome.remaining} 筆。",
-                tone = Tone.OK,
+                result = "已送出 ${outcome.sent} 筆（新增 ${outcome.accepted}、重複 ${outcome.duplicates}），佇列剩 ${outcome.remaining} 筆。$rejected",
+                tone = if (outcome.rejected > 0) Tone.WARNING else Tone.OK,
             )
         }
     }
