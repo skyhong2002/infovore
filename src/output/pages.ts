@@ -183,7 +183,13 @@ export interface SearchFilters {
   kind: string;
 }
 
-export function searchPage(ownerName: string, filters: SearchFilters, page: ActivityPage, bySource: Record<string, number>, kinds: string[]): string {
+/**
+ * [bySource]: every searchable entry per platform. [matchingBySource], given while a search or
+ * kind filter is active: the entries per platform that match it (the other filters applied, not
+ * the platform), which the platform filters then show instead of the totals.
+ */
+export function searchPage(ownerName: string, filters: SearchFilters, page: ActivityPage, bySource: Record<string, number>, kinds: string[],
+  matchingBySource?: Record<string, number>): string {
   const params = (overrides: Partial<SearchFilters> & { offset?: number }) => {
     const next = { ...filters, ...overrides };
     const query = new URLSearchParams();
@@ -198,9 +204,14 @@ export function searchPage(ownerName: string, filters: SearchFilters, page: Acti
   const searchable = Object.values(bySource).reduce((total, count) => total + count, 0);
   const intro = `<section class="page-intro"><div><div class="eyebrow">Archive search</div><h1>Search</h1><p>Find titles, artists, channels, venues and tags from the media platforms and events ${html(ownerName)} has synced.</p></div><div class="page-intro-aside">${active && page.total ? `${page.total.toLocaleString('en')} matching entries of ${searchable.toLocaleString('en')} searchable.` : `${searchable.toLocaleString('en')} searchable entries.`} Individual YouTube watches, health, Dayflow and AI agent records count toward the archive total but are not in this index: browse <a href="/platforms/youtube">YouTube</a>, <a href="/platforms/health">Health</a>, <a href="/platforms/dayflow">Dayflow</a> or <a href="/platforms/computai">AI agents</a>.</div></section>`;
   const form = `<form class="search-form" action="/search" role="search"><input type="search" name="q" value="${html(filters.query)}" placeholder="Try an artist, a game, a book, a channel…" aria-label="Search the archive" autofocus>${filters.source ? `<input type="hidden" name="source" value="${html(filters.source)}">` : ''}${filters.kind ? `<input type="hidden" name="kind" value="${html(filters.kind)}">` : ''}<button type="submit">Search</button></form>`;
-  const sources = Object.entries(bySource).sort((a, b) => b[1] - a[1]);
-  const sourceChips = `<div class="search-filters" aria-label="Filter by platform"><a href="${params({ source: '', offset: 0 })}"${filters.source ? '' : ' aria-current="true"'}>All platforms</a>${sources.map(([source, count]) =>
-    `<a href="${params({ source, offset: 0 })}"${filters.source === source ? ' aria-current="true"' : ''}>${html(sourceLabel(source))}<span class="visually-hidden">,</span> <small class="chip-count">${count.toLocaleString('en')}<span class="visually-hidden"> ${count === 1 ? 'entry' : 'entries'}</span></small></a>`).join('')}</div>`;
+  // Platforms keep their place by size; while filtering, the ones with matches come first.
+  const countOf = (source: string) => matchingBySource ? matchingBySource[source] ?? 0 : bySource[source];
+  const sources = Object.keys(bySource).sort((a, b) => countOf(b) - countOf(a) || bySource[b] - bySource[a]);
+  const unit = (count: number) => matchingBySource ? (count === 1 ? 'matching entry' : 'matching entries') : (count === 1 ? 'entry' : 'entries');
+  const sourceChips = `<div class="search-filters" aria-label="Filter by platform"><a href="${params({ source: '', offset: 0 })}"${filters.source ? '' : ' aria-current="true"'}>All platforms</a>${sources.map((source) => {
+    const count = countOf(source);
+    return `<a href="${params({ source, offset: 0 })}"${filters.source === source ? ' aria-current="true"' : ''}>${html(sourceLabel(source))}<span class="visually-hidden">,</span> <small class="chip-count">${count.toLocaleString('en')}<span class="visually-hidden"> ${unit(count)}</span></small></a>`;
+  }).join('')}</div>`;
   const kindChips = kinds.length ? `<div class="search-filters" aria-label="Filter by kind"><a href="${params({ kind: '', offset: 0 })}"${filters.kind ? '' : ' aria-current="true"'}>All kinds</a>${kinds.map((kind) =>
     `<a href="${params({ kind, offset: 0 })}"${filters.kind === kind ? ' aria-current="true"' : ''}>${html(kind)}</a>`).join('')}</div>` : '';
   const results = page.data.length
@@ -251,7 +262,12 @@ curl -s '${html(docs.baseUrl)}/api/time-spent.json' | jq '.sources[] | {source, 
 
 # Embed a card
 &lt;img src="${html(docs.baseUrl)}/card/now.webp" width="520" alt="What ${html(ownerName)} is up to"&gt;</code></pre>`;
-  return shell(`${ownerName} · API`, `<div class="api-doc">${intro}${rules}${activities}${time}${mirrors}${cards}${service}${examples}</div>${inlineScript(SCROLL_REGION_SCRIPT)}`, 'api', '', { path: '/api' });
+  // The page is long on a phone (the card list alone runs for screens): jump links to each section.
+  const sections: Array<[string, string]> = [['api-activities', 'Activities'], ['api-time', 'Time'], ['api-mirrors', 'Platform mirrors'],
+    ['api-cards', 'Cards'], ['api-service', 'Service'], ['api-examples', 'Examples']];
+  const toc = `<nav class="api-toc" aria-label="On this page"><ul>${sections.map(([id, label]) => `<li><a href="#${id}">${label}</a></li>`).join('')}</ul></nav>`;
+  return shell(`${ownerName} · API`, `<div class="api-doc">${intro}${toc}${rules}${activities}${time}${mirrors}${cards}${service}${examples}</div>${inlineScript(SCROLL_REGION_SCRIPT)}`, 'api',
+    '.api-toc ul{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0 0 18px;padding:0}.api-toc a{border:1px solid var(--line);border-radius:999px;display:inline-flex;align-items:center;min-height:36px;padding:4px 14px}.api-doc h2[id]{scroll-margin-top:84px}', { path: '/api' });
 }
 
 export interface NowExtras {

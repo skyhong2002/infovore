@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
-import { startGateway } from '../src/gateway.js';
+import { startGateway, unavailableLogLine } from '../src/gateway.js';
 
 test('deadlined async work retains bounded capacity and health never reports healthy while all slots are occupied', async (t) => {
   const gateway = startGateway({ port: 0, hostname: '127.0.0.1', maxInFlight: 1, requestDeadlineMs: 100, staleMs: 10_000,
@@ -55,4 +55,14 @@ test('deadlined async work retains bounded capacity and health never reports hea
   }
   assert.ok(recovered, 'admission is released after the actual response finishes, not after the client deadline');
   assert.equal(await fetch(`${base}/other`).then((r) => r.text()), 'synthetic backend');
+});
+
+test('each gateway 503 logs its reason and only the first path segment', () => {
+  const at = new Date('2026-11-13T04:00:00Z');
+  assert.equal(unavailableLogLine('backend_deadline', '/search?q=private+words', at), '[gateway] 2026-11-13T04:00:00.000Z 503 backend_deadline /search');
+  assert.equal(unavailableLogLine('backend_busy', '/platforms/health/2026?x=1', at), '[gateway] 2026-11-13T04:00:00.000Z 503 backend_busy /platforms');
+  assert.equal(unavailableLogLine('backend_unavailable', '/', at), '[gateway] 2026-11-13T04:00:00.000Z 503 backend_unavailable /');
+  assert.equal(unavailableLogLine('backend_busy', undefined, at), '[gateway] 2026-11-13T04:00:00.000Z 503 backend_busy /');
+  // Nothing odd from the request line reaches the log.
+  assert.equal(unavailableLogLine('backend_busy', '/%0d%0aforged line', at), '[gateway] 2026-11-13T04:00:00.000Z 503 backend_busy /');
 });

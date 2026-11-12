@@ -27,7 +27,8 @@ import java.util.concurrent.TimeUnit
 /**
  * The background workers under WorkManager's test driver: both periodic works are scheduled at
  * start-up (once, with a network constraint), and SyncWorker's results and failure counting.
- * Health Connect is a fake that grants nothing, so a sync fails before any network request.
+ * Health Connect is a fake that grants nothing, so a sync fails before any network request;
+ * failures over HTTP and the server's Retry-After are in BackgroundRetryTest.
  */
 @RunWith(RobolectricTestRunner::class)
 class BackgroundWorkTest {
@@ -82,26 +83,22 @@ class BackgroundWorkTest {
     }
 
     @Test
-    fun onlyRunsWorkManagerGivesUpOnCountTowardTheWarning() = runBlocking {
+    fun aFailureOnlyTheUserCanFixIsNotRetriedAndCountsTowardTheWarning() = runBlocking {
         Robo.saveConnection()
         Robo.grantNotificationPermission()
         Robo.settings().notifyOnSyncFailure = true
 
-        // An attempt WorkManager will retry: recorded as failed, not counted.
-        assertEquals(Result.retry(), syncWorker(attempt = 0).doWork())
+        // Missing Health Connect permissions: retrying cannot help, so the run ends at once and
+        // counts (transient failures and their retries: BackgroundRetryTest).
+        assertEquals(Result.failure(), syncWorker(attempt = 0).doWork())
         assertTrue(Robo.settings().lastSyncFailed)
-        assertTrue(Robo.settings().lastStatus.contains("背景同步失敗"))
-        assertEquals(0, Robo.settings().backgroundFailures)
-
-        // The last attempt of a period: counted.
-        val last = SyncFailureAlerts.MAX_RETRIES
-        assertEquals(Result.failure(), syncWorker(attempt = last).doWork())
+        assertTrue(Robo.settings().lastStatus.contains("背景同步失敗，需要處理：請先授權 Health Connect"))
         assertEquals(1, Robo.settings().backgroundFailures)
         assertNull(Robo.shadowNotifications.getNotification(SyncFailureNotifier.NOTIFICATION_ID))
-        assertEquals(Result.failure(), syncWorker(attempt = last).doWork())
+        assertEquals(Result.failure(), syncWorker(attempt = 0).doWork())
         assertNull(Robo.shadowNotifications.getNotification(SyncFailureNotifier.NOTIFICATION_ID))
         // The third period in a row posts the warning, with counts only.
-        assertEquals(Result.failure(), syncWorker(attempt = last).doWork())
+        assertEquals(Result.failure(), syncWorker(attempt = 0).doWork())
         assertEquals(SyncFailureAlerts.THRESHOLD, Robo.settings().backgroundFailures)
         val notification = requireNotNull(Robo.shadowNotifications.getNotification(SyncFailureNotifier.NOTIFICATION_ID))
         val text = notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT).toString()

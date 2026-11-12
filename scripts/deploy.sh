@@ -10,6 +10,20 @@
 #   INFOVORE_COMPOSE_FILES      its compose files as -f args
 #   INFOVORE_CANDIDATE_OVERLAY  overlay that turns it into the candidate
 #   INFOVORE_IMAGE              image tag both build and compose use (default infovore)
+#   INFOVORE_DEPLOY_LOCK        lock file against concurrent deploys (default /tmp/infovore-deploy.lock)
+#   INFOVORE_DEPLOY_LOG         also append the one-line deploy summary to this file (default: none)
+#
+# Availability probes (on by default): while the rollout runs, public pages are
+# requested one at a time every PROBE_INTERVAL seconds with Accept: text/html,
+# and once more each after it ends. The deploy output closes with
+# "probes N, non-2xx M" and the first failures (time, path, status), so every
+# deploy leaves a record of what visitors saw. Only public URLs; never secrets.
+#   PROBE_ENABLED        0 turns the probes off (default 1)
+#   PROBE_URLS           space-separated public URLs (default: /, /now and /status
+#                        of PUBLIC_BASE_URL; without either the probes stay off)
+#   PROBE_INTERVAL       seconds between probes (default 0.5)
+#   PROBE_FAIL_ON_ERROR  1 makes any non-2xx probe fail the deploy (default 0:
+#                        reported only)
 #
 # 1. Build the new image while production keeps serving.
 # 2. Start one candidate container from it (docker-compose.candidate.yml): same
@@ -50,8 +64,9 @@ compose_cmd="docker compose ${PROJECT:+-p $PROJECT }$FILES"
 candidate_cmd="docker compose -p infovore-candidate $FILES -f $OVERLAY"
 log() { echo "[deploy $(date -u +%H:%M:%S)] $*"; }
 
-exec 9>/tmp/infovore-deploy.lock
-flock -w 600 9 || { log 'another deploy holds /tmp/infovore-deploy.lock'; exit 1; }
+LOCK=${INFOVORE_DEPLOY_LOCK:-/tmp/infovore-deploy.lock}
+exec 9>"$LOCK"
+flock -w 600 9 || { log "another deploy holds $LOCK"; exit 1; }
 
 # Healthy means the container has once been fully ready (see
 # scripts/container-health.sh); confirm it again with the same check.
@@ -110,6 +125,77 @@ available=$(awk '/^MemAvailable/ { print int($2 / 1024) }' "${INFOVORE_MEMINFO:-
 # Run as root (to read a root-only env_file), git would refuse a checkout owned
 # by another user.
 current=$(git -c safe.directory="$(pwd)" rev-parse --short HEAD)
+
+# --- Availability probes -----------------------------------------------------
+probe_dir=
+probe_pid=
+if [ "${PROBE_ENABLED:-1}" != 0 ]; then
+  if [ -z "${PROBE_URLS:-}" ] && [ -n "${PUBLIC_BASE_URL:-}" ]; then
+    base=${PUBLIC_BASE_URL%/}
+    PROBE_URLS="$base/ $base/now $base/status"
+  fi
+  if [ -z "${PROBE_URLS:-}" ]; then
+    log 'availability probes off: set PROBE_URLS (or PUBLIC_BASE_URL) in the deploy config'
+  fi
+fi
+# One probe: "<UTC time> <path> <status>" (000 when no HTTP answer came back).
+probe_once() {
+  status=$(curl -s -o /dev/null -w '%{http_code}' -H 'Accept: text/html' --max-time 5 "$1" 2>/dev/null) || true
+  path=/${1#*://*/}
+  [ "$path" != "/$1" ] || path=/
+  echo "$(date -u +%H:%M:%S) $path ${status:-000}" >> "$probe_dir/results"
+}
+# Round-robin over PROBE_URLS until the stop file appears, then one last probe
+# of each URL: the state the rollout left behind.
+probe_loop() {
+  while [ ! -e "$probe_dir/stop" ]; do
+    for url in $PROBE_URLS; do
+      [ -e "$probe_dir/stop" ] && break
+      probe_once "$url"
+      sleep "${PROBE_INTERVAL:-0.5}"
+    done
+  done
+  for url in $PROBE_URLS; do probe_once "$url"; done
+}
+# Stops the probes and prints (and optionally logs) the summary; runs on every
+# exit once the probes started, so a failed rollout reports them too.
+finish() {
+  code=$?
+  if [ -n "$probe_pid" ]; then
+    touch "$probe_dir/stop"
+    wait "$probe_pid" 2>/dev/null || true
+    probe_pid=
+    total=$(wc -l < "$probe_dir/results" | tr -d ' ')
+    failures=$(awk '$3 !~ /^2[0-9][0-9]$/' "$probe_dir/results")
+    failed=$(printf '%s' "$failures" | grep -c . || true)
+    summary="probes $total, non-2xx $failed"
+    log "availability: $summary"
+    [ "$failed" = 0 ] || printf '%s\n' "$failures" | head -n 10 | while read -r at path status; do
+      log "  $at $path $status"
+    done
+    [ "$failed" -le 10 ] || log "  … and $((failed - 10)) more"
+    if [ -n "${INFOVORE_DEPLOY_LOG:-}" ]; then
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $current exit=$code $summary" >> "$INFOVORE_DEPLOY_LOG" \
+        || log "could not append to $INFOVORE_DEPLOY_LOG"
+    fi
+    rm -rf "$probe_dir"
+    if [ "$code" = 0 ] && [ "$failed" != 0 ] && [ "${PROBE_FAIL_ON_ERROR:-0}" = 1 ]; then
+      log 'PROBE_FAIL_ON_ERROR=1 and a probe failed: reporting the deploy as failed'
+      code=1
+    fi
+  fi
+  exit "$code"
+}
+if [ "${PROBE_ENABLED:-1}" != 0 ] && [ -n "${PROBE_URLS:-}" ]; then
+  probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/infovore-probes.XXXXXX")
+  : > "$probe_dir/results"
+  trap finish EXIT
+  trap 'exit 130' INT TERM
+  # The probes must not keep holding the deploy lock (fd 9).
+  probe_loop 9>&- &
+  probe_pid=$!
+  log "probing $PROBE_URLS every ${PROBE_INTERVAL:-0.5} s"
+fi
 rollback="${IMAGE%%:*}:rollback-$(date -u +%Y%m%d%H%M%S)"
 docker tag "$(docker inspect -f '{{.Image}}' "$PRODUCTION")" "$rollback"
 log "building $current as $IMAGE; the running production image is kept as $rollback"

@@ -61,6 +61,23 @@ export interface ActivityQuery {
   until?: string;
 }
 
+/** The WHERE clause (public rows only) and its parameters for an activity query's filters. */
+function activityWhere(query: ActivityQuery): { clause: string; params: string[] } {
+  const where = ["visibility='public'"];
+  const params: string[] = [];
+  const add = (sql: string, value: string) => { where.push(sql); params.push(value); };
+  if (query.source) add('source=?', query.source);
+  if (query.kind) add('media_kind=?', query.kind);
+  if (query.status) add('status=?', query.status);
+  if (query.since) add('occurred_at>=?', query.since);
+  if (query.until) add('occurred_at<=?', query.until);
+  if (query.query) {
+    where.push('(title LIKE ? OR extra_json LIKE ?)');
+    params.push(`%${query.query}%`, `%${query.query}%`);
+  }
+  return { clause: where.join(' AND '), params };
+}
+
 export interface ActivityPage {
   data: Activity[];
   total: number;
@@ -1071,19 +1088,7 @@ export class Repository {
       ? Math.max(1, Math.min(500, Math.floor(limitValue))) : 100;
     const offset = Number.isFinite(offsetValue)
       ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(offsetValue))) : 0;
-    const where = ["visibility='public'"];
-    const params: Array<string | number> = [];
-    const add = (sql: string, value: string) => { where.push(sql); params.push(value); };
-    if (query.source) add('source=?', query.source);
-    if (query.kind) add('media_kind=?', query.kind);
-    if (query.status) add('status=?', query.status);
-    if (query.since) add('occurred_at>=?', query.since);
-    if (query.until) add('occurred_at<=?', query.until);
-    if (query.query) {
-      where.push('(title LIKE ? OR extra_json LIKE ?)');
-      params.push(`%${query.query}%`, `%${query.query}%`);
-    }
-    const clause = where.join(' AND ');
+    const { clause, params } = activityWhere(query);
     const totalRow = this.db.prepare(`SELECT COUNT(*) count FROM activities WHERE ${clause}`)
       .get(...params) as { count: number };
     const rows = this.db.prepare(`
@@ -1132,6 +1137,18 @@ export class Repository {
       const row = this.db.prepare("SELECT COUNT(*) count FROM activities WHERE visibility='public'").get() as { count: number };
       return Number(row.count);
     });
+  }
+
+  /**
+   * Public activities per source that match [query] (its text and every other filter except
+   * the source itself): the counts of the search page's platform filters while a search is
+   * active, so each filter says how many results it would show.
+   */
+  countMatchingBySource(query: Omit<ActivityQuery, 'source' | 'limit' | 'offset'>): Record<string, number> {
+    const { clause, params } = activityWhere(query);
+    const rows = this.db.prepare(`SELECT source, COUNT(*) count FROM activities WHERE ${clause} GROUP BY source`)
+      .all(...params) as Array<{ source: string; count: number }>;
+    return Object.fromEntries(rows.map((row) => [row.source, Number(row.count)]));
   }
 
   countBySource(): Record<string, number> {

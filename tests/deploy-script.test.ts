@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 // scripts/deploy.sh against a stub `docker` that records every call and fails
-// the one whose arguments contain STUB_FAIL. No container is touched.
+// the one whose arguments contain STUB_FAIL. No container is touched, and the
+// lock file is the test's own (INFOVORE_DEPLOY_LOCK), never /tmp's. `git` and
+// `flock` are stubbed too (a fixed commit; flock records its arguments), so the
+// tests also run from a copy without .git and with BusyBox's flock (no -w),
+// as in the Node 22 image.
 const stubDocker = `#!/bin/sh
 echo "$*" >> "$STUB_DIR/calls"
 if [ -n "\${STUB_FAIL:-}" ]; then case "$*" in *"$STUB_FAIL"*) exit 1;; esac; fi
@@ -28,23 +32,56 @@ case "$1" in
 esac
 `;
 
+// The availability probes' `curl`: records its arguments, never connects, and
+// prints the status a probe would see: STUB_CURL_STATUS (default 200) for URLs
+// containing STUB_CURL_FAIL, 200 otherwise. The deploy's own sleep is stubbed
+// out, so it waits a little with the real one to keep the probe loop from spinning.
+const stubCurl = `#!/bin/sh
+echo "$*" >> "$STUB_DIR/curl-calls"
+/bin/sleep 0.01
+for arg in "$@"; do url=$arg; done
+if [ -n "\${STUB_CURL_FAIL:-}" ]; then case "$url" in *"$STUB_CURL_FAIL"*) printf '%s' "\${STUB_CURL_STATUS:-503}"; exit 0;; esac; fi
+printf 200
+`;
+
 async function deploy(t: { after(fn: () => unknown): void }, env: Record<string, string> = {}, args: string[] = []) {
   const dir = await mkdtemp(join(tmpdir(), 'infovore-deploy-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'docker'), stubDocker);
+  await writeFile(join(dir, 'curl'), stubCurl);
+  await writeFile(join(dir, 'git'), '#!/bin/sh\necho 0123abc\n');
+  await writeFile(join(dir, 'flock'), '#!/bin/sh\necho "$*" >> "$STUB_DIR/flock-calls"\n');
+  await chmod(join(dir, 'git'), 0o755);
+  await chmod(join(dir, 'flock'), 0o755);
   await writeFile(join(dir, 'sleep'), '#!/bin/sh\n');
   await chmod(join(dir, 'docker'), 0o755);
+  await chmod(join(dir, 'curl'), 0o755);
   await chmod(join(dir, 'sleep'), 0o755);
   await writeFile(join(dir, 'meminfo'), 'MemAvailable:    3000000 kB\n');
   await writeFile(join(dir, 'calls'), '');
+  await writeFile(join(dir, 'curl-calls'), '');
   const result = await new Promise<{ code: number; output: string }>((resolve) => {
     execFile('sh', [fileURLToPath(new URL('../scripts/deploy.sh', import.meta.url)), ...args], {
-      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STUB_DIR: dir, INFOVORE_MEMINFO: join(dir, 'meminfo'), ...env },
+      env: {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH}`,
+        STUB_DIR: dir,
+        TMPDIR: dir,
+        INFOVORE_MEMINFO: join(dir, 'meminfo'),
+        INFOVORE_DEPLOY_LOCK: join(dir, 'deploy.lock'),
+        INFOVORE_DEPLOY_LOG: join(dir, 'deploy.log'),
+        PUBLIC_BASE_URL: 'https://infovore.test',
+        ...env,
+      },
     }, (error, stdout, stderr) => resolve({ code: error ? Number(error.code ?? 1) : 0, output: stdout + stderr }));
   });
   const calls = (await readFile(join(dir, 'calls'), 'utf8')).trim().split('\n');
+  const curlCalls = (await readFile(join(dir, 'curl-calls'), 'utf8')).split('\n').filter(Boolean);
+  const deployLog = await readFile(join(dir, 'deploy.log'), 'utf8').catch(() => '');
+  const leftovers = (await readdir(dir)).filter((name) => name.startsWith('infovore-probes.'));
+  const flockCalls = await readFile(join(dir, 'flock-calls'), 'utf8').catch(() => '');
   const index = (fragment: string) => calls.findIndex((call) => call.includes(fragment));
-  return { ...result, calls, index };
+  return { ...result, calls, curlCalls, deployLog, leftovers, flockCalls, index };
 }
 
 const CANDIDATE = '-p infovore-candidate';
@@ -62,6 +99,7 @@ test('a full rollout serves from a ready candidate, drains before every stop, an
   assert.ok(positions.every((position) => position >= 0), JSON.stringify(positions));
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'steps run in order');
   assert.ok(run.calls.filter((call) => / down$/.test(call)).every((call) => call.includes(CANDIDATE)), 'only the candidate project is taken down');
+  assert.match(run.output, /deployed \S+\n[^\n]*availability: probes \d+, non-2xx 0\n?$/, 'the probe summary closes the output');
 });
 
 test('a candidate that cannot be created or started is cleaned up and production is untouched', async (t) => {
@@ -154,6 +192,10 @@ test('the sky-server config rolls out the Dokploy stack without ever pointing th
   assert.ok(run.calls.filter((call) => call.includes('-p infovore-candidate')).every((call) => !call.includes('oqidr1 ')),
     'candidate calls never name the production project');
   assert.ok(run.calls.filter((call) => / down$/.test(call)).every((call) => call.includes('-p infovore-candidate')), 'only the candidate project is taken down');
+  // The config's probes: only the public site's pages (the stub curl never connects).
+  const probed = new Set(run.curlCalls.map((call) => call.split(' ').at(-1)));
+  assert.deepEqual([...probed].sort(), ['https://infovore.skyhong.tw/', 'https://infovore.skyhong.tw/now', 'https://infovore.skyhong.tw/status']);
+  assert.match(run.output, /availability: probes \d+, non-2xx 0/);
 });
 
 test('a missing deploy config stops before touching Docker', async (t) => {
@@ -161,4 +203,90 @@ test('a missing deploy config stops before touching Docker', async (t) => {
   assert.equal(run.code, 1);
   assert.match(run.output, /deploy config \/nonexistent\/deploy.env not found/);
   assert.deepEqual(run.calls, ['']);
+});
+
+// ---- Availability probes ----------------------------------------------------
+
+test('probes run during the rollout with Accept: text/html, end with it, and are summarised and logged', async (t) => {
+  const run = await deploy(t);
+  assert.equal(run.code, 0, run.output);
+  assert.match(run.output, /probing https:\/\/infovore\.test\/ https:\/\/infovore\.test\/now https:\/\/infovore\.test\/status every 0\.5 s/);
+  // At least the closing sweep of every URL; every probe asks for HTML and has a timeout.
+  assert.ok(run.curlCalls.length >= 3, String(run.curlCalls.length));
+  assert.ok(run.curlCalls.every((call) => call.includes('-H Accept: text/html') && call.includes('--max-time')), run.curlCalls[0]);
+  for (const path of ['/', '/now', '/status']) assert.ok(run.curlCalls.some((call) => call.endsWith(`https://infovore.test${path}`)), path);
+  const summary = run.output.match(/availability: probes (\d+), non-2xx (\d+)/);
+  assert.ok(summary, run.output);
+  assert.equal(Number(summary[1]), run.curlCalls.length, 'every probe is counted');
+  assert.equal(summary[2], '0');
+  // The deploy log gets one line without secrets: time, commit, exit code, counts.
+  assert.match(run.deployLog, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ 0123abc exit=0 probes \d+, non-2xx 0\n$/);
+  assert.deepEqual(run.leftovers, [], 'the probe scratch directory is removed');
+});
+
+test('failed probes are listed with time, path and status but do not fail the deploy by default', async (t) => {
+  const run = await deploy(t, { STUB_CURL_FAIL: '/now', STUB_CURL_STATUS: '503' });
+  assert.equal(run.code, 0, run.output);
+  const summary = run.output.match(/availability: probes (\d+), non-2xx (\d+)/);
+  assert.ok(summary && Number(summary[2]) >= 1, run.output);
+  assert.equal(Number(summary[2]), run.curlCalls.filter((call) => call.endsWith('/now')).length, 'exactly the /now probes failed');
+  assert.match(run.output, /\] {3}\d\d:\d\d:\d\d \/now 503\n/);
+  assert.doesNotMatch(run.output, /\/status 503|\s\/ 503/);
+  assert.match(run.deployLog, /exit=0 probes \d+, non-2xx [1-9]\d*\n$/);
+});
+
+test('PROBE_FAIL_ON_ERROR=1 turns a failed probe into a failed deploy; a clean one still passes', async (t) => {
+  const failing = await deploy(t, { STUB_CURL_FAIL: '/status', STUB_CURL_STATUS: '000', PROBE_FAIL_ON_ERROR: '1' });
+  assert.equal(failing.code, 1, failing.output);
+  assert.match(failing.output, /deployed /, 'the rollout itself finished');
+  assert.match(failing.output, /\/status 000/);
+  assert.match(failing.output, /PROBE_FAIL_ON_ERROR=1 and a probe failed/);
+  const clean = await deploy(t, { PROBE_FAIL_ON_ERROR: '1' });
+  assert.equal(clean.code, 0, clean.output);
+});
+
+test('a rollout that fails after the probes started still reports them and keeps its exit code', async (t) => {
+  const run = await deploy(t, { STUB_FAIL: 'up -d --no-build --force-recreate' });
+  assert.equal(run.code, 1);
+  assert.match(run.output, /candidate keeps serving[\s\S]*availability: probes \d+, non-2xx 0/);
+  assert.match(run.deployLog, /exit=1 probes/);
+  assert.deepEqual(run.leftovers, []);
+});
+
+test('probes can be turned off, and stay off without any URL; refusals before the rollout start none', async (t) => {
+  const off = await deploy(t, { PROBE_ENABLED: '0' });
+  assert.equal(off.code, 0, off.output);
+  assert.deepEqual(off.curlCalls, []);
+  assert.doesNotMatch(off.output, /availability/);
+
+  const noUrl = await deploy(t, { PUBLIC_BASE_URL: '' });
+  assert.equal(noUrl.code, 0, noUrl.output);
+  assert.deepEqual(noUrl.curlCalls, []);
+  assert.match(noUrl.output, /availability probes off: set PROBE_URLS/);
+
+  const explicit = await deploy(t, { PROBE_URLS: 'https://example.test/healthz' });
+  assert.equal(explicit.code, 0, explicit.output);
+  assert.ok(explicit.curlCalls.length >= 1 && explicit.curlCalls.every((call) => call.endsWith('https://example.test/healthz')));
+
+  const dir = await mkdtemp(join(tmpdir(), 'infovore-meminfo-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(join(dir, 'meminfo'), 'MemAvailable:    1000000 kB\n');
+  const refused = await deploy(t, { INFOVORE_MEMINFO: join(dir, 'meminfo') });
+  assert.equal(refused.code, 1);
+  assert.deepEqual(refused.curlCalls, []);
+  assert.equal(refused.deployLog, '');
+});
+
+test('the deploy lock lives where INFOVORE_DEPLOY_LOCK says', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'infovore-lock-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const lock = join(dir, 'own.lock');
+  const run = await deploy(t, { INFOVORE_DEPLOY_LOCK: lock });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(await readdir(dir), ['own.lock']);
+  // Waits up to ten minutes for a running deploy, on the descriptor opened on that file.
+  assert.equal(run.flockCalls, '-w 600 9\n');
+  // The default stays /tmp/infovore-deploy.lock, the path production deploys share.
+  const script = await readFile(fileURLToPath(new URL('../scripts/deploy.sh', import.meta.url)), 'utf8');
+  assert.match(script, /LOCK=\$\{INFOVORE_DEPLOY_LOCK:-\/tmp\/infovore-deploy\.lock\}/);
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { load } from 'cheerio';
-import { app } from '../src/index.js';
+import { app, repository } from '../src/index.js';
 import { homePage, syncAge, type HomepageData } from '../src/output/home.js';
 import { activityMeta, eventStatusLabel } from '../src/output/activity-meta.js';
 import { platformSync } from '../src/output/overview.js';
@@ -302,4 +302,52 @@ test('a search card clamps its description, never its date', async () => {
   const css = await (await app.request('/styles.css')).text();
   assert.match(css, /\.entry-meta\.entry-meta-split\{display:block\}\.entry-meta-main\{display:-webkit-box;-webkit-line-clamp:2/);
   assert.match(css, /\.entry-date\{display:block\}/);
+});
+
+test('while searching, platform filters count the matches, not the whole platform', async () => {
+  const chipsOf = ($: ReturnType<typeof load>) => $('.search-filters[aria-label="Filter by platform"] a').slice(1)
+    .map((_, chip) => $(chip).text().replace(/\s+/g, ' ').trim()).get();
+  // Rendering: matching counts (zero included) lead, with "matching" in the accessible name.
+  const rendered = load(searchPage('Sample', { query: 'synthetic', source: '', kind: '' }, { data: [], total: 3, limit: 48, offset: 0 },
+    { statsfm: 2178, simkl: 321, kitsu: 40 }, [], { kitsu: 2, simkl: 1 }));
+  assert.deepEqual(chipsOf(rendered), ['Kitsu, 2 matching entries', 'Simkl, 1 matching entry', 'stats.fm, 0 matching entries']);
+  // Without a search the totals stay.
+  const idle = load(searchPage('Sample', { query: '', source: '', kind: '' }, { data: [], total: 0, limit: 48, offset: 0 }, { kitsu: 40, simkl: 321 }, []));
+  assert.deepEqual(chipsOf(idle), ['Simkl, 321 entries', 'Kitsu, 40 entries']);
+
+  // End to end: the route counts per platform with the query and kind applied, never the platform filter.
+  const entry = (source: string, id: string, kind: 'anime' | 'show', title: string) =>
+    ({ source, sourceItemId: id, kind, title, image: '', status: 'completed', activityAt: '2026-10-01T12:00:00Z', rating: null, extra: {} });
+  repository.ingestEntries([
+    entry('kitsu', 'polish-1', 'anime', 'Zephyrine Chronicle'), entry('kitsu', 'polish-2', 'anime', 'Zephyrine Chronicle II'),
+    entry('kitsu', 'polish-3', 'anime', 'Unrelated'), entry('simkl', 'polish-4', 'show', 'Zephyrine Nights'),
+    entry('simkl', 'polish-5', 'show', 'Other show'), entry('simkl', 'polish-6', 'show', 'Another show'),
+  ] as never, '2026-10-01T13:00:00Z');
+  const page = async (path: string) => load(await (await app.request(path)).text());
+  const totals = chipsOf(await page('/search'));
+  assert.ok(totals.includes('Simkl, 3 entries') && totals.includes('Kitsu, 3 entries'), totals.join(' | '));
+
+  const searched = await page('/search?q=zephyrine');
+  assert.deepEqual(chipsOf(searched).slice(0, 2), ['Kitsu, 2 matching entries', 'Simkl, 1 matching entry']);
+  assert.match(searched('.page-intro-aside').text(), /^3 matching entries of/);
+  // Choosing a platform keeps the other platforms' counts (they say what switching would show).
+  const onKitsu = await page('/search?q=zephyrine&source=kitsu');
+  assert.deepEqual(chipsOf(onKitsu).slice(0, 2), ['Kitsu, 2 matching entries', 'Simkl, 1 matching entry']);
+  assert.equal(onKitsu('.search-filters a[aria-current="true"]').first().text().replace(/\s+/g, ' ').trim(), 'Kitsu, 2 matching entries');
+  // Another selected filter (kind) narrows the counts too.
+  const shows = await page('/search?q=zephyrine&kind=show');
+  assert.deepEqual(chipsOf(shows).slice(0, 2), ['Simkl, 1 matching entry', 'Kitsu, 0 matching entries']);
+});
+
+test('the API page opens with jump links to every section, clear of the sticky header', async () => {
+  const $ = load(await (await app.request('/api')).text());
+  const links = $('nav.api-toc[aria-label="On this page"] a');
+  assert.deepEqual(links.map((_, link) => $(link).text()).get(), ['Activities', 'Time', 'Platform mirrors', 'Cards', 'Service', 'Examples']);
+  links.each((_, link) => {
+    const id = ($(link).attr('href') ?? '').slice(1);
+    assert.equal($(`h2#${id}`).length, 1, id);
+  });
+  // Before the long tables, right after the intro.
+  assert.ok($('.api-doc > .page-intro').next().is('nav.api-toc'));
+  assert.match($('style').text(), /\.api-doc h2\[id\]\{scroll-margin-top:84px\}/);
 });

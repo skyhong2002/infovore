@@ -377,9 +377,21 @@ gets ready it is removed and production is untouched. If the new production
 container does not get ready, the candidate keeps serving and the script prints
 the rollback commands (the previous image is tagged `infovore:rollback-<time>`).
 The script needs about 1.2 GiB of available memory for the extra web app, and it
-serializes on `/tmp/infovore-deploy.lock`. While only one backend serves (the
+serializes on `/tmp/infovore-deploy.lock` (`INFOVORE_DEPLOY_LOCK` moves it; the
+tests use their own). While only one backend serves (the
 candidate during production's warm-up), the existing 3-second gateway deadline
 can still answer an occasional request with an explicit 503, as in steady state.
+
+Every rollout records what visitors saw. From the build until the end, a
+background loop requests the public pages in `PROBE_URLS` (default: `/`, `/now`
+and `/status` of `PUBLIC_BASE_URL`; the sky-server config lists the public site)
+one at a time every `PROBE_INTERVAL` seconds (0.5) with `Accept: text/html`,
+then each once more after the rollout. The output ends with
+`availability: probes N, non-2xx M` and the first failures (UTC time, path,
+status; `000` means no HTTP answer). With `INFOVORE_DEPLOY_LOG` set (sky-server:
+`/var/log/infovore-deploy.log`) the same summary is appended there with the
+time, commit and exit code; it holds no secrets. Failed probes are reported, not
+fatal, unless `PROBE_FAIL_ON_ERROR=1`; `PROBE_ENABLED=0` turns them off.
 
 ### Behind a reverse proxy
 

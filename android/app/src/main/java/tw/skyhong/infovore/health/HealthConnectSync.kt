@@ -34,6 +34,7 @@ class HealthConnectSync(context: Context) {
     private val deviceId = settings.deviceId
     private val api = InfovoreApi(
         endpoint,
+        timing = SyncEnvironment.apiTiming(),
         clock = { Instant.ofEpochMilli(SyncEnvironment.nowMs()) },
         newSyncId = SyncEnvironment::newSyncId,
     )

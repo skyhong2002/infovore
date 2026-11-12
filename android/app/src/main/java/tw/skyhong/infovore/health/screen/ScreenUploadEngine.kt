@@ -61,7 +61,11 @@ class ScreenUploadEngine(
 
     /**
      * [rejected]: observations the server refused (HTTP 400) one by one in this run, moved to the
-     * queue's quarantine. [error] stops the run and leaves everything not yet confirmed queued.
+     * queue's quarantine. [error] stops the run and leaves everything not yet confirmed queued;
+     * [needsAction] marks an error retrying cannot fix (token, destination, quarantine, a refused
+     * request), and [retryAfterMs] carries the server's `Retry-After` of a transient one.
+     * [deferredUntilMs]: nothing was sent because the server asked automatic uploads to wait
+     * until then ([ScreenUploader.uploadPending]).
      */
     data class Outcome(
         val sent: Int,
@@ -70,6 +74,9 @@ class ScreenUploadEngine(
         val remaining: Int,
         val error: String?,
         val rejected: Int = 0,
+        val needsAction: Boolean = false,
+        val retryAfterMs: Long? = null,
+        val deferredUntilMs: Long? = null,
     )
 
     private class Totals {
@@ -81,13 +88,17 @@ class ScreenUploadEngine(
 
     fun upload(target: ScreenTarget): Outcome {
         queue.prune(destination = target.destination)
-        target.problem()?.let { return Outcome(0, 0, 0, queue.count(target.destination), it) }
+        target.problem()?.let { return Outcome(0, 0, 0, queue.count(target.destination), it, needsAction = true) }
         // A full quarantine stops uploads until the user deals with it. Rejected records are never
         // deleted automatically, and the pending queue stops dropping records for their age
         // meanwhile (the 40 MB cap still applies; see ObservationQueue.prune).
-        if (queue.countRejected() >= maxRejected) return Outcome(0, 0, 0, queue.count(target.destination), QUARANTINE_FULL)
+        if (queue.countRejected() >= maxRejected) {
+            return Outcome(0, 0, 0, queue.count(target.destination), QUARANTINE_FULL, needsAction = true)
+        }
         val totals = Totals()
         var error: String? = null
+        var needsAction = false
+        var retryAfterMs: Long? = null
         for (round in 1..maxBatchesPerRun) {
             val entries = queue.read(target.destination, maxBatchCount)
             if (entries.isEmpty()) break
@@ -101,22 +112,32 @@ class ScreenUploadEngine(
                     // Every observation of the batch was refused: likely a problem with the request
                     // itself rather than its content. Stop instead of probing the whole queue.
                     error = REJECTED_WHOLE_BATCH
+                    needsAction = true
                 }
             } catch (_: QuarantineFull) {
                 error = QUARANTINE_FULL
+                needsAction = true
             } catch (failure: InfovoreApi.HttpStatusException) {
-                // 401/403/404/413…: keep everything not yet confirmed and stop until the next run.
+                // 401/403/404/413, or a 503 marked not retryable: keep everything not yet
+                // confirmed and stop; retrying cannot help until settings change.
                 error = failure.message
+                needsAction = true
             } catch (failure: IOException) {
                 // Network failures and HTTP 408/429/5xx (including the server's retryable 503 for
-                // storage failures): keep everything and retry on the next run.
+                // storage failures): keep everything and retry later (at Retry-After, if given).
                 error = failure.message ?: failure.javaClass.simpleName
+                retryAfterMs = (failure as? InfovoreApi.RetryableHttpException)?.retryAfterMs
             } catch (failure: IllegalArgumentException) {
+                // The endpoint policy refused the destination.
                 error = failure.message
+                needsAction = true
             }
             if (error != null) break
         }
-        return Outcome(totals.sent, totals.accepted, totals.duplicates, queue.count(target.destination), error, totals.rejected)
+        return Outcome(
+            totals.sent, totals.accepted, totals.duplicates, queue.count(target.destination), error, totals.rejected,
+            needsAction = needsAction, retryAfterMs = retryAfterMs,
+        )
     }
 
     /**

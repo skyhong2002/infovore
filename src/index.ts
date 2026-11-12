@@ -999,8 +999,12 @@ app.get('/search', (c) => {
   const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
   const page = repository.queryActivities({ query: filters.query || undefined, source: filters.source || undefined, kind: filters.kind || undefined, limit: 48, offset });
   const kinds = [...new Set(repository.listActivities(500).map((activity) => activity.mediaKind))].sort();
+  // While a search or kind filter is active, each platform filter counts its matches.
+  const matching = filters.query || filters.kind
+    ? repository.countMatchingBySource({ query: filters.query || undefined, kind: filters.kind || undefined })
+    : undefined;
   c.header('Cache-Control', 'no-cache');
-  return c.html(searchPage(config.ownerName, filters, page, repository.countBySource(), kinds));
+  return c.html(searchPage(config.ownerName, filters, page, repository.countBySource(), kinds, matching));
 });
 
 app.get('/api', (c) => c.html(apiPage(config.ownerName, {

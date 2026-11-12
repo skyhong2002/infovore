@@ -36,6 +36,7 @@ class TestInfovoreApp : Application() {
         EndpointPolicy.testHttpHost = null
         SyncEnvironment.testClock = null
         SyncEnvironment.testSyncIds = null
+        SyncEnvironment.testApiTiming = null
         SyncCoordinator::class.java.getDeclaredField("_state").apply { isAccessible = true }
             .let { @Suppress("UNCHECKED_CAST") (it.get(SyncRunner.coordinator) as MutableStateFlow<SyncState>).value = SyncState() }
         // AndroidViewModelFactory.getInstance() keeps the first Application it saw (one per process

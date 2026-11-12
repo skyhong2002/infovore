@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.4.6) reads selected records from Android Health Connect and
+This private companion (current version 0.4.7) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -57,6 +57,23 @@ always starts collapsed. Each section header shows its current state.
   finds a manual one running is retried later by WorkManager, and a manual
   request waits for a running background sync. Failures show a plain-language
   reason and **重試**.
+- Background failures (0.4.7) are split by what can fix them. One only the
+  user (or the server's owner) can fix ends the run at once without retrying:
+  HTTP 400/401/403/404/413, a 503 the server marks `"retryable": false` (the
+  feature is not configured), an endpoint the policy refuses, missing settings
+  or Health Connect permissions. The status reads **背景同步失敗，需要處理：…**
+  with the reason, and the next try is the next six-hourly run (or 「立即同步」).
+  Transient failures (network, HTTP 408/429/5xx) follow the server's
+  `Retry-After` (seconds or an HTTP date): the HTTP client waits it out between
+  its own attempts when it is at most 30 s, and otherwise stops at once and
+  hands it to the worker, which lets WorkManager's backoff (30 s, doubling)
+  retry when that is at least as long, or schedules one follow-up run for when
+  the server asked (at most six hours; the status reads **背景同步延後：…約 N
+  分鐘後自動重試**). Without a hint the client backs off 1, 2, 4 s and the
+  worker retries with WorkManager's backoff, at most four times a period. The
+  screen-record upload follows the same rules; after a long `Retry-After` the
+  worker and the recording service send nothing until that time, while
+  **立即上傳** always tries.
 - Times are shown as relative time plus the local date and time, following the
   phone's 12/24-hour setting.
 - **同步失敗時通知我** (off by default): when turned on, the app asks for the
@@ -64,7 +81,8 @@ always starts collapsed. Each section header shows its current state.
   place). After three consecutive background syncs that WorkManager gives up on
   (about 18 hours, well before the public page reports the data as stale after
   36 hours) it posts one notification on the **同步問題** channel that opens the
-  health section. Retries within one six-hour period do not count. The text has
+  health section. Retries within one six-hour period do not count; a failure
+  that needs the user counts at once. The text has
   only the failure count, never health values, error details or tokens. Any
   successful full sync resets the count and removes the notification. The same
   switch also covers the screen recorder's quarantine (see 手機 Dayflow).
@@ -398,7 +416,17 @@ the minSdk; SDK 35+ would need JDK 21), still inside `testDebugUnitTest`:
   notifications or the channel is not counted and is delivered once allowed.
 - `BackgroundWorkTest` uses WorkManager's test driver: both periodic works are
   scheduled at start-up with a network constraint, `SyncWorker` retries while a
-  manual sync holds the lock, and only final attempts count toward the warning.
+  manual sync holds the lock, and a failure that needs the user counts toward
+  the warning at once.
+- `BackgroundRetryTest` runs the real `SyncWorker` and `ScreenUploadWorker`
+  against `FakeIngestServer`: 400/401/403, a 503 marked not retryable, a refused
+  endpoint and missing permissions end the run without a retry; a retryable 503
+  retries with backoff and counts only the last attempt; `Retry-After` in
+  seconds or as an HTTP date is waited out inside the run, left to WorkManager's
+  backoff, or turned into a follow-up run at the server's time (capped at six
+  hours, never chained, cancelled by a later success); screen uploads wait for
+  it except on 「立即上傳」. `RetryPolicyTest` covers the parsing (injected
+  clock, invalid values) and every plan.
 - `SyncFlowUiTest` runs the two main flows end to end in the app: pressing
   「立即同步」 on a first run (real `SyncRunner`, `HealthSyncEngine`,
   `HealthConnectReader` and `InfovoreApi`, synthetic records in the fake Health
@@ -420,7 +448,8 @@ tests start on 127.0.0.1 (plain HTTP to it is allowed through the test-only
 the same server on the plain JVM: method, path, `Authorization`, JSON body, 201
 and reconcile answers, no retry on 400/401/409, the 409 refusal (counts,
 `byOrigin`, `confirmToken`) taken from the shared contract fixture, retries
-with backoff on 408/429/5xx including the server's `"retryable": true` 503, an
+with backoff on 408/429/5xx including the server's `"retryable": true` 503,
+`Retry-After` waited out up to 30 s and handed to the caller beyond that, an
 immediate stop on a 503 marked `"retryable": false` (feature not configured),
 and how a timeout or a refused connection is explained to the user.
 

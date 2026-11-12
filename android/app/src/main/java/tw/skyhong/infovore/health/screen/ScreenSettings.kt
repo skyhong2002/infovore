@@ -70,6 +70,15 @@ class ScreenSettings(context: Context) {
         set(value) { preferences.edit { putString(KEY_LAST_UPLOAD_STATUS, value) } }
 
     /**
+     * Epoch millis before which automatic uploads (the worker and the recording service) do not
+     * contact the server, because its last answer carried `Retry-After`; 0 when there is none.
+     * A manual upload ignores it.
+     */
+    var retryNotBefore: Long
+        get() = preferences.getLong(KEY_RETRY_NOT_BEFORE, 0L)
+        set(value) { preferences.edit { putLong(KEY_RETRY_NOT_BEFORE, value) } }
+
+    /**
      * The quarantine level last notified by [tw.skyhong.infovore.health.QuarantineNotifier], so
      * each warning shows once (see [QuarantineAlerts.Decision.notified]). A new key in 0.4.4: the
      * old one held the level last seen, even while notifications were off.
@@ -93,6 +102,7 @@ class ScreenSettings(context: Context) {
         const val KEY_EXCLUSIONS = "exclusions"
         const val KEY_LAST_CAPTURE_AT = "last_capture_at"
         const val KEY_LAST_UPLOAD_STATUS = "last_upload_status"
+        const val KEY_RETRY_NOT_BEFORE = "retry_not_before"
         const val KEY_QUARANTINE_ALERT = "quarantine_notified_level"
     }
 }

@@ -76,6 +76,8 @@ object SyncRunner {
                 settings.lastSuccessfulSyncMs = System.currentTimeMillis()
                 settings.initialImportDone = true
                 SyncFailureNotifier.record(context, settings, SyncFailureAlerts.Outcome.SUCCESS)
+                // A background retry scheduled for the server's Retry-After has nothing left to do.
+                SyncScheduler.cancelRetry(context)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled

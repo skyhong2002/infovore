@@ -34,8 +34,8 @@ class FakeIngestServer(
         val body: String,
     )
 
-    /** [delayMs]: wait before answering (to run into the client's read timeout). */
-    data class Response(val status: Int, val body: String, val delayMs: Long = 0)
+    /** [delayMs]: wait before answering (to run into the client's read timeout). [headers]: extra response headers (e.g. Retry-After). */
+    data class Response(val status: Int, val body: String, val delayMs: Long = 0, val headers: Map<String, String> = emptyMap())
 
     val requests: MutableList<Request> = CopyOnWriteArrayList()
 
@@ -91,7 +91,8 @@ class FakeIngestServer(
                 }
                 if (response.delayMs > 0) Thread.sleep(response.delayMs)
                 val bytes = response.body.toByteArray(Charsets.UTF_8)
-                val head = "HTTP/1.1 ${response.status} Fake\r\nContent-Type: application/json\r\n" +
+                val extra = response.headers.entries.joinToString("") { (name, value) -> "$name: $value\r\n" }
+                val head = "HTTP/1.1 ${response.status} Fake\r\nContent-Type: application/json\r\n" + extra +
                     "Content-Length: ${bytes.size}\r\nConnection: close\r\n\r\n"
                 client.getOutputStream().apply {
                     write(head.toByteArray(Charsets.US_ASCII))

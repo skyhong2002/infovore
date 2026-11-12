@@ -235,6 +235,73 @@ class InfovoreApiHttpTest {
     }
 
     @Test
+    fun aShortRetryAfterIsWaitedOutBeforeTheNextAttempt() {
+        val calls = AtomicInteger()
+        server.responder = {
+            if (calls.incrementAndGet() == 1) {
+                FakeIngestServer.Response(503, """{"error":"busy","retryable":true}""", headers = mapOf("Retry-After" to "15"))
+            } else {
+                FakeIngestServer.Response(201, """{"ok":true,"inserted":1,"updated":0,"deleted":0}""")
+            }
+        }
+        val retries = mutableListOf<String>()
+        assertEquals(1, api().upload(TOKEN, DEVICE, listOf(record), emptyList()) { _, message -> retries += message }.inserted)
+        // The server's 15 s, not the client's 10 ms backoff.
+        assertEquals(listOf(15_000L), sleeps)
+        assertTrue(retries.single(), retries.single().endsWith("（伺服器要求 15 秒後再試）"))
+    }
+
+    @Test
+    fun anHttpDateRetryAfterIsMeasuredFromTheClientsClock() {
+        val calls = AtomicInteger()
+        server.responder = {
+            if (calls.incrementAndGet() == 1) {
+                // OBSERVED_AT (the client's clock) is 04:00:00.
+                FakeIngestServer.Response(429, """{"error":"slow down"}""", headers = mapOf("Retry-After" to "Thu, 10 Sep 2026 04:00:20 GMT"))
+            } else {
+                FakeIngestServer.Response(200, """{"status":"ready"}""")
+            }
+        }
+        assertEquals("ready", api().getJson("/api/ingest/health-connect/status", TOKEN).getString("status"))
+        assertEquals(listOf(20_000L), sleeps)
+    }
+
+    @Test
+    fun aRetryAfterShorterThanTheBackoffKeepsTheBackoffAndAnInvalidOneIsIgnored() {
+        val answers = ArrayDeque(listOf("0", "soon"))
+        server.responder = {
+            answers.removeFirstOrNull()?.let { FakeIngestServer.Response(503, """{"error":"busy"}""", headers = mapOf("Retry-After" to it)) }
+                ?: FakeIngestServer.Response(200, """{"status":"ready"}""")
+        }
+        api().getJson("/x", TOKEN)
+        assertEquals(listOf(10L, 20L), sleeps)
+    }
+
+    @Test
+    fun aRetryAfterLongerThanTheCapEndsTheAttemptsAndIsHandedToTheCaller() {
+        server.responder = { FakeIngestServer.Response(503, """{"error":"busy","retryable":true}""", headers = mapOf("Retry-After" to "900")) }
+        val error = assertThrows(InfovoreApi.RetryableHttpException::class.java) { api().upload(TOKEN, DEVICE, listOf(record), emptyList()) }
+        assertEquals(1, server.requests.size)
+        assertTrue("no wait inside the run", sleeps.isEmpty())
+        assertEquals(900_000L, error.retryAfterMs)
+        assertEquals("伺服器暫時無法處理（HTTP 503），要求約 15 分鐘後再試。", ErrorText.describe(error))
+        // Within the cap (here raised to 15 minutes) the same answer is waited out three times.
+        val patient = timing.copy(maxRetryAfterMs = 900_000L)
+        assertThrows(InfovoreApi.RetryableHttpException::class.java) { api(timing = patient).getJson("/x", TOKEN) }
+        assertEquals(listOf(900_000L, 900_000L, 900_000L), sleeps)
+    }
+
+    @Test
+    fun aNotRetryable503IgnoresRetryAfter() {
+        server.responder = {
+            FakeIngestServer.Response(503, """{"error":"Health Connect ingestion is not configured","retryable":false}""", headers = mapOf("Retry-After" to "5"))
+        }
+        assertThrows(InfovoreApi.HttpStatusException::class.java) { api().upload(TOKEN, DEVICE, listOf(record), emptyList()) }
+        assertEquals(1, server.requests.size)
+        assertTrue(sleeps.isEmpty())
+    }
+
+    @Test
     fun aServerThatNeverAnswersTimesOutAndIsClassifiedAsATimeout() {
         server.responder = { FakeIngestServer.Response(200, "{}", delayMs = 3_000) }
         val quick = timing.copy(readTimeoutMs = 200, retryDelaysMs = listOf(0L))

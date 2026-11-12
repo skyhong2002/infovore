@@ -91,7 +91,7 @@ class ScreenActivityService : AccessibilityService() {
             while (currentCoroutineContext().isActive) {
                 delay(UPLOAD_INTERVAL_MS)
                 if (hasNetwork()) {
-                    runCatching { ScreenUploader.uploadPending(this@ScreenActivityService) }
+                    runCatching { ScreenUploader.uploadPending(this@ScreenActivityService, automatic = true) }
                         .onFailure { Log.w(TAG, "upload failed", it) }
                 }
             }

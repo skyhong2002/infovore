@@ -151,8 +151,21 @@ export function startGateway(options: {
 // readable page with a retry link; scripts and APIs keep the JSON body. Both
 // carry Retry-After so clients back off instead of hammering a busy backend.
 const UNAVAILABLE_RETRY_SECONDS = 15;
+
+/**
+ * One log line per gateway 503, so `docker logs` can answer how often and why visitors were
+ * turned away: the reason and the path's first segment only (never the query, which may hold a
+ * search, or the rest of the path).
+ */
+export function unavailableLogLine(reason: string, url: string | undefined, now = new Date()): string {
+  const segment = (url ?? '/').split(/[?#]/, 1)[0].split('/')[1] ?? '';
+  const area = /^[\w.-]{1,40}$/.test(segment) ? `/${segment}` : '/';
+  return `[gateway] ${now.toISOString()} 503 ${reason} ${area}`;
+}
+
 function unavailable(req: IncomingMessage, res: ServerResponse, reason: string): void {
   if (res.headersSent || res.writableEnded || res.destroyed) return;
+  if (process.env.NODE_ENV !== 'test') console.warn(unavailableLogLine(reason, req.url));
   const wantsPage = (req.method === 'GET' || req.method === 'HEAD') && (req.headers.accept ?? '').includes('text/html');
   if (!wantsPage) {
     res.setHeader('Retry-After', String(UNAVAILABLE_RETRY_SECONDS));

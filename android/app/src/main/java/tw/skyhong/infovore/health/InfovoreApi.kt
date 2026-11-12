@@ -28,12 +28,16 @@ class InfovoreApi(
     /**
      * Connection and read timeouts, and the waits between the attempts of one request
      * ([retryDelaysMs]: one entry per retry, so a request is tried `retryDelaysMs.size + 1` times).
+     * A transient answer with `Retry-After` waits at least that long before the next attempt, up
+     * to [maxRetryAfterMs]; a longer hint ends the attempts at once, and the caller (a background
+     * worker) schedules the next try for when the server asked.
      */
     data class Timing(
         val connectTimeoutMs: Int = 15_000,
         val readTimeoutMs: Int = 30_000,
         val retryDelaysMs: List<Long> = listOf(1_000L, 2_000L, 4_000L),
         val sleep: (Long) -> Unit = Thread::sleep,
+        val maxRetryAfterMs: Long = 30_000L,
     )
 
     /** [records] are encoded records ([HealthRecordJson.encode]); the body is built by [HealthBatchJson]. */
@@ -67,10 +71,11 @@ class InfovoreApi(
 
     /**
      * POSTs [body] to [path] on the configured endpoint. Transient failures (IOException,
-     * HTTP 408/429/5xx) are retried with backoff and, once the attempts are used up, thrown as
-     * that IOException ([RetryableHttpException] for an HTTP status). Other non-2xx responses,
-     * and a 503 whose JSON body says `"retryable": false` (a server where the feature is not
-     * configured), throw [HttpStatusException] at once.
+     * HTTP 408/429/5xx) are retried with backoff (or after the server's `Retry-After`, see
+     * [Timing]) and, once the attempts are used up, thrown as that IOException
+     * ([RetryableHttpException] for an HTTP status, carrying the server's hint). Other non-2xx
+     * responses, and a 503 whose JSON body says `"retryable": false` (a server where the feature
+     * is not configured), throw [HttpStatusException] at once.
      */
     fun postJson(
         path: String,
@@ -113,9 +118,13 @@ class InfovoreApi(
             } catch (error: IOException) {
                 lastError = error
                 if (attempt == attempts) throw error
+                val hint = (error as? RetryableHttpException)?.retryAfterMs
+                // Asked to wait longer than a run should block: leave the next try to the caller.
+                if (hint != null && hint > timing.maxRetryAfterMs) throw error
                 val nextAttempt = attempt + 1
-                onRetry(nextAttempt, error.message ?: error.javaClass.simpleName)
-                timing.sleep(timing.retryDelaysMs[attempt - 1])
+                val message = error.message ?: error.javaClass.simpleName
+                onRetry(nextAttempt, if (hint != null) "$message（伺服器要求 ${RetryAfter.describe(hint)}後再試）" else message)
+                timing.sleep(maxOf(timing.retryDelaysMs[attempt - 1], hint ?: 0L))
             }
         }
         throw checkNotNull(lastError)
@@ -141,7 +150,8 @@ class InfovoreApi(
                 throw HttpStatusException(status, "Infovore HTTP $status: ${responseText.take(300)}")
             }
             if (status == 408 || status == 429 || status >= 500) {
-                throw RetryableHttpException(status, "Infovore HTTP $status: ${responseText.take(300)}")
+                val retryAfterMs = RetryAfter.parseMs(connection.getHeaderField("Retry-After"), clock())
+                throw RetryableHttpException(status, "Infovore HTTP $status: ${responseText.take(300)}", retryAfterMs)
             }
             if (status !in 200..299) {
                 throw HttpStatusException(status, "Infovore HTTP $status: ${responseText.take(300)}", refusalOf(status, responseText))
@@ -152,8 +162,11 @@ class InfovoreApi(
         }
     }
 
-    /** A transient HTTP failure (408, 429 or 5xx): retried, and thrown once the attempts are used up. */
-    class RetryableHttpException(val status: Int, message: String) : IOException(message)
+    /**
+     * A transient HTTP failure (408, 429 or 5xx): retried, and thrown once the attempts are used
+     * up. [retryAfterMs]: the server's `Retry-After` (see [RetryAfter.parseMs]), null without one.
+     */
+    class RetryableHttpException(val status: Int, message: String, val retryAfterMs: Long? = null) : IOException(message)
 
     /** [reconciled]: the server confirmed the batch's reconcile window (false when none was sent). */
     data class UploadResult(val inserted: Int, val updated: Int, val deleted: Int, val reconciled: Boolean = false)
