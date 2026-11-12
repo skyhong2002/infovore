@@ -1,10 +1,11 @@
 import { DayflowQualityStore } from './quality-store.js';
+import { DayflowPhoneStore } from './phone-store.js';
 import type { QualityLabels } from './quality.js';
 import { dayflowCloudTerms, keywordPools } from './pools.js';
 import { measureRead } from '../data/read-timing.js';
 import { dayflowKeywords } from './keywords.js';
 import type { DatabaseSync } from 'node:sqlite';
-import { dayflowBatchSchema, dayflowDay, type DayflowBatch, type DayflowCategory, type DayflowDay, type DayflowSnapshot } from './types.js';
+import { dayflowBatchSchema, dayflowDay, type DayflowBatch, type DayflowCategory, type DayflowDay, type DayflowPhoneSummary, type DayflowSnapshot } from './types.js';
 
 export function migrateDayflow(db: DatabaseSync): void {
   db.exec(`BEGIN;
@@ -21,7 +22,9 @@ export function migrateDayflow(db: DatabaseSync): void {
 // Raw activity text stays exclusively in this private table, never snapshots or activities.
 export class DayflowStore {
   readonly quality: DayflowQualityStore;
-  constructor(private db: DatabaseSync, private useQuality = false) { this.quality = new DayflowQualityStore(db); }
+  // Phone activity lives in its own tables: it never merges into computer time.
+  readonly phone: DayflowPhoneStore;
+  constructor(private db: DatabaseSync, private useQuality = false) { this.quality = new DayflowQualityStore(db); this.phone = new DayflowPhoneStore(db); }
   ingest(input: DayflowBatch, receivedAt = new Date().toISOString()) {
     const batch = dayflowBatchSchema.parse(input);
     const observed = new Date(batch.observedAt).toISOString();
@@ -34,7 +37,7 @@ export class DayflowStore {
   }
   status() {
     const row = this.db.prepare('SELECT MAX(received_at) lastSyncedAt, MIN(day) firstDay, MAX(day) lastDay, COUNT(DISTINCT day) days, COALESCE(SUM(revision), 0) revision FROM dayflow_days').get()!;
-    return { lastSyncedAt: row.lastSyncedAt as string | null, firstDay: row.firstDay as string | null, lastDay: row.lastDay as string | null, days: Number(row.days), revision: Number(row.revision) + this.quality.revision() };
+    return { lastSyncedAt: row.lastSyncedAt as string | null, firstDay: row.firstDay as string | null, lastDay: row.lastDay as string | null, days: Number(row.days), revision: Number(row.revision) + this.quality.revision() + this.phone.revision() };
   }
   // Distinct recorded days in [fromDay, toDay), across devices.
   dayCount(fromDay = '0000-00-00', toDay = '9999-99-99'): number {
@@ -145,8 +148,31 @@ export class DayflowStore {
           model: classification.model } } : {}),
         keywords: dayflowKeywords([...byDay].filter(([day]) => day >= weekStart.toISOString().slice(0, 10)).flatMap(([, batches]) => batches), now, 36, quality),
         categories: [...categories.values()].sort((a, b) => b.minutes - a.minutes),
-        lastSyncedAt: status.lastSyncedAt, firstDay: status.firstDay, lastDay: status.lastDay },
+        lastSyncedAt: status.lastSyncedAt, firstDay: status.firstDay, lastDay: status.lastDay,
+        ...this.phoneSummary(now, weekStart.toISOString().slice(0, 10)) },
     };
+  }
+
+  private phoneSummary(now: Date, weekStart: string): { phone?: DayflowPhoneSummary } {
+    const today = dayflowDay(now);
+    const from = new Date(`${today}T00:00:00Z`); from.setUTCDate(from.getUTCDate() - 30);
+    const batches = this.phone.batchesSince(from.toISOString().slice(0, 10), now).filter((b) => b.day <= today);
+    if (!batches.length) return {};
+    // Activity titles are private: phone days publish durations and categories only.
+    const daily = batches.map((b) => ({ ...summarizeDay(b.day, [b], now), keywords: undefined }))
+      .sort((a, b) => b.day.localeCompare(a.day));
+    const week = daily.filter((d) => d.day >= weekStart);
+    const categories = new Map<string, DayflowCategory>();
+    for (const day of week) for (const cat of day.categories) {
+      const value = categories.get(cat.name) ?? { ...cat, minutes: 0 };
+      value.minutes += cat.minutes; categories.set(cat.name, value);
+    }
+    const status = this.phone.status();
+    return { phone: { daily, categories: [...categories.values()].sort((a, b) => b.minutes - a.minutes),
+      todayMinutes: daily.find((d) => d.day === today)?.trackedMinutes ?? 0,
+      weeklyHours: Math.round(week.reduce((sum, d) => sum + d.trackedMinutes, 0) / 6) / 10,
+      weeklyActiveHours: Math.round(week.reduce((sum, d) => sum + d.activeMinutes, 0) / 6) / 10,
+      lastObservationAt: status.lastObservationAt } };
   }
 }
 

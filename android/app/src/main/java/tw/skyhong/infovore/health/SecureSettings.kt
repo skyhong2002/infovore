@@ -14,14 +14,15 @@ import javax.crypto.spec.GCMParameterSpec
 
 class SecureSettings(context: Context) {
     private val preferences = context.getSharedPreferences("infovore_health", Context.MODE_PRIVATE)
+    private val cipher = KeystoreCipher(KEY_ALIAS)
 
     var endpoint: String
         get() = preferences.getString(KEY_ENDPOINT, DEFAULT_ENDPOINT) ?: DEFAULT_ENDPOINT
         set(value) { preferences.edit { putString(KEY_ENDPOINT, value.trim().trimEnd('/')) } }
 
     var token: String
-        get() = decrypt(preferences.getString(KEY_TOKEN, null))
-        set(value) { preferences.edit { putString(KEY_TOKEN, encrypt(value.trim())) } }
+        get() = cipher.decrypt(preferences.getString(KEY_TOKEN, null))
+        set(value) { preferences.edit { putString(KEY_TOKEN, cipher.encrypt(value.trim())) } }
 
     val deviceId: String
         get() {
@@ -49,45 +50,6 @@ class SecureSettings(context: Context) {
         get() = preferences.getString("last_sleep_status", "睡眠尚未檢查") ?: "睡眠尚未檢查"
         set(value) { preferences.edit { putString("last_sleep_status", value) } }
 
-    private fun secretKey(): SecretKey {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
-            init(
-                KeyGenParameterSpec.Builder(
-                    KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-                ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .build()
-            )
-            generateKey()
-        }
-    }
-
-    private fun encrypt(value: String): String {
-        if (value.isEmpty()) return ""
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        val iv = Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
-        val encrypted = Base64.encodeToString(cipher.doFinal(value.toByteArray()), Base64.NO_WRAP)
-        return "$iv:$encrypted"
-    }
-
-    private fun decrypt(value: String?): String {
-        if (value.isNullOrEmpty()) return ""
-        return runCatching {
-            val (iv, encrypted) = value.split(':', limit = 2)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                secretKey(),
-                GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)),
-            )
-            String(cipher.doFinal(Base64.decode(encrypted, Base64.NO_WRAP)))
-        }.getOrDefault("")
-    }
-
     companion object {
         const val DEFAULT_ENDPOINT = "https://infovore.skyhong.tw"
         const val DEFAULT_HISTORY_DAYS = 7
@@ -99,5 +61,47 @@ class SecureSettings(context: Context) {
         private const val KEY_CHANGES_TOKEN = "changes_token"
         private const val KEY_LAST_STATUS = "last_status"
         private const val KEY_ALIAS = "infovore-health-ingest-token"
+    }
+}
+
+/** AES-GCM encryption with a non-exportable Android Keystore key under [alias]. */
+class KeystoreCipher(private val alias: String) {
+    private fun secretKey(): SecretKey {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (keyStore.getKey(alias, null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
+            init(
+                KeyGenParameterSpec.Builder(
+                    alias,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .build()
+            )
+            generateKey()
+        }
+    }
+
+    fun encrypt(value: String): String {
+        if (value.isEmpty()) return ""
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+        val iv = Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
+        val encrypted = Base64.encodeToString(cipher.doFinal(value.toByteArray()), Base64.NO_WRAP)
+        return "$iv:$encrypted"
+    }
+
+    fun decrypt(value: String?): String {
+        if (value.isNullOrEmpty()) return ""
+        return runCatching {
+            val (iv, encrypted) = value.split(':', limit = 2)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                secretKey(),
+                GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)),
+            )
+            String(cipher.doFinal(Base64.decode(encrypted, Base64.NO_WRAP)))
+        }.getOrDefault("")
     }
 }

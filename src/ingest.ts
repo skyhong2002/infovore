@@ -1,4 +1,6 @@
 import { startDayflowQualityWorker } from './dayflow/quality-worker.js';
+import { startDayflowPhoneWorker } from './dayflow/phone-worker.js';
+import { phoneObservationBatchSchema } from './dayflow/phone-types.js';
 import { bodyLimit } from 'hono/body-limit';
 import { dayflowBatchSchema } from './dayflow/types.js';
 import { computaiReportSchema, computaiSegmentsSchema } from './computai/types.js';
@@ -35,6 +37,31 @@ export function createIngestApp(repository: Repository): Hono {
       return c.json({ ok: true, ...repository.dayflow.ingest(batch) });
     } catch {
       return c.json({ error: 'Invalid Dayflow day batch' }, 400);
+    }
+  });
+  // Android screen observations use their own token: a leaked phone token
+  // cannot rewrite macOS days, and the Mac token cannot write phone data.
+  app.use('/api/ingest/dayflow-phone/*', async (c, next) => {
+    if (!config.dayflow.phoneToken) return c.json({ error: 'Phone Dayflow ingestion is not configured' }, 503);
+    if (!authorized(c.req.header('authorization'), config.dayflow.phoneToken)) return c.json({ error: 'Unauthorized' }, 401);
+    await next();
+  });
+  app.get('/api/ingest/dayflow-phone/status', (c) => {
+    const { lastObservationAt, pending } = repository.dayflow.phone.status();
+    return c.json({ status: 'ready', lastObservationAt, pending });
+  });
+  app.post('/api/ingest/dayflow-phone/observations', async (c) => {
+    const body = await c.req.text();
+    if (Buffer.byteLength(body) > 8 * 1024 * 1024) return c.json({ error: 'Phone observation payload exceeds 8 MiB' }, 413);
+    try {
+      const batch = phoneObservationBatchSchema.parse(JSON.parse(body));
+      return c.json({ ok: true, ...repository.dayflow.phone.ingest(batch) });
+    } catch (error) {
+      // Report what failed validation, never the submitted screen content.
+      const message = error instanceof Error && 'issues' in error
+        ? (error as { issues: Array<{ path: unknown[]; message: string }> }).issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
+        : 'Invalid JSON';
+      return c.json({ error: `Invalid phone observation batch: ${message}` }, 400);
     }
   });
   app.use('/api/ingest/computai/*', async (c, next) => {
@@ -111,5 +138,6 @@ if (process.env.NODE_ENV !== 'test') {
   const repository = new Repository(config.databasePath, { dayflowQuality: Boolean(config.dayflow.quality) });
   const app = createIngestApp(repository);
   if (config.dayflow.quality && config.dayflow.token && config.sourceEnabled('dayflow')) startDayflowQualityWorker(repository.dayflow, config.dayflow.quality);
+  if (config.dayflow.phoneToken && config.sourceEnabled('dayflow')) startDayflowPhoneWorker(repository.dayflow.phone, config.dayflow.quality);
   serve({ fetch: app.fetch, port: config.port }, (info) => console.log(`infovore ingest listening on :${info.port}`));
 }

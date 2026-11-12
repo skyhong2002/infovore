@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">Infovore Health</string>
+    <string name="app_name">Infovore</string>
+    <string name="screen_service_label">Infovore 手機 Dayflow</string>
+    <string name="screen_service_description">在螢幕開啟且已解鎖時，約每分鐘及切換 App 時記錄前景 App 名稱、畫面上可見的文字，並視需要附上一張小縮圖，上傳到你自己的 infovore 伺服器，由伺服器以 AI 摘要成時間軸後刪除原始資料。密碼欄位、禁止截圖的安全畫面與你排除的 App 不會擷取文字或畫面。可在 Infovore App 內暫停或關閉記錄。</string>
 </resources>

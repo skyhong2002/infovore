@@ -2,7 +2,10 @@
 
 package tw.skyhong.infovore.health
 
+import android.content.ComponentName
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputType
 import android.view.View
 import android.view.WindowManager
@@ -13,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.permission.HealthPermission
@@ -20,6 +24,11 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import tw.skyhong.infovore.health.screen.Exclusions
+import tw.skyhong.infovore.health.screen.ObservationQueue
+import tw.skyhong.infovore.health.screen.ScreenActivityService
+import tw.skyhong.infovore.health.screen.ScreenSettings
+import tw.skyhong.infovore.health.screen.ScreenUploader
 import java.time.Instant
 
 class MainActivity : AppCompatActivity() {
@@ -34,6 +43,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sleepStatus: TextView
     private var syncing = false
 
+    private lateinit var screenSettings: ScreenSettings
+    private lateinit var phoneTokenInput: EditText
+    private lateinit var recordingSwitch: SwitchCompat
+    private lateinit var accessibilityStatus: TextView
+    private lateinit var exclusionsInput: EditText
+    private lateinit var pauseButton: Button
+    private lateinit var screenStatus: TextView
+    private lateinit var screenResult: TextView
+    private lateinit var uploadButton: Button
+    private lateinit var testButton: Button
+
     private val permissionLauncher = registerForActivityResult(HealthConnectSync.permissionContract()) {
         lifecycleScope.launch { refreshPermissionStatus() }
     }
@@ -41,6 +61,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = SecureSettings(this)
+        screenSettings = ScreenSettings(this)
         setContentView(buildContent())
         lifecycleScope.launch { refreshPermissionStatus() }
     }
@@ -48,6 +69,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::permissionStatus.isInitialized) lifecycleScope.launch { refreshPermissionStatus() }
+        if (::screenStatus.isInitialized) refreshScreenStatus()
     }
 
     private fun buildContent(): View {
@@ -60,7 +82,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "infovore"
         }, LinearLayout.LayoutParams(dp(64), dp(64)))
         root.addView(TextView(this).apply {
-            text = "Infovore Health 0.1.7"
+            text = "Infovore 0.2.0"
             textSize = 28f
         })
         root.addView(TextView(this).apply {
@@ -144,7 +166,177 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
         })
 
+        buildScreenSection(root)
+
         return ScrollView(this).apply { addView(root) }
+    }
+
+    private fun buildScreenSection(root: LinearLayout) {
+        root.addView(TextView(this).apply {
+            text = "手機 Dayflow（畫面活動）"
+            textSize = 22f
+            setPadding(0, dp(32), 0, dp(8))
+        })
+        root.addView(TextView(this).apply {
+            text = "以無障礙服務在螢幕開啟且已解鎖時，約每分鐘及切換 App 時記錄前景 App、畫面文字與小縮圖，" +
+                "上傳到上方 endpoint 的 infovore，彙整成時間軸。手機端不呼叫任何 AI。"
+            textSize = 14f
+        })
+        root.addView(TextView(this).apply {
+            text = "隱私：畫面文字與縮圖會上傳到你的 infovore 伺服器，由伺服器用 AI 摘要後刪除原始資料；" +
+                "密碼欄位、安全畫面與排除的 App 不會擷取。"
+            textSize = 14f
+            setPadding(0, dp(8), 0, 0)
+        })
+
+        root.addView(label("DAYFLOW_PHONE_TOKEN（至少 32 字元，與健康同步 token 不同）"))
+        phoneTokenInput = EditText(this).apply {
+            setText(screenSettings.token)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isSingleLine = true
+        }
+        root.addView(phoneTokenInput, matchWrap())
+
+        root.addView(label("排除的 App 套件（以逗號或換行分隔；密碼管理器等已預設排除）"))
+        exclusionsInput = EditText(this).apply {
+            setText(screenSettings.exclusionsText)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            isSingleLine = false
+            minLines = 2
+            hint = "com.example.bank"
+        }
+        root.addView(exclusionsInput, matchWrap())
+
+        root.addView(Button(this).apply {
+            text = "儲存"
+            setOnClickListener {
+                saveScreenInputs()
+                screenResult.text = "手機 Dayflow 設定已儲存；token 由 Android Keystore 加密。" +
+                    "排除 ${screenSettings.exclusions.size} 個自訂套件（另有 ${Exclusions.DEFAULT_PACKAGES.size} 個預設）。"
+            }
+        }, matchWrap(dp(8)))
+
+        recordingSwitch = SwitchCompat(this).apply {
+            text = "啟用記錄"
+            isChecked = screenSettings.enabled
+            setOnCheckedChangeListener { _, checked ->
+                screenSettings.enabled = checked
+                refreshScreenStatus()
+            }
+        }
+        root.addView(recordingSwitch, matchWrap(dp(12)))
+
+        accessibilityStatus = TextView(this).apply { setPadding(0, dp(12), 0, dp(4)) }
+        root.addView(accessibilityStatus)
+        root.addView(Button(this).apply {
+            text = "開啟無障礙設定"
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }, matchWrap())
+        root.addView(TextView(this).apply {
+            text = "側載安裝的 App 需先到「應用程式資訊 → ⋮ → 允許受限制的設定」才能開啟無障礙服務。"
+            textSize = 13f
+        })
+
+        pauseButton = Button(this).apply {
+            setOnClickListener {
+                screenSettings.pausedUntil = if (screenSettings.isPaused()) 0L else System.currentTimeMillis() + PAUSE_MS
+                refreshScreenStatus()
+            }
+        }
+        root.addView(pauseButton, matchWrap(dp(12)))
+
+        screenStatus = TextView(this).apply {
+            setPadding(0, dp(12), 0, dp(4))
+            setTextIsSelectable(true)
+        }
+        root.addView(screenStatus)
+
+        uploadButton = Button(this).apply {
+            text = "立即上傳"
+            setOnClickListener { runScreenUpload() }
+        }
+        root.addView(uploadButton, matchWrap(dp(8)))
+        testButton = Button(this).apply {
+            text = "測試連線"
+            setOnClickListener { testScreenConnection() }
+        }
+        root.addView(testButton, matchWrap())
+
+        screenResult = TextView(this).apply {
+            setPadding(0, dp(12), 0, dp(16))
+            setTextIsSelectable(true)
+        }
+        root.addView(screenResult)
+        refreshScreenStatus()
+    }
+
+    private fun saveScreenInputs() {
+        settings.endpoint = endpointInput.text.toString()
+        screenSettings.token = phoneTokenInput.text.toString()
+        screenSettings.exclusionsText = exclusionsInput.text.toString()
+    }
+
+    private fun runScreenUpload() {
+        saveScreenInputs()
+        uploadButton.isEnabled = false
+        screenResult.text = "上傳中…"
+        lifecycleScope.launch {
+            try {
+                val outcome = ScreenUploader.uploadPending(this@MainActivity)
+                screenResult.text = outcome.error?.let { "上傳失敗：$it" }
+                    ?: "已送出 ${outcome.sent} 筆（新增 ${outcome.accepted}、重複 ${outcome.duplicates}），佇列剩 ${outcome.remaining} 筆。"
+            } finally {
+                uploadButton.isEnabled = true
+                refreshScreenStatus()
+            }
+        }
+    }
+
+    private fun testScreenConnection() {
+        saveScreenInputs()
+        testButton.isEnabled = false
+        screenResult.text = "測試連線中…"
+        lifecycleScope.launch {
+            try {
+                val status = runCatching { ScreenUploader.checkStatus(this@MainActivity) }
+                screenResult.text = status.fold(
+                    onSuccess = {
+                        val last = it.optString("lastObservationAt").takeUnless { value -> value.isEmpty() || value == "null" }
+                        "連線成功（${it.optString("status")}）：伺服器最後收到 ${last ?: "尚無資料"}，待處理 ${it.optInt("pending")} 筆。"
+                    },
+                    onFailure = { "連線失敗：${it.message ?: it.javaClass.simpleName}" },
+                )
+            } finally {
+                testButton.isEnabled = true
+            }
+        }
+    }
+
+    private fun refreshScreenStatus() {
+        val enabled = isScreenServiceEnabled()
+        accessibilityStatus.text = if (enabled) "無障礙服務：已開啟" else "無障礙服務：尚未開啟（記錄需要開啟 Infovore 手機 Dayflow）"
+        recordingSwitch.isChecked = screenSettings.enabled
+        val now = System.currentTimeMillis()
+        val paused = screenSettings.isPaused(now)
+        pauseButton.text = if (paused) "恢復" else "暫停 1 小時"
+        val state = when {
+            !screenSettings.enabled -> "記錄已關閉"
+            paused -> "已暫停至 ${Instant.ofEpochMilli(screenSettings.pausedUntil).atZone(java.time.ZoneId.systemDefault()).toLocalTime().withNano(0)}"
+            !enabled -> "等待開啟無障礙服務"
+            else -> "記錄中"
+        }
+        val lastCapture = screenSettings.lastCaptureAt.takeIf { it > 0 }
+            ?.let { Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime().withNano(0).toString() }
+            ?: "尚未擷取"
+        val pending = ObservationQueue.get(this).count()
+        screenStatus.text = "狀態：$state\n最後擷取時間：$lastCapture\n佇列中 $pending 筆\n最後上傳結果：${screenSettings.lastUploadStatus}"
+    }
+
+    private fun isScreenServiceEnabled(): Boolean {
+        val expected = ComponentName(this, ScreenActivityService::class.java)
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        return enabled.split(':').any { ComponentName.unflattenFromString(it) == expected }
     }
 
     private fun runManualSync(sleepOnly: Boolean = false) {
@@ -234,6 +426,10 @@ class MainActivity : AppCompatActivity() {
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
     ).apply { this.topMargin = topMargin }
+
+    private companion object {
+        const val PAUSE_MS = 60 * 60_000L
+    }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun yesNo(value: Boolean) = if (value) "是" else "否"

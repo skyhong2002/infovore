@@ -50,6 +50,12 @@ export interface DayflowExtra {
   keywordPools?: DayflowKeywordPools;
   keywordQuality?: { mode: 'ai' | 'local'; classifiedActivities: number; eligibleActivities: number; model: string | null };
   firstDay: string | null; lastDay: string | null;
+  phone?: DayflowPhoneSummary;
+}
+// Android screen activity, summarized server-side; kept apart from computer time.
+export interface DayflowPhoneSummary {
+  daily: DayflowDay[]; categories: DayflowCategory[];
+  todayMinutes: number; weeklyHours: number; weeklyActiveHours: number; lastObservationAt: string | null;
 }
 export type DayflowSnapshot = SourceSnapshot<DayflowExtra>;
 export function dayflowDay(now = new Date()): string {

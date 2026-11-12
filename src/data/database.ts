@@ -2,6 +2,7 @@ import { recordedCoverage, type RecordedInterval } from './coverage.js';
 import { measureRead, type ReadPhase } from './read-timing.js';
 import { migrateDayflowQuality } from '../dayflow/quality-store.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
+import { migrateDayflowPhone } from '../dayflow/phone-store.js';
 import { ComputaiStore, migrateComputai, migrateComputaiSegments } from '../computai/store.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -378,6 +379,8 @@ export class Repository {
     if (afterPublicActivityIndexes.user_version < 16) this.migrateGoodreadsToHardcover();
     const afterHardcover = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterHardcover.user_version < 17) migrateDayflowQuality(this.db);
+    const afterDayflowQuality = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterDayflowQuality.user_version < 18) migrateDayflowPhone(this.db);
   }
 
   // Goodreads shut down its RSS feeds in 2026; books now come from Hardcover,

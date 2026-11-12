@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.1.7) reads selected records from Android Health Connect and
+This private companion (current version 0.2.0) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -52,13 +52,64 @@ Subsequent imports use Health Connect change tokens and apply both upserts and
 deletions. Change tokens expire after 30 days, so an expired token safely falls
 back to another historical scan.
 
+## 手機 Dayflow
+
+Version 0.2.0 adds a passive phone activity recorder, the Android counterpart of
+Dayflow on macOS. An accessibility service (**Infovore 手機 Dayflow**) records
+what is on screen and queues "observations" that infovore summarizes into
+timeline cards with a vision model on the server. The phone makes no AI calls
+and holds no model keys.
+
+### Setup
+
+1. Set a random `DAYFLOW_PHONE_TOKEN` of at least 32 characters on the infovore
+   ingest service. It is separate from `HEALTH_CONNECT_TOKEN`; without it the
+   server answers 503.
+2. In the app's **手機 Dayflow（畫面活動）** section, enter the token, tap
+   **儲存**, and use **測試連線** (calls `GET /api/ingest/dayflow-phone/status`).
+   The endpoint and device id are shared with the Health Connect section.
+3. Sideloaded APKs must first allow restricted settings: Android Settings →
+   Apps → Infovore → ⋮ → **允許受限制的設定** (Allow restricted settings).
+4. Tap **開啟無障礙設定**, enable **Infovore 手機 Dayflow**, then turn on
+   **啟用記錄** in the app.
+
+### What is captured
+
+Each observation holds the capture time, the foreground app's package and
+label, up to 4,000 characters of visible UI text (text and content
+descriptions; password fields are skipped), and optionally a JPEG thumbnail
+(long edge ≤ 720 px, quality 60). A thumbnail is attached only when the
+visible text changed since that app's last thumbnail or five minutes have
+passed. Secure windows (`FLAG_SECURE`), mostly black frames, built-in sensitive
+apps (password managers, authenticators), and packages listed under
+**排除的 App 套件** are recorded as `blocked` with only the package and label.
+The app's own screen and the lock screen are never captured.
+
+### Cadence
+
+Capture runs only while recording is enabled and not paused (**暫停 1 小時**),
+and only while the screen is on and unlocked: once a minute, plus on a
+foreground-app change (at most one capture per five seconds). Observations are
+queued as JSON files in the app's no-backup storage (capped at about 40 MB;
+items older than seven days are dropped) and uploaded in batches of at most 40
+items and 6 MB to `POST /api/ingest/dayflow-phone/observations`: every five
+minutes from the service while online, every 15 minutes via WorkManager as a
+fallback, and on **立即上傳**. Files are deleted only after the server
+acknowledges a batch; observation ids make retries idempotent.
+
+### Privacy
+
+Screen text and thumbnails go only to your own infovore server, which deletes
+the raw observations after summarizing them. The token is encrypted with a
+dedicated Android Keystore key, and the queue is excluded from backup.
+
 ## Build
 
 Install JDK 17 and Android SDK platform 36, then run:
 
 ```sh
 cd android
-./gradlew assembleDebug lintDebug
+./gradlew assembleDebug lintDebug testDebugUnitTest
 ```
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions

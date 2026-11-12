@@ -172,3 +172,35 @@ reused. The Dayflow page shows reviewed/eligible activity coverage while backfil
 is incomplete. A day may still have no labels after review when its activities
 have no clear public topic. All inference stays serial through the same worker
 and database lease; no additional engine or parallel inference worker is needed.
+
+## Android phone
+
+The Android companion records phone activity as a separate Dayflow source.
+
+**Server.** Set `DAYFLOW_PHONE_TOKEN` (at least 32 characters, different from
+`DAYFLOW_TOKEN`) in the ingest service env. The phone token can only reach
+`/api/ingest/dayflow-phone/*`, and the Mac token cannot write phone data.
+
+**Contract.** `POST /api/ingest/dayflow-phone/observations` (Bearer token, body at
+most 8 MiB) accepts `{schemaVersion: 1, deviceId, observations: [...]}` with 1–40
+observations of `{id, capturedAt, package, appLabel, text (≤4000), blocked,
+image? (base64 JPEG)}`. Blocked observations (secure windows, excluded apps)
+must carry no text or image. IDs are idempotent: re-sent observations count as
+duplicates, even after they were summarized. `GET …/status` returns
+`lastObservationAt` and the number of observations awaiting a summary.
+
+**Summaries.** Each capture stands for the time until the next one. A silence
+longer than 5 minutes (screen off) or 20 minutes of activity closes a segment;
+the newest segment waits 12 minutes for late uploads. The ingest service sends
+one segment at a time to `DAYFLOW_AI_MODEL` with the timeline text and up to six
+low-detail screenshots, and asks for 1–6 contiguous cards in a fixed taxonomy
+(Work, Learning, Communication, Social media, Entertainment, News & reading,
+Life admin, Idle). Responses that do not cover every capture exactly once are
+rejected and retried with backoff. Without a configured gateway, after four
+failures, or 48 hours after the segment, it falls back to one card per app run.
+
+**Privacy.** Screen text and screenshots are deleted as soon as their segment is
+summarized; the observation IDs and app names are kept 14 days for de-duplication.
+Card titles, summaries and app lists stay private. The public projection is
+daily and weekly durations per category in the **Phone activity** section,
+separate from computer time, keywords and topics.

@@ -152,6 +152,20 @@ keyword extraction on pages, daily summaries and the word cloud; tools and
 low-confidence labels are excluded. AI failure retains existing classifications.
 Without a configured provider, local keyword extraction continues.
 
+## Android phone Dayflow
+
+The Android companion (`android/`) can also record phone activity, Dayflow
+style. Its accessibility service captures the foreground app, visible UI text
+(password fields skipped) and a small screenshot about once a minute while the
+screen is unlocked, and uploads them with a dedicated `DAYFLOW_PHONE_TOKEN` to
+`POST /api/ingest/dayflow-phone/observations`. The ingest service groups the
+captures into short segments and summarizes each with the `DAYFLOW_AI_*` gateway
+(vision input) into activity cards, then deletes the screen text and images.
+Without a gateway, or after repeated failures, it falls back to per-app cards.
+Phone time is shown in its own **Phone activity** section on
+`/platforms/dayflow` and never merges into computer time; titles stay private.
+See [scripts/DAYFLOW.md](scripts/DAYFLOW.md#android-phone).
+
 ## macOS ComputAI sync
 
 [ComputAI](https://github.com/Sean-Hawks/computai) tracks Claude Code and Codex
