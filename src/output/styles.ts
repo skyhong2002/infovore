@@ -127,7 +127,7 @@ a.metric-card:hover{border-color:var(--line-strong);color:inherit;transform:tran
 .activity-tag{border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);display:inline-block;font-size:12px;line-height:1.4;padding:1px 7px}
 .rating{color:var(--gold)}.feed-note{color:var(--quiet);font-size:12.5px;margin-top:18px}
 .health-activity{min-width:0}.health-activity>div{min-width:0}.entry.health-activity img{background:#fff;padding:6px;object-fit:contain;width:48px;height:48px}
-.health-activity h3 a{color:inherit;text-decoration:none}.health-activity .health-activity-summary{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.5}
+.health-activity h3 a{color:inherit;display:inline-block;padding:3px 0;text-decoration:none}.health-activity .health-activity-summary{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.5}
 .health-activity time{display:block;color:var(--quiet);font-size:12px;margin-top:4px}
 `;
 
@@ -199,7 +199,7 @@ const time = `
 .time-table th{background:var(--surface-raised);color:var(--quiet);font-size:12px;font-weight:700;letter-spacing:.08em;padding:11px 14px;text-align:right;text-transform:uppercase;white-space:nowrap}
 .time-table td{border-top:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums;padding:12px 14px;text-align:right;white-space:nowrap}
 .time-table th:first-child,.time-table td:first-child{padding-left:18px;text-align:left}.time-table th:last-child,.time-table td:last-child{padding-right:18px}
-.time-table td:first-child a{color:var(--text);font-weight:700;text-decoration:none}.time-table td:first-child a:hover{color:var(--accent)}
+.time-table td:first-child a{color:var(--text);display:inline-block;font-weight:700;padding:4px 0;text-decoration:none}.time-table td:first-child a:hover{color:var(--accent)}
 .time-table tbody tr:hover td{background:var(--surface-hover)}
 .time-table tfoot td{background:var(--surface-raised);border-top:1px solid var(--line-strong);font-weight:700}
 .time-method{border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.06em;padding:2px 8px;text-transform:uppercase}
