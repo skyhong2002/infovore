@@ -41,7 +41,7 @@ function sourceRow(entry: SourceTimeSpent, series: number[]): string {
   const current = sum(series, series.length - 7, series.length);
   const previous = sum(series, series.length - 14, series.length - 7);
   const note = timeNotes[entry.source];
-  return `<tr><td data-value="${html(sourceLabel(entry.source))}"><a href="/platforms/${html(entry.source)}">${html(sourceLabel(entry.source))}</a></td>
+  return `<tr><td data-value="${html(sourceLabel(entry.source))}"><a href="/platforms/${html(entry.source)}">${html(sourceLabel(entry.source))}</a><span class="time-method-inline">${html(entry.method)}</span></td>
     <td data-value="${html(entry.method)}"><span class="time-method">${html(entry.method)}</span>${note ? info(note) : ''}</td>
     <td class="time-trend" data-value="${sum(series, 0, series.length)}">${sparkline(series, { color: platformColors[entry.source] ?? 'var(--accent)', label: `${sourceLabel(entry.source)} · daily time over the last 28 days` })}</td>
     <td data-value="${current - previous}">${weekDelta(series, approx)}</td>${values}</tr>`;

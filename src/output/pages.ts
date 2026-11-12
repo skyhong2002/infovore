@@ -240,8 +240,10 @@ function activityCard(activity: Activity, context?: CardContext, now = new Date(
     const summary = healthActivityMeta(activity);
     return `<article class="card entry health-activity" id="activity-${html(activity.id)}"><img src="/logos/healthconnect.png" alt="Health Connect logo" width="48" height="48"><div><span class="pill">Health · ${html(activity.status)}</span><h3><a href="/platforms/health${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a></h3><div class="muted health-activity-summary" title="${html(summary)}">${html(summary)}</div><time datetime="${html(when)}">${html(date)}${clock ? ` · ${clock} GMT+8${activity.status === 'sleep' ? ' · 醒來' : ''}` : ' · 每日彙總'}</time></div></article>`;
   }
+  const parsedWhen = new Date(when);
   const date = /^\d{4}-\d{2}-\d{2}/.test(when)
-    ? dateFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(when))
+    ? dateFormat('en', { timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric' }).format(parsedWhen)
+      + (activity.occurredAtPrecision === 'exact' ? ` · ${dateFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(parsedWhen)}` : '')
     : when;
   const progress = activity.extra.watchedEpisodes != null && activity.extra.totalEpisodes
     ? `${activity.extra.watchedEpisodes}/${activity.extra.totalEpisodes} ep`
