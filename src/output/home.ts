@@ -42,7 +42,7 @@ const homeStyles = `
   .home-avatar-placeholder{align-items:center;color:var(--accent);display:flex;font-size:34px;font-weight:700;justify-content:center}
   .home-kicker{color:var(--gold);font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
   .home-profile h1{font-family:var(--display);font-size:40px;font-weight:400;letter-spacing:-.02em;line-height:1;margin:0 0 4px}
-  .home-handle{color:var(--muted);font-size:14px;margin:0}.home-handle a{color:var(--muted)}.home-handle a:hover{color:var(--accent)}
+  .home-handle{color:var(--muted);font-size:14px;margin:0}.home-handle a{color:var(--muted);display:inline-block;padding:3px 0}.home-handle a:hover{color:var(--accent)}
   .home-profile-links{display:flex;flex-wrap:wrap;gap:0 4px;justify-content:flex-end;margin-top:4px}
   .home-profile-links a{align-items:center;border-radius:8px;color:var(--muted);display:inline-flex;font-size:13.5px;min-height:36px;padding:4px 8px;text-decoration:none}.home-profile-links a:hover{color:var(--accent)}
   .home-profile-status{color:var(--quiet);display:flex;flex:0 0 auto;flex-direction:column;font-size:12.5px;text-align:right}
@@ -56,7 +56,7 @@ const homeStyles = `
   .home-metric-value{color:var(--text);display:block;font-size:26px;font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:-.03em;line-height:1.1;margin-top:6px}
   .home-metric-head{align-items:center;display:flex}
   .home-metric-linked{transition:border-color .15s}.home-metric-linked:hover{border-color:var(--line-strong)}.home-metric-stretch{display:inline-block;padding:3px 0;text-decoration:none}.home-metric-stretch::after{content:"";inset:0;position:absolute;z-index:0}.home-metric-linked .info{z-index:1}.home-metric-stretch:hover{color:var(--accent)}
-  .home-status-sub{color:var(--quiet);font-size:12.5px;margin-top:2px}.home-status-dot.warn{background:var(--warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 25%,transparent)}
+  .home-status-sub{color:var(--quiet);font-size:12.5px;margin-top:2px}.home-status-sub a{display:inline-block;padding:4px 0}.home-status-dot.warn{background:var(--warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 25%,transparent)}
   .home-platform-sync{color:var(--quiet);display:block;font-size:12px;margin-top:3px}.home-platform-sync.warn{color:var(--warn);font-weight:600}
   .home-metric-note{color:var(--quiet);display:block;font-size:12.5px;margin-top:3px}.home-metric-link{color:inherit;text-decoration:none;transition:border-color .15s}.home-metric-link:hover{border-color:var(--line-strong);color:inherit}.home-metric-names{color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.45;margin-top:6px;overflow:hidden}
   .home-metric-trend{align-items:center;display:flex;gap:10px;margin-top:8px;min-height:26px}

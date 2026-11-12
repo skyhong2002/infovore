@@ -98,3 +98,12 @@ test('unknown pages are navigable for browsers and plain for scripts', async () 
   assert.equal(script.status, 404);
   assert.equal(await script.text(), '404 Not Found');
 });
+
+test('device-pushed sources explain where their errors are reported', () => {
+  const page = load(statusPage({ ownerName: 'Sample', maxSourceAgeHours: 36, intervalMinutes: 60, nextScheduledAt: null, running: [], now: new Date('2026-11-12T08:00:00Z'),
+    sources: [{ source: 'health', lastFetched: '2026-11-12T07:00:00Z', error: null, json: '/api/health.json' },
+      { source: 'dayflow', lastFetched: '2026-11-08T07:00:00Z', error: null, json: '/api/dayflow.json' }] }));
+  assert.match(page('tbody tr').first().text(), /pushed from a device/);
+  assert.match(page('tbody tr').last().text(), /Delayed[\s\S]*check the device app/);
+  assert.match(page('.feed-note').text(), /Phone screen activity is not listed/);
+});

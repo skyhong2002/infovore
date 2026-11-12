@@ -99,13 +99,36 @@ const infoScript = `<script>
     if (pinned) { pinned.setAttribute('aria-expanded', 'false'); pinned = null; }
     if (focused && focused.matches && focused.matches('button.info')) focused.dataset.dismissed = '1';
   });
-  for (const type of ['mouseover', 'focusin']) document.addEventListener(type, (event) => {
+  // Hover content stays open while the pointer moves from the button onto the
+  // tooltip (WCAG 1.4.13); it closes shortly after the pointer leaves both.
+  let hideTimer = 0;
+  const ownerOf = (node) => {
+    if (!node || !node.closest) return null;
+    const button = node.closest('button.info');
+    if (button) return button;
+    const tip = node.closest('.info-tip');
+    return tip ? document.querySelector('button.info[aria-controls="' + tip.id + '"]') : null;
+  };
+  document.addEventListener('mouseover', (event) => {
+    const button = ownerOf(event.target);
+    if (!button) return;
+    clearTimeout(hideTimer);
+    if (button !== pinned) { delete button.dataset.dismissed; show(button); }
+  });
+  document.addEventListener('mouseout', (event) => {
+    const button = ownerOf(event.target);
+    if (!button || button === pinned || ownerOf(event.relatedTarget) === button) return;
+    if (button === document.activeElement && !button.dataset.dismissed) return;
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => hide(button), 250);
+  });
+  document.addEventListener('focusin', (event) => {
     const button = event.target.closest && event.target.closest('button.info');
     if (button && button !== pinned) { delete button.dataset.dismissed; show(button); }
   });
-  for (const type of ['mouseout', 'focusout']) document.addEventListener(type, (event) => {
+  document.addEventListener('focusout', (event) => {
     const button = event.target.closest && event.target.closest('button.info');
-    if (button && button !== pinned && !(type === 'mouseout' && button === document.activeElement && !button.dataset.dismissed)) hide(button);
+    if (button && button !== pinned) hide(button);
   });
   window.addEventListener('scroll', unpin, { passive: true });
   window.addEventListener('resize', unpin);
