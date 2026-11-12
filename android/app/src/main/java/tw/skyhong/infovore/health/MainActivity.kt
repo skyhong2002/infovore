@@ -38,13 +38,13 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import tw.skyhong.infovore.health.MainViewModel.ScreenTask
-import tw.skyhong.infovore.health.MainViewModel.SyncKind
 import tw.skyhong.infovore.health.screen.Exclusions
 import tw.skyhong.infovore.health.screen.ObservationQueue
 import tw.skyhong.infovore.health.screen.ScreenActivityService
 import tw.skyhong.infovore.health.screen.ScreenSettings
 import tw.skyhong.infovore.health.ui.CollapsibleSection
 import tw.skyhong.infovore.health.ui.Field
+import tw.skyhong.infovore.health.ui.FormState
 import tw.skyhong.infovore.health.ui.FieldResult
 import tw.skyhong.infovore.health.ui.HealthAction
 import tw.skyhong.infovore.health.ui.HealthConnectAvailability
@@ -55,6 +55,8 @@ import tw.skyhong.infovore.health.ui.InputValidation
 import tw.skyhong.infovore.health.ui.ScreenInputs
 import tw.skyhong.infovore.health.ui.ScreenStatus
 import tw.skyhong.infovore.health.ui.BackgroundSync
+import tw.skyhong.infovore.health.ui.SaveState
+import tw.skyhong.infovore.health.ui.SecretDrafts
 import tw.skyhong.infovore.health.ui.SetupProgress
 import tw.skyhong.infovore.health.ui.SetupStep
 import tw.skyhong.infovore.health.ui.StepState
@@ -132,6 +134,8 @@ class MainActivity : AppCompatActivity() {
     private var permissionRequestHadNoEffect = false
     private var grantedBeforeRequest: Set<String> = emptySet()
     private var connectionJustSaved = false
+    /** The last save changed the sync destination, so the next full sync re-imports this many days. */
+    private var reimportDaysAfterSave: Int? = null
     private var screenJustSaved = false
     private var updatingSwitch = false
     private var healthUi: HealthUi? = null
@@ -285,13 +289,17 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.help_history_days, SecureSettings.DEFAULT_HISTORY_DAYS),
         )
         endpointField.setValue(settings.endpoint)
-        tokenField.setValue(savedHealthToken)
+        // Unsaved token edits come back from the ViewModel after a rotation; never from the Bundle.
+        tokenField.setValue(model.drafts.valueOr(SecretDrafts.Key.HEALTH_TOKEN, savedHealthToken))
         historyDaysField.setValue(settings.historyDays.toString())
         for (field in listOf(endpointField, tokenField, historyDaysField)) {
             section.add(field.input.parent as View)
             field.onChange {
                 connectionJustSaved = false
+                reimportDaysAfterSave = null
+                if (field == tokenField) model.drafts.update(SecretDrafts.Key.HEALTH_TOKEN, field.value, savedHealthToken)
                 field.clearErrorIfAny()
+                if (field == endpointField) showEndpointNote()
                 renderConnectionState()
                 renderHealth()
             }
@@ -373,12 +381,13 @@ class MainActivity : AppCompatActivity() {
             ViewKit.InputKind.MULTILINE,
             getString(R.string.help_exclusions, Exclusions.DEFAULT_PACKAGES.size),
         ).apply { input.hint = "com.example.bank" }
-        phoneTokenField.setValue(savedPhoneToken)
+        phoneTokenField.setValue(model.drafts.valueOr(SecretDrafts.Key.PHONE_TOKEN, savedPhoneToken))
         exclusionsField.setValue(screenSettings.exclusionsText)
         for (field in listOf(phoneTokenField, exclusionsField)) {
             section.add(field.input.parent as View)
             field.onChange {
                 screenJustSaved = false
+                if (field == phoneTokenField) model.drafts.update(SecretDrafts.Key.PHONE_TOKEN, field.value, savedPhoneToken)
                 field.clearErrorIfAny()
                 renderScreenSaveState()
                 updateBackCallback()
@@ -464,7 +473,7 @@ class MainActivity : AppCompatActivity() {
     // region Connection settings
 
     private fun validate(field: Field): FieldResult<*> = when (field) {
-        endpointField -> InputValidation.endpoint(field.value)
+        endpointField -> endpointResult()
         tokenField -> InputValidation.token(field.value, "HEALTH_CONNECT_TOKEN", required = true)
         historyDaysField -> InputValidation.historyDays(field.value)
         phoneTokenField -> InputValidation.token(field.value, "DAYFLOW_PHONE_TOKEN", required = false)
@@ -481,9 +490,33 @@ class MainActivity : AppCompatActivity() {
         InputValidation.endpoint(settings.endpoint).isValid &&
             InputValidation.token(savedHealthToken, "token", required = true).isValid
 
-    /** Validates every connection field; saves and returns true only when all are valid. */
-    private fun saveConnection(showSuccess: Boolean): Boolean {
-        val endpoint = InputValidation.endpoint(endpointField.value)
+    private enum class SaveResult { SAVED, INVALID, AWAITING_CONFIRMATION, BLOCKED }
+
+    /** Endpoint validation plus a note when the edit points to a new sync destination. */
+    private fun endpointResult(): FieldResult<String> {
+        val result = InputValidation.endpoint(endpointField.value)
+        val note = (result as? FieldResult.Valid)?.let {
+            DestinationChange.fieldNote(settings.endpoint, it.value, settings.hasSyncProgress)
+        }
+        return if (result is FieldResult.Valid && note != null) result.copy(note = note) else result
+    }
+
+    /** Shows or hides the new-destination note while typing; errors still wait for the field to lose focus. */
+    private fun showEndpointNote() {
+        val result = endpointResult()
+        if (result is FieldResult.Valid) endpointField.show(result)
+    }
+
+    private val historyPermissionGranted: Boolean
+        get() = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted.orEmpty()
+
+    /**
+     * Validates every connection field and saves them when all are valid. Changing the sync
+     * destination after a sync first asks for confirmation (the next sync re-imports history);
+     * [afterConfirmedSave] runs once that confirmed save succeeds.
+     */
+    private fun saveConnection(showSuccess: Boolean, afterConfirmedSave: () -> Unit = {}): SaveResult {
+        val endpoint = endpointResult()
         val token = InputValidation.token(tokenField.value, "HEALTH_CONNECT_TOKEN", required = true)
         val days = InputValidation.historyDays(historyDaysField.value)
         endpointField.show(endpoint)
@@ -496,35 +529,86 @@ class MainActivity : AppCompatActivity() {
             focusField(firstInvalid.first)
             connectionSaveState.text = getString(R.string.save_state_fix_errors)
             kit.setTone(connectionSaveState, Tone.ERROR, tintBackground = false)
-            return false
+            return SaveResult.INVALID
         }
         val endpointValue = requireNotNull(endpoint.valueOrNull())
         val tokenValue = requireNotNull(token.valueOrNull())
         val daysValue = requireNotNull(days.valueOrNull())
-        settings.endpoint = endpointValue
+        return when (DestinationChange.decide(settings.endpoint, endpointValue, settings.hasSyncProgress)) {
+            DestinationChange.Action.KEEP -> commitConnection(endpointValue, tokenValue, daysValue, reset = null, showSuccess)
+            DestinationChange.Action.RESET ->
+                commitConnection(endpointValue, tokenValue, daysValue, reset = ResetKind.QUIET, showSuccess)
+            DestinationChange.Action.CONFIRM_RESET -> {
+                if (model.sync.value.busy) {
+                    showDestinationBusy()
+                    return SaveResult.BLOCKED
+                }
+                val reimportDays = DestinationChange.reimportDays(daysValue, historyPermissionGranted)
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.destination_change_title)
+                    .setMessage(getString(R.string.destination_change_message, hostOf(endpointValue), reimportDays))
+                    .setPositiveButton(R.string.destination_change_ok) { _, _ ->
+                        val saved = commitConnection(endpointValue, tokenValue, daysValue, ResetKind.REIMPORT, showSuccess)
+                        if (saved == SaveResult.SAVED) afterConfirmedSave()
+                    }
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .show()
+                SaveResult.AWAITING_CONFIRMATION
+            }
+        }
+    }
+
+    private enum class ResetKind { QUIET, REIMPORT }
+
+    /** Writes validated values; [reset] also clears the sync cursor for a new destination. */
+    private fun commitConnection(endpointValue: String, tokenValue: String, daysValue: Int, reset: ResetKind?, showSuccess: Boolean): SaveResult {
+        if (reset == null) {
+            settings.endpoint = endpointValue
+            reimportDaysAfterSave = null
+        } else {
+            val reimportDays = DestinationChange.reimportDays(daysValue, historyPermissionGranted)
+            val status = if (reset == ResetKind.REIMPORT) "${Instant.now()}：${DestinationChange.resetStatus(reimportDays)}" else null
+            // Under the sync lock, so a sync can never write the old destination's cursor afterwards.
+            val done = SyncRunner.coordinator.tryExclusive { settings.changeEndpointAndResetSync(endpointValue, status) }
+            if (!done) {
+                showDestinationBusy()
+                return SaveResult.BLOCKED
+            }
+            reimportDaysAfterSave = if (reset == ResetKind.REIMPORT) reimportDays else null
+        }
         settings.token = tokenValue
         savedHealthToken = tokenValue
+        model.drafts.clear(SecretDrafts.Key.HEALTH_TOKEN)
         settings.historyDays = daysValue
         // Show the normalised values (e.g. a trailing slash removed) so the form matches what was saved.
         if (endpointField.value != endpointValue) endpointField.setValue(endpointValue)
         if (tokenField.value != tokenValue) tokenField.setValue(tokenValue)
         if (historyDaysField.value != daysValue.toString()) historyDaysField.setValue(daysValue.toString())
-        endpointField.show(endpoint)
-        historyDaysField.show(days)
-        connectionJustSaved = showSuccess
+        endpointField.show(endpointResult())
+        historyDaysField.show(InputValidation.historyDays(daysValue.toString()))
+        connectionJustSaved = showSuccess || reimportDaysAfterSave != null
         renderAll()
-        return true
+        return SaveResult.SAVED
+    }
+
+    private fun showDestinationBusy() {
+        connectionSection.setExpanded(true)
+        connectionSaveState.text = getString(R.string.destination_change_busy)
+        kit.setTone(connectionSaveState, Tone.ERROR, tintBackground = false)
     }
 
     private fun renderConnectionState() {
         val dirty = connectionDirty()
-        val (text, tone) = when {
-            dirty -> getString(R.string.save_state_unsaved) to Tone.WARNING
-            connectionJustSaved -> getString(R.string.save_state_saved) to Tone.OK
-            savedConnectionReady() -> getString(R.string.save_state_clean) to Tone.NEUTRAL
-            else -> getString(R.string.save_state_incomplete) to Tone.WARNING
+        val reimportDays = reimportDaysAfterSave
+        val state = FormState.connection(dirty, connectionJustSaved, reimportDays != null, savedConnectionReady())
+        val tone = state.tone
+        connectionSaveState.text = when (state) {
+            SaveState.UNSAVED -> getString(R.string.save_state_unsaved)
+            SaveState.SAVED_NEW_DESTINATION -> getString(R.string.save_state_saved_new_destination, reimportDays ?: 0)
+            SaveState.JUST_SAVED -> getString(R.string.save_state_saved)
+            SaveState.CLEAN -> getString(R.string.save_state_clean)
+            SaveState.INCOMPLETE -> getString(R.string.save_state_incomplete)
         }
-        connectionSaveState.text = text
         if (tone == Tone.NEUTRAL) connectionSaveState.setTextColor(kit.color(R.color.text_secondary)) else kit.setTone(connectionSaveState, tone, tintBackground = false)
         val summary = when {
             dirty -> getString(R.string.connection_summary_unsaved) to Tone.WARNING
@@ -588,6 +672,7 @@ class MainActivity : AppCompatActivity() {
                 historyPermission = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY,
                 connectionProblem = connectionProblem(),
                 syncing = sync.running != null,
+                backgroundSyncRunning = sync.backgroundRunning,
                 permissionRequestHadNoEffect = permissionRequestHadNoEffect,
                 permissionError = permissionError,
             ),
@@ -603,9 +688,10 @@ class MainActivity : AppCompatActivity() {
         syncHint.visibility = if (ui.syncHint == null) View.GONE else View.VISIBLE
 
         val running = sync.running != null
-        syncProgress.visibility = if (running) View.VISIBLE else View.GONE
-        syncProgressText.visibility = if (running) View.VISIBLE else View.GONE
-        syncProgressText.text = sync.progress
+        val busy = sync.busy
+        syncProgress.visibility = if (busy) View.VISIBLE else View.GONE
+        syncProgressText.visibility = if (busy) View.VISIBLE else View.GONE
+        syncProgressText.text = sync.progress ?: if (sync.backgroundRunning) getString(R.string.background_sync_in_progress) else null
         syncErrorBox.visibility = if (sync.error != null && !running) View.VISIBLE else View.GONE
         syncErrorBox.text = sync.error?.let {
             getString(if (sync.failed == SyncKind.SLEEP) R.string.sync_failed_sleep else R.string.sync_failed_full, it)
@@ -626,7 +712,7 @@ class MainActivity : AppCompatActivity() {
             append(ui.headline)
             if (lastSync != null) append(" · ").append(getString(R.string.health_summary_last, TimeText.relative(lastSync, now)))
         }
-        healthSection.setSummary(if (running) getString(R.string.sync_in_progress) else summary, if (running) Tone.NEUTRAL else ui.tone)
+        healthSection.setSummary(if (busy) getString(R.string.sync_in_progress) else summary, if (busy) Tone.NEUTRAL else ui.tone)
         renderSetup()
     }
 
@@ -670,11 +756,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startSync(kind: SyncKind) {
-        if (model.sync.value.running != null) return
-        if (connectionDirty() && !saveConnection(showSuccess = false)) {
-            syncHint.text = getString(R.string.sync_blocked_invalid_inputs)
-            syncHint.visibility = View.VISIBLE
-            return
+        if (model.sync.value.busy) return
+        if (connectionDirty()) {
+            when (saveConnection(showSuccess = false) { startSync(kind) }) {
+                SaveResult.SAVED -> Unit
+                SaveResult.INVALID -> {
+                    syncHint.text = getString(R.string.sync_blocked_invalid_inputs)
+                    syncHint.visibility = View.VISIBLE
+                    return
+                }
+                // Continues from the confirmation dialog, or a running sync blocks the change.
+                SaveResult.AWAITING_CONFIRMATION, SaveResult.BLOCKED -> return
+            }
         }
         val ui = healthUi
         val allowed = if (kind == SyncKind.SLEEP) ui?.sleepEnabled else ui?.syncEnabled
@@ -734,7 +827,7 @@ class MainActivity : AppCompatActivity() {
         }
         setupNextButton.isEnabled = when (next) {
             SetupStep.FIRST_SYNC -> healthUi?.syncEnabled == true
-            else -> model.sync.value.running == null
+            else -> !model.sync.value.busy
         }
     }
 
@@ -793,6 +886,7 @@ class MainActivity : AppCompatActivity() {
         }
         savedPhoneToken = requireNotNull(token.valueOrNull())
         screenSettings.token = savedPhoneToken
+        model.drafts.clear(SecretDrafts.Key.PHONE_TOKEN)
         screenSettings.exclusionsText = requireNotNull(exclusions.valueOrNull())
         if (phoneTokenField.value != savedPhoneToken) phoneTokenField.setValue(savedPhoneToken)
         screenJustSaved = showSuccess
@@ -804,14 +898,15 @@ class MainActivity : AppCompatActivity() {
     private fun ensureScreenSaved(): Boolean = !screenDirty() || saveScreen(showSuccess = false)
 
     private fun renderScreenSaveState() {
-        val (text, tone) = when {
-            screenDirty() -> getString(R.string.save_state_unsaved) to Tone.WARNING
-            screenJustSaved -> getString(
+        val state = FormState.screen(screenDirty(), screenJustSaved)
+        val tone = state.tone
+        screenSaveState.text = when (state) {
+            SaveState.UNSAVED -> getString(R.string.save_state_unsaved)
+            SaveState.JUST_SAVED, SaveState.SAVED_NEW_DESTINATION -> getString(
                 R.string.screen_saved, screenSettings.exclusions.size, Exclusions.DEFAULT_PACKAGES.size,
-            ) to Tone.OK
-            else -> getString(R.string.save_state_clean) to Tone.NEUTRAL
+            )
+            SaveState.CLEAN, SaveState.INCOMPLETE -> getString(R.string.save_state_clean)
         }
-        screenSaveState.text = text
         if (tone == Tone.NEUTRAL) screenSaveState.setTextColor(kit.color(R.color.text_secondary)) else kit.setTone(screenSaveState, tone, tintBackground = false)
     }
 
@@ -898,16 +993,15 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
-                    var wasRunning = false
+                    var wasBusy = false
                     model.sync.collect { state ->
-                        val running = state.running != null
-                        if (running) {
+                        if (state.running != null) {
                             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         } else {
                             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         }
-                        if (wasRunning && !running) refreshHealth()
-                        wasRunning = running
+                        if (wasBusy && !state.busy) refreshHealth()
+                        wasBusy = state.busy
                         renderHealth()
                     }
                 }
@@ -924,21 +1018,31 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateBackCallback() {
         if (!::screenSaveState.isInitialized) return
-        backCallback.isEnabled = connectionDirty() || screenDirty()
+        backCallback.isEnabled = FormState.confirmBeforeLeaving(connectionDirty(), screenDirty())
     }
 
     private fun confirmDiscardChanges() {
         AlertDialog.Builder(this)
             .setTitle(R.string.unsaved_title)
             .setMessage(R.string.unsaved_message)
-            .setPositiveButton(R.string.unsaved_save) { _, _ ->
-                val connectionOk = !connectionDirty() || saveConnection(showSuccess = true)
-                val screenOk = !screenDirty() || saveScreen(showSuccess = true)
-                if (connectionOk && screenOk) finish()
+            .setPositiveButton(R.string.unsaved_save) { _, _ -> saveAllAndFinish() }
+            .setNegativeButton(R.string.unsaved_discard) { _, _ ->
+                model.drafts.clearAll()
+                finish()
             }
-            .setNegativeButton(R.string.unsaved_discard) { _, _ -> finish() }
             .setNeutralButton(R.string.unsaved_keep_editing, null)
             .show()
+    }
+
+    /** Saves both forms, then leaves; a destination change finishes from its confirmation dialog. */
+    private fun saveAllAndFinish() {
+        val screenOk = !screenDirty() || saveScreen(showSuccess = true)
+        val finishIfSaved = { if (screenOk && !connectionDirty() && !screenDirty()) finish() }
+        if (!connectionDirty()) {
+            finishIfSaved()
+        } else if (saveConnection(showSuccess = true, afterConfirmedSave = finishIfSaved) == SaveResult.SAVED) {
+            finishIfSaved()
+        }
     }
 
     private fun focusField(field: Field) {

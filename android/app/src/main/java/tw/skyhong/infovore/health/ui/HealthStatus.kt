@@ -48,6 +48,8 @@ data class HealthInputs(
     /** Problem with the connection settings that blocks syncing, or null when they are usable. */
     val connectionProblem: String?,
     val syncing: Boolean,
+    /** The periodic background sync is running; manual syncs wait for it. */
+    val backgroundSyncRunning: Boolean = false,
     /** True after the user returned from the permission screen without granting anything new. */
     val permissionRequestHadNoEffect: Boolean = false,
     /** Set when reading the granted permissions failed. */
@@ -131,13 +133,17 @@ object HealthStatus {
 
         val connection = input.connectionProblem
         val syncHint = when {
-            input.syncing -> "同步進行中，請保持此畫面開啟"
+            // Leaving the screen no longer cancels a sync, but without background read access
+            // Health Connect itself refuses reads once the app is no longer in the foreground.
+            input.syncing && background -> "同步進行中；離開此畫面也會繼續"
+            input.syncing -> "同步進行中；尚未允許背景讀取，請保持此畫面開啟直到完成"
+            input.backgroundSyncRunning -> "背景同步正在進行，完成後即可手動同步"
             connection != null -> connection
             !sleepGranted -> "請先授權 Health Connect 讀取睡眠等資料"
             !allGranted -> "「立即同步」需要全部讀取權限；目前可先只同步睡眠"
             else -> null
         }
-        val ready = !input.syncing && connection == null
+        val ready = !input.syncing && !input.backgroundSyncRunning && connection == null
         return HealthUi(
             headline = headline,
             detail = detail,

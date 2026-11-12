@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.3.0) reads selected records from Android Health Connect and
+This private companion (current version 0.3.1) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -15,7 +15,7 @@ is disabled, and the server keeps raw Health Connect records outside the public
 activity, feed, and MCP projections. Infovore's Health platform page uses only
 safe aggregates and recent workout summaries.
 
-## App layout (0.3.0)
+## App layout (0.3.1)
 
 The screen is split into a **開始使用** checklist (connection → Health Connect
 permission → first sync, with a button for the next step) and three collapsible
@@ -23,19 +23,36 @@ sections: **連線設定**, **健康資料同步**, and **手機畫面記錄（�
 always starts collapsed. Each section header shows its current state.
 
 - Fields are validated before saving, with the reason shown under the field:
-  the endpoint must be `https://` (the private Tailscale HTTP address below is
-  the only exception, same as the network layer), tokens need at least 32
+  the endpoint must be `https://` (the private Tailscale address allowed in
+  `network_security_config.xml` is the only HTTP exception, same as the
+  network layer), tokens need at least 32
   characters without spaces, and **初始同步範圍** must be a number from 1 to
   3650; out-of-range values are rejected instead of silently clamped. Unsaved
   edits are flagged, and leaving the screen with unsaved edits asks first.
+  Unsaved token edits survive rotation and dark-mode switches: they are kept
+  only in the ViewModel's memory (never in the saved-instance-state bundle,
+  preferences, or logs) and are cleared when saved or discarded.
+- Changing the sync destination (the endpoint after normalising case, default
+  ports and trailing slashes) after a sync asks for confirmation, then clears
+  the Health Connect change token and the first-sync flag, so the next
+  **立即同步** re-imports the recent history window into the new server.
+  Changing only the token keeps the cursor. The destination cannot change while
+  a sync is running.
 - Health Connect status follows `HealthConnectClient.getSdkStatus`: when an
   install or update is required the app offers to open the Play Store; when it
   is unsupported it says so and disables syncing. **只同步睡眠（優先）** needs
   only the sleep permission and **立即同步** needs all of them; a disabled
   button always shows why. If the permission dialog does not appear (after
   repeated denials), the app links to Health Connect's settings instead.
-- Manual syncs run in a ViewModel, so rotating the phone or switching dark mode
-  does not cancel them; failures show a plain-language reason and **重試**.
+- Manual syncs run in a process-wide runner rather than the screen, so
+  rotating the phone, switching dark mode, pressing back, or leaving the app
+  does not cancel them (while the process lives; without the background-read
+  permission Health Connect itself only allows reads while the screen is in
+  the foreground, and the app says so while syncing). Manual and background
+  syncs share one lock and never run at the same time: a background sync that
+  finds a manual one running is retried later by WorkManager, and a manual
+  request waits for a running background sync. Failures show a plain-language
+  reason and **重試**.
 - Times are shown as relative time plus the local date and time, following the
   phone's 12/24-hour setting.
 - The UI supports TalkBack (section headings, expand/collapse state, field
@@ -56,9 +73,11 @@ Connect and sync the Garmin device before retrying.
    infovore ingest service. If it is omitted, the server falls back to
    `INGEST_TOKEN` for backward compatibility.
 2. Make the ingest service reachable from the phone. The bundled build defaults
-   to `https://infovore.skyhong.tw`. For local testing it also allows
-   `http://100.85.214.25:3001`; that private address is transported inside
-   Tailscale's encrypted tunnel. Other endpoints must use HTTPS.
+   to `https://infovore.skyhong.tw`. For local testing it also allows plain
+   HTTP to the single private Tailscale address listed in
+   `app/src/main/res/xml/network_security_config.xml` (port 3001); that traffic
+   is carried inside Tailscale's encrypted tunnel. Other endpoints must use
+   HTTPS.
 3. In Garmin Connect, enable writing data to Health Connect.
 4. Install the APK, enter the endpoint and token, save, and grant Health Connect
    permissions.

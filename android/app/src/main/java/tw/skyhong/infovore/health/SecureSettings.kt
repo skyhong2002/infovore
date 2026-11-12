@@ -62,6 +62,25 @@ class SecureSettings(context: Context) {
             else changesToken != null && !lastSyncFailed
         set(value) { preferences.edit { putBoolean(KEY_FIRST_SYNC_DONE, value) } }
 
+    /** A change token exists or a full sync has finished, i.e. there is sync state tied to the endpoint. */
+    val hasSyncProgress: Boolean get() = changesToken != null || initialImportDone
+
+    /**
+     * Saves [newEndpoint] and forgets the sync state of the previous destination in one write: the
+     * change token is cleared so the next full sync re-imports history, and the first-sync and
+     * failure flags start over. [status] becomes the last full-sync status shown on screen
+     * (null shows "尚未同步").
+     */
+    fun changeEndpointAndResetSync(newEndpoint: String, status: String?) {
+        preferences.edit {
+            putString(KEY_ENDPOINT, newEndpoint.trim().trimEnd('/'))
+            remove(KEY_CHANGES_TOKEN)
+            putBoolean(KEY_FIRST_SYNC_DONE, false)
+            putBoolean(KEY_LAST_SYNC_FAILED, false)
+            if (status == null) remove(KEY_LAST_STATUS) else putString(KEY_LAST_STATUS, status)
+        }
+    }
+
     /** History is uploaded and a cursor exists, but the first full sync has not finished yet. */
     val initialImportPartial: Boolean get() = !initialImportDone && changesToken != null
 

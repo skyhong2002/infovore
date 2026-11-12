@@ -4,36 +4,24 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import tw.skyhong.infovore.health.screen.ScreenUploader
 import tw.skyhong.infovore.health.ui.ErrorText
+import tw.skyhong.infovore.health.ui.SecretDrafts
 import tw.skyhong.infovore.health.ui.TimeText
 import tw.skyhong.infovore.health.ui.Tone
 import java.time.Instant
 import java.time.ZoneId
 
 /**
- * Runs the user-started tasks (manual sync, manual upload, connection test) outside the activity,
- * so rotating the phone or switching dark mode neither cancels a sync nor loses its progress.
- * Sync policy, data range and payloads are unchanged: this only wraps the existing calls.
+ * Screen state that must survive an activity recreation: the user-started screen tasks (manual
+ * upload, connection test) and unsaved token drafts. Health Connect syncs are owned by the
+ * process-wide [SyncRunner] instead, so leaving the screen does not cancel them either.
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    enum class SyncKind { SLEEP, FULL }
-
-    data class SyncState(
-        val running: SyncKind? = null,
-        val progress: String? = null,
-        /** The last manual run that failed in this session, offered as "重試". */
-        val failed: SyncKind? = null,
-        val error: String? = null,
-    )
-
     enum class ScreenTask { UPLOAD, TEST }
 
     data class ScreenTaskState(
@@ -43,44 +31,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val failed: ScreenTask? = null,
     )
 
-    private val settings = SecureSettings(application)
-    private val _sync = MutableStateFlow(SyncState())
-    val sync: StateFlow<SyncState> = _sync.asStateFlow()
+    /** In-memory only; see [SecretDrafts]. */
+    val drafts = SecretDrafts()
+
+    val sync: StateFlow<SyncState> = SyncRunner.state
+
     private val _screen = MutableStateFlow(ScreenTaskState())
     val screen: StateFlow<ScreenTaskState> = _screen.asStateFlow()
 
-    fun startSync(kind: SyncKind) {
-        if (_sync.value.running != null) return
-        _sync.value = SyncState(running = kind, progress = "準備中…")
-        viewModelScope.launch {
-            try {
-                val summary = withContext(Dispatchers.IO) {
-                    val sync = HealthConnectSync(getApplication())
-                    val progress: (String) -> Unit = { text ->
-                        // The full-sync status mirrors progress so a background check shows it too.
-                        if (kind == SyncKind.FULL) settings.lastStatus = text
-                        _sync.update { it.copy(progress = text) }
-                    }
-                    if (kind == SyncKind.SLEEP) sync.runSleep(progress) else sync.run(progress)
-                }
-                if (kind == SyncKind.FULL) {
-                    settings.lastStatus = "${Instant.now()}：同步完成，新增 ${summary.inserted}、更新 ${summary.updated}、刪除 ${summary.deleted}"
-                    settings.lastSyncFailed = false
-                    settings.initialImportDone = true
-                }
-                _sync.value = SyncState()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                val message = ErrorText.describe(error)
-                if (kind == SyncKind.FULL) {
-                    settings.lastStatus = "${Instant.now()}：同步失敗：$message"
-                    settings.lastSyncFailed = true
-                }
-                _sync.value = SyncState(failed = kind, error = message)
-            }
-        }
-    }
+    fun startSync(kind: SyncKind): Boolean = SyncRunner.start(getApplication(), kind)
 
     fun uploadScreen() = runScreenTask(ScreenTask.UPLOAD) {
         val outcome = ScreenUploader.uploadPending(getApplication())
@@ -110,6 +69,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearScreenResult() {
         if (_screen.value.running == null) _screen.value = ScreenTaskState()
+    }
+
+    override fun onCleared() {
+        drafts.clearAll()
+        super.onCleared()
     }
 
     private fun runScreenTask(task: ScreenTask, block: suspend () -> ScreenTaskState) {

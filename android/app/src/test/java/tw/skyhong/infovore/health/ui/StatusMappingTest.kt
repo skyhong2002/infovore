@@ -22,6 +22,7 @@ class StatusMappingTest {
         granted: Set<String>? = required,
         connectionProblem: String? = null,
         syncing: Boolean = false,
+        backgroundSync: Boolean = false,
         noEffect: Boolean = false,
         permissionError: String? = null,
     ) = HealthStatus.map(
@@ -34,6 +35,7 @@ class StatusMappingTest {
             historyPermission = "perm.HISTORY",
             connectionProblem = connectionProblem,
             syncing = syncing,
+            backgroundSyncRunning = backgroundSync,
             permissionRequestHadNoEffect = noEffect,
             permissionError = permissionError,
         ),
@@ -118,6 +120,21 @@ class StatusMappingTest {
 
         val busy = health(syncing = true)
         assertFalse(busy.syncEnabled || busy.sleepEnabled)
+    }
+
+    @Test
+    fun syncingHintSaysWhetherLeavingTheScreenIsSafe() {
+        val foregroundOnly = health(syncing = true)
+        assertTrue(foregroundOnly.syncHint!!.contains("請保持此畫面開啟"))
+        val withBackground = health(granted = required + "perm.BACKGROUND", syncing = true)
+        assertTrue(withBackground.syncHint!!.contains("離開此畫面也會繼續"))
+    }
+
+    @Test
+    fun aRunningBackgroundSyncBlocksManualSyncWithAReason() {
+        val ui = health(backgroundSync = true)
+        assertFalse(ui.syncEnabled || ui.sleepEnabled)
+        assertEquals("背景同步正在進行，完成後即可手動同步", ui.syncHint)
     }
 
     @Test
