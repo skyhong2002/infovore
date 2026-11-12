@@ -205,13 +205,13 @@ test('Migration 19 records the uploading device, backfilling only an unambiguous
     downgrade(single, [phone, phone]);
     const migratedSingle = new Repository(single);
     migratedSingle.close();
-    assert.deepEqual(deviceOf(single), { version: 20, device: phone });
+    assert.deepEqual(deviceOf(single), { version: 21, device: phone });
 
     const shared = join(dir, 'shared.sqlite');
     downgrade(shared, [phone, otherPhone]);
     const repository = new Repository(shared);
     try {
-      assert.deepEqual(deviceOf(shared), { version: 20, device: null });
+      assert.deepEqual(deviceOf(shared), { version: 21, device: null });
       // A row of unknown origin is never reconciled away.
       const result = repository.ingestHealthConnect(batch('fixture-unknown-origin', phone, [], {
         reconcile: { dataType: 'steps', start: windowStart, end: windowEnd, recordIds: [] },
@@ -432,7 +432,7 @@ test('Migration 20 adds the confirmed-deletion audit table', () => {
     assert.deepEqual(columns, [
       'id', 'confirmed_at', 'device_id', 'data_type', 'window_start', 'window_end', 'deleted_count', 'checked_count',
     ]);
-    assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 20);
+    assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 21);
   } finally {
     repository.close();
   }

@@ -27,6 +27,43 @@ function totalApprox(summary: TimeSpentSummary, window: keyof TimeWindows): stri
   return summary.sources.some((entry) => entry.method === 'estimated' && entry.windows[window] > 0) ? '~' : '';
 }
 
+// What the Time table covers, grouped the way the page describes it. A source
+// missing here still shows up in the scope text under its own label, so the
+// sentence always names every row of the table.
+type TimeScopeGroup = 'media' | 'events' | 'health' | 'agents';
+export const TIME_SCOPE: Record<string, { group: TimeScopeGroup; label: string }> = {
+  backloggd: { group: 'media', label: 'games' },
+  simkl: { group: 'media', label: 'shows' },
+  kitsu: { group: 'media', label: 'anime' },
+  hardcover: { group: 'media', label: 'books' },
+  statsfm: { group: 'media', label: 'music' },
+  youtube: { group: 'media', label: 'YouTube' },
+  events: { group: 'events', label: 'manually logged events' },
+  health: { group: 'health', label: 'exercise from Health' },
+  computai: { group: 'agents', label: 'AI agent working time' },
+};
+const SCOPE_GROUPS: TimeScopeGroup[] = ['media', 'events', 'health', 'agents'];
+
+function listText(items: string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+}
+
+// Dayflow computer time and sleep never enter the table; they are tracked on
+// their own pages.
+export function timeScope(sources: string[]): string {
+  const present = new Set(sources);
+  const scoped = Object.entries(TIME_SCOPE).filter(([source]) => present.has(source));
+  const parts = SCOPE_GROUPS.flatMap((group) => {
+    const labels = scoped.filter(([, scope]) => scope.group === group).map(([, scope]) => scope.label);
+    if (!labels.length) return [];
+    return group === 'media' ? [`Media platforms (${labels.join(', ')})`] : labels;
+  });
+  parts.push(...sources.filter((source) => !TIME_SCOPE[source]).map(sourceLabel));
+  const included = parts.length ? `${html(listText(parts))}. ` : 'No platform has recorded time yet. ';
+  const agents = present.has('computai') ? ' AI agent time is wall-clock time with an agent running, not attention.' : '';
+  return `${included}Computer activity (Dayflow) and sleep are not in this table, so its totals are smaller than the overview's “Where the time went”; see <a href="/platforms/dayflow">Dayflow</a> and <a href="/platforms/health#sleep">Sleep</a>.${agents} Overlapping activity is counted per platform, so totals can exceed wall-clock time.`;
+}
+
 const EMPTY_SERIES: number[] = [];
 
 function weekDelta(series: number[], approx: string): string {
@@ -66,7 +103,7 @@ export function statsPage(ownerName: string, summary: TimeSpentSummary, daily: D
   const totalSeries = daily.days.map((_, index) => Object.values(daily.sources).reduce((total, series) => total + (series[index] ?? 0), 0));
   const intro = `<section class="page-intro"><div><div class="eyebrow">Aggregated view</div><h1>Time</h1>
     <p>How much time this system has recorded ${html(ownerName)} spending with each connected platform — like a cross-platform stats.fm.</p></div>
-    <div class="page-intro-aside">Media platforms (games, shows, anime, books, music, YouTube), manually logged events, exercise from Health and AI agent working time. Computer activity (Dayflow) and sleep are not in this table, so its totals are smaller than the overview's “Where the time went”; see <a href="/platforms/dayflow">Dayflow</a> and <a href="/platforms/health#sleep">Sleep</a>. AI agent time is wall-clock time with an agent running, not attention. Overlapping activity is counted per platform, so totals can exceed wall-clock time.</div></section>`;
+    <div class="page-intro-aside">${timeScope(summary.sources.map((entry) => entry.source))}</div></section>`;
   const headline = `<div class="metric-grid">${WINDOW_COLUMNS.map(({ key, title }) => {
     const note = WINDOW_NOTES[key];
     const trend = key === 'last28d' && totalSeries.some(Boolean)

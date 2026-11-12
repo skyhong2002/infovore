@@ -128,3 +128,29 @@ test('the Time page scope text names what the table includes and excludes', asyn
   assert.deepEqual($('.time-table tbody td:first-child a').map((_, a) => $(a).attr('href')).get(), ['/platforms/kitsu', '/platforms/events', '/platforms/health', '/platforms/computai']);
   assert.equal($('#time-window option[value="delta"]').length, 1);
 });
+
+test('the Time page scope text follows the sources in the table', async () => {
+  const { statsPage, TIME_SCOPE } = await import('../src/output/stats.js');
+  const w = (n: number) => ({ last24h: n, last28d: n, day: n, week: n, month: n, year: n, allTime: n });
+  const render = (sources: string[]) => load(statsPage('Sample', { generatedAt: new Date().toISOString(), measuredTotal: w(1), total: w(sources.length),
+    sources: sources.map((source) => ({ source, method: 'measured', windows: w(1) })) } as never));
+  const cases: Array<{ sources: string[]; scope: string; absent: RegExp[] }> = [
+    { sources: Object.keys(TIME_SCOPE), scope: 'Media platforms (games, shows, anime, books, music, YouTube), manually logged events, exercise from Health and AI agent working time.', absent: [] },
+    { sources: ['statsfm', 'backloggd'], scope: 'Media platforms (games, music).', absent: [/manually logged events/, /exercise from Health/, /AI agent/] },
+    { sources: ['health', 'events'], scope: 'manually logged events and exercise from Health.', absent: [/Media platforms/, /AI agent/] },
+    { sources: ['computai'], scope: 'AI agent working time.', absent: [/Media platforms/, /manually logged events/] },
+    { sources: ['youtube', 'futuresource'], scope: 'Media platforms (YouTube) and futuresource.', absent: [/AI agent/] },
+  ];
+  for (const { sources, scope, absent } of cases) {
+    const $ = render(sources);
+    const text = $('.page-intro-aside').text();
+    assert.ok(text.startsWith(scope), `${sources.join(',')}: ${text}`);
+    for (const pattern of absent) assert.doesNotMatch(text, pattern, sources.join(','));
+    assert.match(text, /Computer activity \(Dayflow\) and sleep are not in this table/);
+    assert.equal(/AI agent time is wall-clock time/.test(text), sources.includes('computai'));
+    const rows = $('.time-table tbody td:first-child a').map((_, a) => $(a).attr('href')!.replace('/platforms/', '')).get();
+    assert.deepEqual(rows, sources);
+    for (const source of rows) assert.ok(text.includes(TIME_SCOPE[source]?.label ?? source), `${source} row is named in the scope text`);
+  }
+  assert.match(render([])('.page-intro-aside').text(), /^No platform has recorded time yet\. Computer activity/);
+});

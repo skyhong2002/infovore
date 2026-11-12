@@ -11,8 +11,8 @@ android {
         applicationId = "tw.skyhong.infovore.health"
         minSdk = 34
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.4.1"
+        versionCode = 15
+        versionName = "0.4.2"
 
         // The one private host plain HTTP may reach (see android/README.md, "Private HTTP host").
         // It must match the <domain> in res/xml/network_security_config.xml; a unit test checks it.
@@ -47,4 +47,10 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     testImplementation("junit:junit:4.13.2")
+    // FakeHealthConnectClient. 1.0.0-alpha03 is the newest release built against connect-client 1.1.x
+    // (alpha04 pulls connect-client 1.2.0-alpha05 into the test classpath), so lint's update hint is suppressed.
+    //noinspection GradleDependency
+    testImplementation("androidx.health.connect:connect-testing:1.0.0-alpha03")
+    // The real org.json, so HealthRecordJson runs in JVM tests (android.jar only has stubs).
+    testImplementation("org.json:json:20251224")
 }

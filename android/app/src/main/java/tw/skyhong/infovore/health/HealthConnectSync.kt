@@ -75,9 +75,12 @@ class HealthConnectSync(context: Context) {
 
 typealias SyncSummary = HealthSyncEngine.SyncSummary
 
-/** [HealthReader] backed by [HealthConnectClient]; the request parameters are the app's sync policy. */
-class HealthConnectReader(context: Context) : HealthReader {
-    private val client = HealthConnectClient.getOrCreate(context)
+/**
+ * [HealthReader] backed by [HealthConnectClient]; the request parameters are the app's sync policy.
+ * Unit tests pass a FakeHealthConnectClient (androidx.health.connect:connect-testing).
+ */
+class HealthConnectReader(private val client: HealthConnectClient) : HealthReader {
+    constructor(context: Context) : this(HealthConnectClient.getOrCreate(context))
 
     override suspend fun grantedPermissions(): Set<String> = client.permissionController.getGrantedPermissions()
 
@@ -121,7 +124,7 @@ class HealthConnectReader(context: Context) : HealthReader {
         HealthConnectSync.recordTypes.firstOrNull { HealthRecordJson.typeName(it) == dataType }
             ?: error("Unsupported data type: $dataType")
 
-    private companion object {
+    internal companion object {
         const val PAGE_SIZE = 500
     }
 }

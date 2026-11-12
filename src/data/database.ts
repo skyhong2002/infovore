@@ -9,6 +9,9 @@ import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { activityFromEntry } from './activity.js';
+import {
+  isMinuteFloored, migrateStatsfmPlayDuplicates, playFromRow, playMinute, samePlay, STATSFM_PLAY_COLUMNS, type StatsfmPlay,
+} from './statsfm-plays.js';
 import { TAIPEI_OFFSET_MS, taipeiDay, taipeiWindowStarts } from './time.js';
 import { sleepDays } from '../health/sleep.js';
 import { recordedSleepWindows } from '../health/home.js';
@@ -395,6 +398,10 @@ export class Repository {
     if (afterDayflowPhone.user_version < 19) this.migrateHealthRecordDevice();
     const afterHealthRecordDevice = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterHealthRecordDevice.user_version < 20) this.migrateHealthConfirmedDeletes();
+    const afterHealthConfirmedDeletes = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    // Leaves user_version at 20 when its safety limit trips; a later
+    // migration must not assume version 21 means the cleanup ran.
+    if (afterHealthConfirmedDeletes.user_version < 21) migrateStatsfmPlayDuplicates(this.db);
   }
 
   // Audit trail of reconcile deletions the user explicitly confirmed beyond the
@@ -818,37 +825,9 @@ export class Repository {
   }
 
   finishSync(id: number, snapshot: SourceSnapshot<unknown>, completedAt = new Date().toISOString()): PersistResult {
-    let inserted = 0;
-    let updated = 0;
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const exists = this.db.prepare('SELECT 1 FROM activities WHERE id = ?');
-      const upsert = this.db.prepare(`
-        INSERT INTO activities (
-          id, dedupe_key, source, source_item_id, type, media_kind, title, image,
-          status, occurred_at, occurred_precision, rating_value, rating_scale,
-          visibility, extra_json, first_seen_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          dedupe_key=excluded.dedupe_key, type=excluded.type, title=excluded.title,
-          image=excluded.image, status=excluded.status,
-          occurred_at=excluded.occurred_at, occurred_precision=excluded.occurred_precision,
-          rating_value=excluded.rating_value, rating_scale=excluded.rating_scale,
-          visibility=excluded.visibility, extra_json=excluded.extra_json,
-          last_seen_at=excluded.last_seen_at
-      `);
-      for (const entry of snapshot.entries) {
-        const activity = activityFromEntry(entry, completedAt);
-        const wasPresent = Boolean(exists.get(activity.id));
-        upsert.run(
-          activity.id, activity.dedupeKey, activity.source, activity.sourceItemId,
-          activity.type, activity.mediaKind, activity.title, activity.image,
-          activity.status, activity.occurredAt, activity.occurredAtPrecision,
-          activity.rating?.value ?? null, activity.rating?.scale ?? null,
-          activity.visibility, JSON.stringify(activity.extra), activity.firstSeenAt, activity.lastSeenAt
-        );
-        wasPresent ? updated++ : inserted++;
-      }
+      const { inserted, updated } = this.upsertEntries(snapshot.entries, completedAt);
       // A source that starts reporting a status re-identifies the same moment
       // (identity includes status); drop the older untyped twin so the archive
       // does not list it twice.
@@ -874,6 +853,75 @@ export class Repository {
       this.rollbackKeeping();
       throw error;
     }
+  }
+
+  // Shared by synced snapshots and pushed entries; runs inside the caller's
+  // transaction.
+  private upsertEntries(entries: SourceSnapshot['entries'], seenAt: string): PersistResult {
+    let inserted = 0;
+    let updated = 0;
+    const exists = this.db.prepare('SELECT 1 FROM activities WHERE id = ?');
+    const upsert = this.db.prepare(`
+      INSERT INTO activities (
+        id, dedupe_key, source, source_item_id, type, media_kind, title, image,
+        status, occurred_at, occurred_precision, rating_value, rating_scale,
+        visibility, extra_json, first_seen_at, last_seen_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        dedupe_key=excluded.dedupe_key, type=excluded.type, title=excluded.title,
+        image=excluded.image, status=excluded.status,
+        occurred_at=excluded.occurred_at, occurred_precision=excluded.occurred_precision,
+        rating_value=excluded.rating_value, rating_scale=excluded.rating_scale,
+        visibility=excluded.visibility, extra_json=excluded.extra_json,
+        last_seen_at=excluded.last_seen_at
+    `);
+    for (const entry of entries) {
+      const activity = activityFromEntry(entry, seenAt);
+      const wasPresent = Boolean(exists.get(activity.id));
+      if (!wasPresent && activity.source === 'statsfm' && !this.admitStatsfmPlay(activity)) {
+        updated++;
+        continue;
+      }
+      upsert.run(
+        activity.id, activity.dedupeKey, activity.source, activity.sourceItemId,
+        activity.type, activity.mediaKind, activity.title, activity.image,
+        activity.status, activity.occurredAt, activity.occurredAtPrecision,
+        activity.rating?.value ?? null, activity.rating?.scale ?? null,
+        activity.visibility, JSON.stringify(activity.extra), activity.firstSeenAt, activity.lastSeenAt
+      );
+      wasPresent || activity.firstSeenAt !== seenAt ? updated++ : inserted++;
+    }
+    return { inserted, updated };
+  }
+
+  // A new stats.fm row that is another shape of an already stored play (see
+  // statsfm-plays.ts). A minute-floored copy is dropped and only refreshes the
+  // stored row; a seconds-precision copy replaces floored rows and inherits
+  // their first-seen time. Returns whether the activity should be written.
+  private admitStatsfmPlay(activity: Activity): boolean {
+    if (activity.occurredAtPrecision !== 'exact' || !activity.occurredAt) return true;
+    const start = `${playMinute(activity.occurredAt)}:00.000Z`;
+    const end = new Date(Date.parse(start) + 60_000).toISOString();
+    const incoming: StatsfmPlay = {
+      id: activity.id, sourceItemId: activity.sourceItemId, title: activity.title,
+      artist: typeof activity.extra.artist === 'string' ? activity.extra.artist : '',
+      occurredAt: activity.occurredAt, firstSeenAt: activity.firstSeenAt,
+    };
+    const twins = (this.db.prepare(`SELECT ${STATSFM_PLAY_COLUMNS} FROM activities
+      WHERE source='statsfm' AND occurred_at>=? AND occurred_at<? AND id<>?`)
+      .all(start, end, activity.id) as Record<string, unknown>[])
+      .map(playFromRow).filter((row) => samePlay(incoming, row));
+    if (!twins.length) return true;
+    if (isMinuteFloored(activity.occurredAt)) {
+      this.db.prepare('UPDATE activities SET last_seen_at=? WHERE id=?').run(activity.lastSeenAt, twins[0].id);
+      return false;
+    }
+    const drop = this.db.prepare("DELETE FROM activities WHERE id=? AND source='statsfm'");
+    for (const twin of twins) {
+      drop.run(twin.id);
+      if (twin.firstSeenAt < activity.firstSeenAt) activity.firstSeenAt = twin.firstSeenAt;
+    }
+    return true;
   }
 
   failSync(id: number, source: string, error: string, completedAt = new Date().toISOString()): void {
@@ -1061,39 +1109,11 @@ export class Repository {
   }
 
   ingestEntries(entries: SourceSnapshot['entries'], seenAt = new Date().toISOString()): PersistResult {
-    let inserted = 0;
-    let updated = 0;
-    const exists = this.db.prepare('SELECT 1 FROM activities WHERE id = ?');
-    const upsert = this.db.prepare(`
-      INSERT INTO activities (
-        id, dedupe_key, source, source_item_id, type, media_kind, title, image,
-        status, occurred_at, occurred_precision, rating_value, rating_scale,
-        visibility, extra_json, first_seen_at, last_seen_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        dedupe_key=excluded.dedupe_key, type=excluded.type, title=excluded.title,
-        image=excluded.image, status=excluded.status,
-        occurred_at=excluded.occurred_at, occurred_precision=excluded.occurred_precision,
-        rating_value=excluded.rating_value, rating_scale=excluded.rating_scale,
-        visibility=excluded.visibility, extra_json=excluded.extra_json,
-        last_seen_at=excluded.last_seen_at
-    `);
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      for (const entry of entries) {
-        const activity = activityFromEntry(entry, seenAt);
-        const wasPresent = Boolean(exists.get(activity.id));
-        upsert.run(
-          activity.id, activity.dedupeKey, activity.source, activity.sourceItemId,
-          activity.type, activity.mediaKind, activity.title, activity.image,
-          activity.status, activity.occurredAt, activity.occurredAtPrecision,
-          activity.rating?.value ?? null, activity.rating?.scale ?? null,
-          activity.visibility, JSON.stringify(activity.extra), activity.firstSeenAt, activity.lastSeenAt
-        );
-        wasPresent ? updated++ : inserted++;
-      }
+      const result = this.upsertEntries(entries, seenAt);
       this.db.exec('COMMIT');
-      return { inserted, updated };
+      return result;
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;

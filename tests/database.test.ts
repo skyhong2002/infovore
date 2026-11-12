@@ -115,7 +115,7 @@ test('version 1 databases migrate through schema version 9 without data loss', (
     const activitiesSql = migrated.prepare(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'"
     ).get() as { sql: string };
-    assert.equal(version.user_version, 20);
+    assert.equal(version.user_version, 21);
     assert.ok(watchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(searchColumns.some((column) => column.name === 'activity_type'));
     assert.ok(channelColumns.some((column) => column.name === 'thumbnail_url'));
@@ -306,7 +306,7 @@ test('latest source activities reach beyond the global page and exclude private 
   const repository = new Repository(':memory:');
   try {
     const entries = Array.from({ length: 510 }, (_, i) => ({ ...snapshot.entries[0],
-      source: 'statsfm', sourceItemId: String(i), activityAt: '2026-08-01T12:00:00Z' }));
+      source: 'statsfm', sourceItemId: String(i), title: `Track ${i}`, activityAt: '2026-08-01T12:00:00Z' }));
     repository.finishSync(repository.startSync('statsfm'), { ...snapshot, source: 'statsfm', entries });
     repository.finishSync(repository.startSync('kitsu'), { ...snapshot, entries: [snapshot.entries[0],
       { ...snapshot.entries[0], sourceItemId: 'future', activityAt: '2027-01-01T00:00:00Z' },

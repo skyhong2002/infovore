@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.4.1) reads selected records from Android Health Connect and
+This private companion (current version 0.4.2) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -291,6 +291,12 @@ through the narrow `HealthReader` / `HealthUploader` interfaces with fake
 implementations, and `HealthReconcileContractTest` checks the app's reconcile
 payload field by field against `tests/fixtures/health-reconcile-contract.json`,
 which the server's `tests/health-reconcile-contract.test.ts` parses and ingests.
+`HealthConnectReaderTest` runs the real `HealthConnectReader` over the official
+`FakeHealthConnectClient` (`androidx.health.connect:connect-testing`) into the
+real engine: paging, window edges, read order, permissions and change tokens.
+The fake keeps insertion order, ignores `ascendingOrder`, only matches interval
+records that lie fully inside the time range, and its `nextChangesToken` misses
+later changes; the test's comments say where each of these matters.
 
 ### Private HTTP host
 
