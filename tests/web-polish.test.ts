@@ -116,3 +116,15 @@ test('responses carry baseline security headers and search states its coverage',
   const $ = load(await response.text());
   assert.match($('.page-intro-aside').text(), /searchable entries[\s\S]*YouTube watches, health, Dayflow and AI agent records/);
 });
+
+test('the Time page scope text names what the table includes and excludes', async () => {
+  const { statsPage } = await import('../src/output/stats.js');
+  const w = (n: number) => ({ last24h: n, last28d: n, day: n, week: n, month: n, year: n, allTime: n });
+  const $ = load(statsPage('Sample', { generatedAt: new Date().toISOString(), measuredTotal: w(1), total: w(4),
+    sources: ['kitsu', 'events', 'health', 'computai'].map((source) => ({ source, method: 'measured', windows: w(1) })) } as never));
+  const scope = $('.page-intro-aside').text();
+  for (const included of ['Media platforms', 'manually logged events', 'exercise from Health', 'AI agent']) assert.match(scope, new RegExp(included));
+  assert.match(scope, /Dayflow\) and sleep are not in this table/);
+  assert.deepEqual($('.time-table tbody td:first-child a').map((_, a) => $(a).attr('href')).get(), ['/platforms/kitsu', '/platforms/events', '/platforms/health', '/platforms/computai']);
+  assert.equal($('#time-window option[value="delta"]').length, 1);
+});
