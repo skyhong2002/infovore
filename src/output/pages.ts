@@ -14,7 +14,7 @@ export function html(value: unknown): string {
 
 export function hours(seconds: number | null): string {
   if (seconds === null) return '—';
-  return `${Math.round(seconds / 360) / 10}h`;
+  return `${(Math.round(seconds / 360) / 10).toLocaleString('en', { maximumFractionDigits: 1 })}h`;
 }
 
 export function duration(seconds: number | null): string {
@@ -276,7 +276,8 @@ export function searchPage(ownerName: string, filters: SearchFilters, page: Acti
     return `/search${text ? `?${text}` : ''}`;
   };
   const active = Boolean(filters.query || filters.source || filters.kind);
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Archive search</div><h1>Search</h1><p>Find anything ${html(ownerName)} has watched, read, played, heard or attended — titles, artists, channels, venues and tags across every connected platform.</p></div><div class="page-intro-aside">${page.total ? `${page.total.toLocaleString('en')} matching public entries.` : 'Public entries only; raw health and daily computer records stay out of the index.'}</div></section>`;
+  const searchable = Object.values(bySource).reduce((total, count) => total + count, 0);
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Archive search</div><h1>Search</h1><p>Find titles, artists, channels, venues and tags from the media platforms and events ${html(ownerName)} has synced.</p></div><div class="page-intro-aside">${active && page.total ? `${page.total.toLocaleString('en')} matching entries of ${searchable.toLocaleString('en')} searchable.` : `${searchable.toLocaleString('en')} searchable entries.`} Individual YouTube watches, health, Dayflow and AI agent records count toward the archive total but are not in this index.</div></section>`;
   const form = `<form class="search-form" action="/search" role="search"><input type="search" name="q" value="${html(filters.query)}" placeholder="Try an artist, a game, a book, a channel…" aria-label="Search the archive" autofocus>${filters.source ? `<input type="hidden" name="source" value="${html(filters.source)}">` : ''}${filters.kind ? `<input type="hidden" name="kind" value="${html(filters.kind)}">` : ''}<button type="submit">Search</button></form>`;
   const sources = Object.entries(bySource).sort((a, b) => b[1] - a[1]);
   const sourceChips = `<div class="search-filters" aria-label="Filter by platform"><a href="${params({ source: '', offset: 0 })}"${filters.source ? '' : ' aria-current="true"'}>All platforms</a>${sources.map(([source, count]) =>

@@ -76,7 +76,7 @@ export function statsPage(ownerName: string, summary: TimeSpentSummary, daily: D
   }).join('')}</div>`;
   const table = summary.sources.length
     ? `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Per platform</div><h2>Time by platform</h2><p>Click a column to sort. Trend shows the last 28 days; the change compares the last 7 days with the 7 before.</p></div><a href="/api/time-spent.json">JSON</a></div>
-      <div class="time-table-wrap"><table class="time-table">
+      <p class="time-table-hint" aria-hidden="true">Swipe the table sideways for more windows →</p><div class="time-table-wrap" tabindex="0" role="region" aria-label="Time by platform, scrollable"><table class="time-table">
       <thead><tr><th data-sort="text">Platform</th><th data-sort="text">Method</th><th data-sort="number">Trend · 28 d</th><th data-sort="number">vs prior 7 d</th>${WINDOW_COLUMNS.map(({ title }) => `<th data-sort="number">${title}</th>`).join('')}</tr></thead>
       <tbody>${summary.sources.map((entry) => sourceRow(entry, daily.sources[entry.source] ?? EMPTY_SERIES)).join('')}</tbody>
       <tfoot><tr><td>All platforms</td><td></td><td class="time-trend">${sparkline(totalSeries, { label: 'All platforms · daily time over the last 28 days' })}</td><td>${weekDelta(totalSeries, totalApprox(summary, 'last28d'))}</td>${WINDOW_COLUMNS.map(({ key }) =>

@@ -107,3 +107,12 @@ test('device-pushed sources explain where their errors are reported', () => {
   assert.match(page('tbody tr').last().text(), /Delayed[\s\S]*check the device app/);
   assert.match(page('.feed-note').text(), /Phone screen activity is not listed/);
 });
+
+test('responses carry baseline security headers and search states its coverage', async () => {
+  const response = await app.request('/search');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+  assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
+  const $ = load(await response.text());
+  assert.match($('.page-intro-aside').text(), /searchable entries[\s\S]*YouTube watches, health, Dayflow and AI agent records/);
+});

@@ -193,7 +193,9 @@ const time = `
 .time-chip{align-items:center;border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);display:inline-flex;font-size:12.5px;min-height:36px;padding:6px 12px;text-decoration:none}.time-chip:hover{border-color:var(--quiet);color:var(--text)}.time-chip strong{color:var(--text);margin-left:4px}
 .time-strip-more{color:var(--quiet);font-size:12px;margin-left:auto;text-decoration:none}.time-strip-more:hover{color:var(--text)}
 .time-table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}
-.time-table{border-collapse:collapse;width:100%}
+.time-table{border-collapse:separate;border-spacing:0;width:100%}
+.time-table th:first-child,.time-table td:first-child{background:var(--surface);left:0;position:sticky;z-index:1}.time-table thead th:first-child,.time-table tfoot td:first-child{background:var(--surface-raised)}.time-table tbody tr:hover td:first-child{background:var(--surface-hover)}
+.time-table-hint{color:var(--quiet);display:none;font-size:12.5px;margin:0 0 6px}@media(max-width:900px){.time-table-hint{display:block}.time-table th:first-child,.time-table td:first-child{box-shadow:6px 0 8px -6px rgba(0,0,0,.35)}}
 .time-table th{background:var(--surface-raised);color:var(--quiet);font-size:12px;font-weight:700;letter-spacing:.08em;padding:11px 14px;text-align:right;text-transform:uppercase;white-space:nowrap}
 .time-table td{border-top:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums;padding:12px 14px;text-align:right;white-space:nowrap}
 .time-table th:first-child,.time-table td:first-child{padding-left:18px;text-align:left}.time-table th:last-child,.time-table td:last-child{padding-right:18px}

@@ -192,6 +192,15 @@ async function refreshAll(): Promise<void> {
 const app = new Hono();
 // HTML and SVG cards are large and highly compressible; Traefik does not compress.
 app.use('*', compress());
+// Baseline hardening for every response; pages use inline styles/scripts, so
+// no CSP here. Framing is limited to this origin.
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  c.header('X-Frame-Options', 'SAMEORIGIN');
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+});
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
 const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
 

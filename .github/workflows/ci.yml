@@ -30,7 +30,7 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
-      - run: ./gradlew assembleDebug lintDebug
+      - run: ./gradlew assembleDebug lintDebug testDebugUnitTest
         working-directory: android
       - uses: actions/upload-artifact@v4
         with:
