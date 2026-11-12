@@ -286,7 +286,7 @@ export function searchPage(ownerName: string, filters: SearchFilters, page: Acti
     `<a href="${params({ kind, offset: 0 })}"${filters.kind === kind ? ' aria-current="true"' : ''}>${html(kind)}</a>`).join('')}</div>` : '';
   const results = page.data.length
     ? `<div class="grid">${page.data.map((activity) => activityCard(activity)).join('')}</div>`
-    : `<div class="empty">${active ? 'Nothing matched. Try a shorter word, or clear a filter.' : 'Type something above, or pick a platform to browse.'}</div>`;
+    : `<div class="empty">${active ? 'Nothing matched. Try a shorter word or clear a filter. YouTube watches, health, Dayflow and AI agent records are not searchable here; browse them from <a href="/platforms">Platforms</a>.' : 'Type something above, or pick a platform to browse.'}</div>`;
   const previous = page.offset > 0 ? `<a class="button" href="${params({ offset: Math.max(0, page.offset - page.limit) })}">← Newer</a>` : '<span></span>';
   const next = page.offset + page.limit < page.total ? `<a class="button" href="${params({ offset: page.offset + page.limit })}">Older →</a>` : '';
   const pager = page.total > page.limit ? `<nav class="pager" aria-label="Pagination">${previous}<span class="muted">${page.offset + 1}–${Math.min(page.total, page.offset + page.limit)} of ${page.total.toLocaleString('en')}</span>${next}</nav>` : '';
@@ -376,7 +376,7 @@ export function profilePage(ownerName: string, total: number, bySource: Record<s
     seen.add(key);
     return true;
   }).slice(0, 12);
-  const latestSection = `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Archive edge</div><h2>Latest additions</h2></div><a href="/search">Search everything →</a></div><div class="grid">${distinct.map((activity) => activityCard(activity)).join('')}</div></section>`;
+  const latestSection = `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Archive edge</div><h2>Latest additions</h2></div><a href="/search">Search media &amp; events →</a></div><div class="grid">${distinct.map((activity) => activityCard(activity)).join('')}</div></section>`;
   return shell(`${ownerName} · archive`, intro + overview + latestSection, 'profile', '', { path: '/profile' });
 }
 
