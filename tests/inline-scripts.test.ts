@@ -5,6 +5,7 @@ import { load, type CheerioAPI } from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import { app } from '../src/index.js';
 import { INLINE_SCRIPTS, TIME_TABLE_SCRIPT } from '../src/output/scripts.js';
+import { statsPage } from '../src/output/stats.js';
 import { scriptHash, securityHeaders } from '../src/security-headers.js';
 
 const csp = securityHeaders['Content-Security-Policy']!;
@@ -196,7 +197,6 @@ function fakeDocument($: CheerioAPI) {
 }
 
 function timeTableHtml(): string {
-  const { statsPage } = require_stats;
   const w = (n: number) => ({ last24h: n, last28d: n, day: n, week: n, month: n, year: n, allTime: n });
   // All-time order: statsfm, health, events. Last-28-days order: events, health, statsfm.
   const sources = [
@@ -220,7 +220,6 @@ function runTimeTable(narrowScreen: boolean) {
     .map((th) => [th.textContent.trim(), th.getAttribute('aria-sort'), th.classList.contains('tw-hide') ? 'hidden' : 'visible']);
   return { table, order, sortedBy, pick: root.querySelector('#time-window')!, live: root.querySelector('#sort-status')!, media };
 }
-const require_stats = await import('../src/output/stats.js');
 
 test('on a narrow screen the Time table is sorted by the visible window, and aria-sort says so', () => {
   const narrow = runTimeTable(true);
