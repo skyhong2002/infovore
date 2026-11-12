@@ -294,7 +294,12 @@ class HealthSyncEngine(
                     replaceGap(dataType) {
                         it.copy(
                             reason = ReconcileText.confirmMismatch(counts.wouldDelete),
-                            refusal = refusal.copy(wouldDelete = counts.wouldDelete, checked = counts.checked, sentIds = window.recordIds.size),
+                            refusal = refusal.copy(
+                                wouldDelete = counts.wouldDelete,
+                                checked = counts.checked,
+                                sentIds = window.recordIds.size,
+                                byOrigin = counts.byOrigin,
+                            ),
                             checkedAtMs = clock(),
                         )
                     }
@@ -372,7 +377,7 @@ class HealthSyncEngine(
                     unverified = ReconcileText.serverRejected(refused.status)
                     // Kept so the user can review (and, within the server's ceiling, confirm) it.
                     refusal = refused.refusal?.let {
-                        GapRefusal(window.startMs, window.endMs, it.wouldDelete, it.checked, window.recordIds.size)
+                        GapRefusal(window.startMs, window.endMs, it.wouldDelete, it.checked, window.recordIds.size, it.byOrigin)
                     }
                     return
                 }

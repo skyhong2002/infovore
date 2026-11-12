@@ -76,12 +76,12 @@
     <string name="action_reverify">重新核實</string>
     <string name="health_summary_unverified">歷史尚未完整核實</string>
     <string name="label_notify_switch">同步失敗時通知我</string>
-    <string name="notify_off">開啟後，背景同步連續失敗 %1$d 次時會發出一則通知（不含健康數值）。</string>
-    <string name="notify_on">背景同步連續失敗 %1$d 次（約 %2$d 小時）時通知；同步成功後自動清除。</string>
+    <string name="notify_off">開啟後，背景同步連續失敗 %1$d 次時會發出一則通知（不含健康數值）；使用畫面記錄時，被拒收的畫面紀錄接近或達到上限也會通知（只含筆數）。</string>
+    <string name="notify_on">背景同步連續失敗 %1$d 次（約 %2$d 小時）時通知；同步成功後自動清除。被拒收的畫面紀錄接近或達到上限時也會通知。</string>
     <string name="notify_denied">未取得通知權限，所以不會通知。如要開啟，請到 Android 設定 → 應用程式 → Infovore → 通知 允許後再開啟此開關。</string>
     <string name="notify_permission_revoked">通知權限已在系統設定中關閉，因此不會通知；請重新開啟此開關或到系統設定允許通知。</string>
     <string name="notification_channel_sync">同步問題</string>
-    <string name="notification_channel_sync_description">背景健康資料同步連續失敗時提醒</string>
+    <string name="notification_channel_sync_description">背景健康資料同步連續失敗，或畫面紀錄上傳因被拒收的紀錄過多而停止時提醒</string>
     <string name="sync_blocked_invalid_inputs">連線設定有未修正的錯誤，請先修正後再同步</string>
     <string name="sync_blocked_no_connection">請先在「連線設定」填寫並儲存網址與 token</string>
     <string name="action_retry">重試</string>

@@ -4,7 +4,9 @@ package tw.skyhong.infovore.health
  * The window of one reconcile request the server refused with HTTP 409, and what it reported:
  * deleting [wouldDelete] of the [checked] rows this device has stored in [startMs, endMs).
  * [sentIds] is how many record ids the app listed for that window, so a later re-read can tell
- * whether the phone's records changed since. Counts only: no record ids, no health values.
+ * whether the phone's records changed since. [byOrigin]: which source apps the rows to delete
+ * came from, when the server reported it (0.4.3+). Counts and package names only: no record ids,
+ * no health values.
  */
 data class GapRefusal(
     val startMs: Long,
@@ -12,6 +14,7 @@ data class GapRefusal(
     val wouldDelete: Int,
     val checked: Int,
     val sentIds: Int,
+    val byOrigin: List<OriginCount> = emptyList(),
 )
 
 /**
@@ -45,14 +48,15 @@ data class ReconcileGap(
 object ReconcileGaps {
     fun decode(text: String): List<ReconcileGap> = text.lineSequence().mapNotNull { line ->
         val parts = line.split('\t')
-        // 5 fields up to 0.4.0; 0.4.1 appends the refusal (5 fields, empty when none) and the dismissed flag.
-        if (parts.size != 5 && parts.size != 11) return@mapNotNull null
+        // 5 fields up to 0.4.0; 0.4.1 appends the refusal (5 fields, empty when none) and the
+        // dismissed flag; 0.4.3 appends the refusal's source-app counts.
+        if (parts.size != 5 && parts.size != 11 && parts.size != 12) return@mapNotNull null
         val start = parts[1].toLongOrNull() ?: return@mapNotNull null
         val end = parts[2].toLongOrNull() ?: return@mapNotNull null
         val checked = parts[3].toLongOrNull() ?: return@mapNotNull null
         if (parts[0].isEmpty() || start >= end) return@mapNotNull null
-        val refusal = if (parts.size == 11) refusal(parts.subList(5, 10)) else null
-        ReconcileGap(parts[0], start, end, parts[4], checked, refusal, dismissed = parts.size == 11 && parts[10] == "1")
+        val refusal = if (parts.size >= 11) refusal(parts.subList(5, 10))?.copy(byOrigin = origins(parts.getOrNull(11))) else null
+        ReconcileGap(parts[0], start, end, parts[4], checked, refusal, dismissed = parts.size >= 11 && parts[10] == "1")
     }.toList()
 
     fun encode(gaps: List<ReconcileGap>): String = gaps.joinToString("\n") { gap ->
@@ -62,9 +66,16 @@ object ReconcileGaps {
         } else {
             listOf(refusal.startMs, refusal.endMs, refusal.wouldDelete, refusal.checked, refusal.sentIds).map(Any::toString)
         }
+        val origins = refusal?.byOrigin.orEmpty().joinToString("|") { "${OriginCount.clean(it.origin)}=${it.count}" }
         (listOf(gap.dataType, gap.startMs, gap.endMs, gap.checkedAtMs, clean(gap.reason)).map(Any::toString) +
-            refusalFields + (if (gap.dismissed) "1" else "0")).joinToString("\t")
+            refusalFields + (if (gap.dismissed) "1" else "0") + origins).joinToString("\t")
     }
+
+    private fun origins(field: String?): List<OriginCount> = field.orEmpty().split('|').mapNotNull { entry ->
+        val origin = entry.substringBefore('=', "")
+        val count = entry.substringAfter('=', "").toIntOrNull()
+        if (origin.isEmpty() || count == null || count <= 0) null else OriginCount(origin, count)
+    }.take(OriginCount.MAX_ENTRIES)
 
     /**
      * Adds [gap]; an existing gap of the same type grows to cover both windows and takes the new

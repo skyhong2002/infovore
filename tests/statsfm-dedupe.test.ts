@@ -118,10 +118,10 @@ test('migration 21 removes only stats.fm precision duplicates and fixes the musi
     // Pair: precise + floored copy under another track id, the copy seen first.
     insertRaw(db, { id: 'p1', itemId: '10', title: 'Reunion', at: '2026-11-12T10:31:08.510Z', seen: '2026-11-12T10:40:00.000Z' });
     insertRaw(db, { id: 'f1', itemId: '11', title: 'Reunion', at: '2026-11-12T10:31:00.000Z', seen: '2026-11-12T10:35:00.000Z' });
-    // Three floored copies of one play: earliest seen survives.
-    insertRaw(db, { id: 'f2a', title: 'Caren\'s Theme', at: '2026-11-12T10:22:00.000Z', seen: '2026-11-11T02:00:00.000Z' });
-    insertRaw(db, { id: 'f2b', title: 'caren\'s  theme', at: '2026-11-12T10:22:00.000Z', seen: '2026-11-11T01:00:00.000Z' });
-    insertRaw(db, { id: 'f2c', title: 'Caren\'s Theme', at: '2026-11-12T10:22:00.000Z', seen: '2026-11-11T03:00:00.000Z' });
+    // Three floored copies of one play (same track id): earliest seen survives.
+    insertRaw(db, { id: 'f2a', itemId: '20', title: 'Caren\'s Theme', at: '2026-11-12T10:22:00.000Z', seen: '2026-11-11T02:00:00.000Z' });
+    insertRaw(db, { id: 'f2b', itemId: '20', title: 'caren\'s  theme', at: '2026-11-12T10:22:00.000Z', seen: '2026-11-11T01:00:00.000Z' });
+    insertRaw(db, { id: 'f2c', itemId: '20', title: 'Caren\'s Theme', at: '2026-11-12T10:22:00.000Z', seen: '2026-11-11T03:00:00.000Z' });
     // Not duplicates: two precise plays in one minute, other minutes, other artist.
     insertRaw(db, { id: 's1', title: 'Snow', at: '2026-11-12T09:00:10.000Z', durationMs: 22_000 });
     insertRaw(db, { id: 's2', title: 'Snow', at: '2026-11-12T09:00:40.000Z', durationMs: 22_000 });
@@ -197,4 +197,43 @@ test('the dedupe plan prefers the seconds-precision row, then the earliest seen'
   ]);
   assert.deepEqual(plan.remove, ['floored-early']);
   assert.deepEqual([...plan.firstSeen], [['precise-late', '2026-11-10T00:00:00.000Z']]);
+});
+
+test('two floored plays with the same title merge only under the same track id', () => {
+  const play = (id: string, sourceItemId: string | null, occurredAt: string, title = 'Snow', artist = 'Theophany') =>
+    ({ id, sourceItemId, title, artist, occurredAt, firstSeenAt: '2026-11-12T00:00:00.000Z' });
+  // Both floored, same title and artist, different track ids: two short songs, kept.
+  assert.deepEqual(planStatsfmDedupe([
+    play('a', 'track-1', '2026-11-12T10:00:00.000Z'),
+    play('b', 'track-2', '2026-11-12T10:00:00.000Z'),
+  ]).remove, []);
+  // Both floored without any track id: no evidence they are one play, kept.
+  assert.deepEqual(planStatsfmDedupe([
+    play('a', null, '2026-11-12T10:00:00.000Z'),
+    play('b', null, '2026-11-12T10:00:00.000Z'),
+  ]).remove, []);
+  // Both floored under the same track id: one play, merged.
+  assert.equal(planStatsfmDedupe([
+    play('a', 'track-1', '2026-11-12T10:00:00.000Z'),
+    play('b', 'track-1', '2026-11-12T10:00:00.000Z'),
+  ]).remove.length, 1);
+  // One side keeps its seconds: the title rule still applies across a relinked track id.
+  assert.deepEqual(planStatsfmDedupe([
+    play('floored', 'track-2', '2026-11-12T10:00:00.000Z'),
+    play('precise', 'track-1', '2026-11-12T10:00:41.250Z'),
+  ]).remove, ['floored']);
+});
+
+test('ingest keeps two floored same-title plays with different track ids', () => {
+  const repository = new Repository(':memory:');
+  try {
+    sync(repository, '2026-11-12T11:20:00.000Z', stream(1, 'Snow', '2026-11-12T10:00:00.000Z', 22_000));
+    sync(repository, '2026-11-12T11:30:00.000Z', stream(2, 'Snow', '2026-11-12T10:00:00.000Z', 22_000));
+    assert.deepEqual(statsfmRows(repository).map((row) => row.source_item_id).sort(), ['1', '2']);
+    // A seconds-precision copy under yet another id still replaces the floored rows that share its title.
+    sync(repository, '2026-11-12T11:40:00.000Z', stream(3, 'Snow', '2026-11-12T10:00:30.000Z', 22_000));
+    assert.equal(statsfmRows(repository).length, 1);
+  } finally {
+    repository.close();
+  }
 });

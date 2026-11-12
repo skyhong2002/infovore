@@ -1,5 +1,6 @@
 package tw.skyhong.infovore.health
 
+import org.json.JSONObject
 import java.time.Instant
 
 /** Minimal JSON string encoding for payloads built without org.json (which is a stub in JVM unit tests). */
@@ -64,11 +65,56 @@ data class ReconcileWindow(
 }
 
 /**
+ * How many of the rows a refused window would delete came from one source app ([origin] is the
+ * Health Connect data origin, a package name, or [OTHER] for the server's merged remainder).
+ */
+data class OriginCount(val origin: String, val count: Int) {
+    companion object {
+        const val OTHER = "other"
+
+        /** The server lists at most 10 apps plus [OTHER]; anything beyond is ignored. */
+        const val MAX_ENTRIES = 11
+        private const val MAX_ORIGIN_CHARS = 200
+        private val UNSAFE = Regex("[^A-Za-z0-9._-]")
+
+        /** Keeps package-name characters only, so the value is safe to persist and show. */
+        fun clean(origin: String): String = UNSAFE.replace(origin.take(MAX_ORIGIN_CHARS), "_")
+    }
+}
+
+/**
  * The counts of a reconcile window the server refused with HTTP 409 (its response's
  * `reconcile.wouldDelete` / `reconcile.checked`): it would have deleted [wouldDelete] of the
- * [checked] rows this device has stored in the window. No record ids or values.
+ * [checked] rows this device has stored in the window. [byOrigin] (servers from 0.4.3 on) says
+ * which source apps those rows came from; empty when the server did not report it. No record ids
+ * or values.
  */
-data class ReconcileRefusal(val wouldDelete: Int, val checked: Int)
+data class ReconcileRefusal(val wouldDelete: Int, val checked: Int, val byOrigin: List<OriginCount> = emptyList()) {
+    companion object {
+        /** The refusal in an HTTP [status] response body, or null when it is not a reconcile refusal. */
+        fun fromResponse(status: Int, responseText: String): ReconcileRefusal? {
+            if (status != 409) return null
+            val reconcile = runCatching { JSONObject(responseText).optJSONObject("reconcile") }.getOrNull() ?: return null
+            if (reconcile.optString("status") != "rejected") return null
+            val wouldDelete = reconcile.optInt("wouldDelete", -1)
+            val checked = reconcile.optInt("checked", -1)
+            if (wouldDelete < 0 || checked < 0) return null
+            val origins = reconcile.optJSONArray("byOrigin")
+            val byOrigin = buildList {
+                if (origins != null) {
+                    for (index in 0 until origins.length()) {
+                        if (size >= OriginCount.MAX_ENTRIES) break
+                        val entry = origins.optJSONObject(index) ?: continue
+                        val origin = OriginCount.clean(entry.optString("origin"))
+                        val count = entry.optInt("count", -1)
+                        if (origin.isNotEmpty() && count > 0) add(OriginCount(origin, count))
+                    }
+                }
+            }
+            return ReconcileRefusal(wouldDelete, checked, byOrigin)
+        }
+    }
+}
 
 /**
  * Turns the pages of one complete history read into reconcile windows, without holding every id

@@ -47,9 +47,15 @@ data class Observation(
  * they count as belonging to another destination.
  *
  * Android-free apart from [get], so it can be unit tested; [isValidJson] defaults to org.json.
+ *
+ * Retention: the oldest records beyond [maxTotalBytes] (40 MB) are always dropped, and records older
+ * than [MAX_AGE_MS] too, except that time during which a full quarantine ([maxRejected]) stopped
+ * uploads does not count toward the current destination's seven days (see [AgeHold]).
  */
 class ObservationQueue internal constructor(
     private val root: File,
+    private val maxRejected: Int = MAX_REJECTED,
+    private val maxTotalBytes: Long = MAX_TOTAL_BYTES,
     private val isValidJson: (String) -> Boolean = { json -> runCatching { JSONObject(json) }.isSuccess },
 ) {
 
@@ -69,7 +75,7 @@ class ObservationQueue internal constructor(
             temp.delete()
             return
         }
-        prune()
+        prune(destination = destination)
     }
 
     /** Pending observations for [destination]. */
@@ -92,23 +98,30 @@ class ObservationQueue internal constructor(
         return removed
     }
 
-    /** Drops stale items and the oldest items beyond the size cap; also removes orphaned temp files. */
+    /**
+     * Drops stale items and the oldest items beyond the size cap; also removes orphaned temp files.
+     * [destination] is the current destination (null when unknown): while the quarantine is full,
+     * its records are not dropped for their age ([AgeHold]); the size cap still applies to all.
+     */
     @Synchronized
-    fun prune(nowMs: Long = System.currentTimeMillis()) {
+    fun prune(nowMs: Long = System.currentTimeMillis(), destination: String? = null) {
         for (dir in allDirs()) {
             dir.listFiles { file -> file.name.endsWith(".tmp") && nowMs - file.lastModified() > 60_000L }
                 ?.forEach { it.delete() }
         }
+        val previous = ageHold()
+        val hold = QueueRetention.nextHold(previous, destination?.let(::bucketName), countRejected() >= maxRejected, nowMs)
+        if (hold != previous) writeAgeHold(hold)
         val all = allDirs().flatMap(::files).sortedBy { it.name }
-        val cutoff = nowMs - MAX_AGE_MS
         val fresh = all.filter { file ->
-            val stale = capturedAt(file)?.let { it < cutoff } ?: true
+            val held = hold?.takeIf { it.bucket == file.parentFile?.name }
+            val stale = capturedAt(file)?.let { QueueRetention.isStale(it, nowMs, held) } ?: true
             if (stale) file.delete()
             !stale
         }
         var total = fresh.sumOf { it.length() }
         for (file in fresh) {
-            if (total <= MAX_TOTAL_BYTES) break
+            if (total <= maxTotalBytes) break
             total -= file.length()
             file.delete()
         }
@@ -151,6 +164,19 @@ class ObservationQueue internal constructor(
                 target.writeText(entry.json, Charsets.UTF_8)
                 entry.file.delete()
             }
+        }
+    }
+
+    /** The current [AgeHold], or null when uploads were not recently stopped by a full quarantine. */
+    @Synchronized
+    fun ageHold(): AgeHold? = AgeHold.decode(runCatching { File(root, AGE_HOLD_FILE).readText(Charsets.UTF_8) }.getOrNull())
+
+    private fun writeAgeHold(hold: AgeHold?) {
+        val file = File(root, AGE_HOLD_FILE)
+        if (hold == null) {
+            file.delete()
+        } else {
+            runCatching { file.writeText(hold.encode(), Charsets.UTF_8) }
         }
     }
 
@@ -248,6 +274,9 @@ class ObservationQueue internal constructor(
         const val MAX_REJECTED = 500
         private const val BUCKET_PREFIX = "d-"
         private const val REJECTED_DIR = "rejected"
+
+        /** Not a .json file and not a directory, so no listing of records ever sees it. */
+        private const val AGE_HOLD_FILE = "age-hold"
 
         /** A stable directory name for a normalised destination, without putting the URL in a path. */
         internal fun bucketName(destination: String): String {

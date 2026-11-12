@@ -168,7 +168,9 @@ export function createIngestApp(repository: Repository): Hono {
       if (error instanceof HealthReconcileRejected) {
         return c.json({
           error: error.message,
-          reconcile: { status: 'rejected', wouldDelete: error.wouldDelete, checked: error.checked },
+          // byOrigin: source-app counts of the rows it would delete (no ids or values);
+          // clients before 0.4.3 ignore it.
+          reconcile: { status: 'rejected', wouldDelete: error.wouldDelete, checked: error.checked, byOrigin: error.byOrigin },
         }, 409);
       }
       if (error instanceof StorageFailure) return c.json(storageUnavailable, 503);

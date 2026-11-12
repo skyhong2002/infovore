@@ -25,7 +25,7 @@ import type {
   HealthReconcileInput,
   HealthReconcileResult,
 } from '../health/types.js';
-import { HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES } from '../health/types.js';
+import { countByOrigin, HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES } from '../health/types.js';
 
 // A reconcile window may delete up to this many rows without question; above
 // it, the deletion must stay within this share of the window's stored rows and
@@ -1647,7 +1647,11 @@ export class Repository {
   }
 
   // Deletes this device's rows of the window's type that start in [start, end),
-  // end by `end`, and are missing from the complete id list the app read. Runs
+  // end before `end`, and are missing from the complete id list the app read.
+  // Rows reaching the window end or beyond are never deleted by this window:
+  // Health Connect's range semantics for interval records may leave them out of
+  // a complete read (FakeHealthConnectClient only returns records ending before
+  // the range end), so their absence proves nothing. Runs
   // inside the ingest transaction; an implausibly large deletion throws
   // HealthReconcileRejected so the caller rolls everything back. With
   // confirmDelete, the count must equal what the user confirmed and stay within
@@ -1665,31 +1669,34 @@ export class Repository {
     // range is widened by a day and the exact bounds are checked numerically.
     const day = 24 * 60 * 60 * 1000;
     const candidates = this.db.prepare(`
-      SELECT record_id, start_at, end_at FROM health_connect_records
+      SELECT record_id, data_origin, start_at, end_at FROM health_connect_records
       WHERE device_id=? AND data_type=? AND start_at >= ? AND start_at < ?
     `).all(
       deviceId,
       window.dataType,
       new Date(startMs - day).toISOString(),
       new Date(endMs + day).toISOString(),
-    ) as Array<{ record_id: string; start_at: string; end_at: string }>;
+    ) as Array<{ record_id: string; data_origin: string; start_at: string; end_at: string }>;
     const inWindow = candidates.filter((row) => {
       const rowStart = Date.parse(row.start_at);
       const rowEnd = Date.parse(row.end_at);
-      return rowStart >= startMs && rowStart < endMs && rowEnd <= endMs;
+      return rowStart >= startMs && rowStart < endMs && rowEnd < endMs;
     });
     const keep = new Set(window.recordIds);
     const stale = inWindow.filter((row) => !keep.has(row.record_id));
+    // Which source apps the rows to delete came from, so the user confirming a
+    // refused deletion sees more than a count (package names and counts only).
+    const byOrigin = () => countByOrigin(stale.map((row) => row.data_origin));
     const confirmed = window.confirmDelete;
     if (confirmed) {
       // Exactly what the user confirmed, under the hard ceiling; anything else
       // (the source changed since, or too much) is refused with fresh counts.
       if (stale.length !== confirmed.expected || stale.length > MAX_CONFIRMED_RECONCILE_DELETES) {
-        throw new HealthReconcileRejected(stale.length, inWindow.length);
+        throw new HealthReconcileRejected(stale.length, inWindow.length, byOrigin());
       }
     } else if (stale.length > RECONCILE_MAX_SILENT_DELETES
       && (stale.length > inWindow.length * RECONCILE_MAX_DELETE_SHARE || stale.length > RECONCILE_MAX_DELETES)) {
-      throw new HealthReconcileRejected(stale.length, inWindow.length);
+      throw new HealthReconcileRejected(stale.length, inWindow.length, byOrigin());
     }
     let deleted = 0;
     for (const row of stale) {
@@ -1705,6 +1712,7 @@ export class Repository {
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(receivedAt, deviceId, window.dataType, window.start, window.end, deleted, inWindow.length);
       result.confirmed = true;
+      result.byOrigin = byOrigin();
     }
     return result;
   }

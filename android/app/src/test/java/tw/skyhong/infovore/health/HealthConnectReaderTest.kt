@@ -62,7 +62,10 @@ class HealthConnectReaderTest {
             fake.getChanges(changesToken).also { changePages++ }
     }
 
-    private class Fx(granted: Set<String> = Fixture.allPermissions + HealthCatalog.HISTORY_PERMISSION) {
+    private class Fx(
+        granted: Set<String> = Fixture.allPermissions + HealthCatalog.HISTORY_PERMISSION,
+        reconcileTargetIds: Int = ReconcilePlanner.TARGET_IDS,
+    ) {
         val permissions = FakePermissionController(grantAll = false).apply { grantPermissions(granted) }
         val fake = FakeHealthConnectClient(packageName = GARMIN, clock = TickingClock(NOW - 30 * DAY), permissionController = permissions)
         val client = Recording(fake)
@@ -77,6 +80,7 @@ class HealthConnectReaderTest {
             destination = Harness.DESTINATION,
             credentialsReady = true,
             clock = { NOW },
+            reconcileTargetIds = reconcileTargetIds,
         )
 
         /** Inserts as [origin] and returns the ids Health Connect assigned. */
@@ -146,22 +150,62 @@ class HealthConnectReaderTest {
     }
 
     /**
-     * Known risk, pinned so a fix changes it on purpose: under the fake's containment rule a record
-     * that starts inside the window but ends after it is not read, so the reconcile window omits
-     * it although the server stores it inside the window (start_at). If a device behaves the same,
-     * the server would delete that row. History scans end at "now", so this needs a record still in
-     * progress; re-verified gaps end at a past time a long sleep session can span.
+     * Pinned so a change is deliberate: under the fake's containment rule a record that starts
+     * inside the window but ends at or after its end is not read, so the reconcile window omits
+     * its id although the server stores it inside the window (by start_at). That does not delete
+     * it: the server's reconcileHealthWindow only deletes rows that also end before the window end
+     * (tests/health-reconcile.test.ts, "A reader that misses a record crossing or reaching the
+     * window end never gets it deleted"). The cost runs the other way: such a record deleted at
+     * the source stays on the server until a later reconcile window contains it entirely, e.g.
+     * the next history scan (which ends at that scan's "now"). Whether a device returns these
+     * records the way the fake does is not known.
      */
     @Test
-    fun knownRiskARecordEndingAfterTheWindowIsMissingFromItsReconcileWindow() = runBlocking {
+    fun aRecordEndingAtOrAfterTheWindowEndIsNotListedInItsReconcileWindow() = runBlocking {
         val fx = Fx()
         val listed = fx.insert(listOf(steps("inside", NOW - 2 * 3_600_000)))
         val crossing = fx.insert(listOf(steps("crosses-end", NOW - 1_800_000, NOW + 1_800_000)))
+        val atEnd = fx.insert(listOf(steps("ends-at-end", NOW - 600_000, NOW)))
 
         fx.engine.run()
 
         assertEquals(listed, fx.idsIn("steps"))
         assertFalse(crossing.single() in fx.idsIn("steps"))
+        assertFalse(atEnd.single() in fx.idsIn("steps"))
+        assertTrue(fx.uploader.windowsFor("steps").all { it.endMs == NOW })
+        assertEquals("", fx.store.reconcileGapsText)
+    }
+
+    @Test
+    fun recordsSharingOneStartTimeAcrossAPageBoundaryAreListedOnceEach() = runBlocking {
+        // 497 earlier records, then six sharing one start time at offsets 497..502 (pages hold
+        // 500, so the tie spans pages one and two), then more after it. Small reconcile windows
+        // make the planner want to close a window right inside the tie.
+        val fx = Fx(reconcileTargetIds = 499)
+        val tie = scanStart + DAY
+        val before = fx.insert((0 until 497).map { steps("before-$it", scanStart + 60_000L + it * 60_000L) })
+        val tied = fx.insert((0 until 6).map { steps("tied-$it", tie, tie + 60_000L + it) })
+        val after = fx.insert((0 until 300).map { steps("after-$it", tie + 120_000L + it * 60_000L) })
+        val all = before + tied + after
+
+        fx.engine.run()
+
+        assertEquals(listOf(null, "500"), fx.readsOf(StepsRecord::class).map { it.pageToken })
+        assertEquals(all.size, fx.uploader.uploadedIds.size)
+        assertEquals(all.toSet(), fx.uploader.uploadedIds.toSet())
+        val listedIds = fx.idsIn("steps")
+        assertEquals(all.size, listedIds.size) // no id twice
+        assertEquals(all.toSet(), listedIds.toSet()) // none missing
+        val windows = fx.uploader.windowsFor("steps")
+        assertTrue(windows.size > 1)
+        // Every tied record is in the one window that contains the tie.
+        val holding = windows.filter { it.startMs <= tie && tie < it.endMs }
+        assertEquals(1, holding.size)
+        assertTrue(holding.single().recordIds.containsAll(tied))
+        // Windows are contiguous and cover the scan exactly.
+        assertEquals(scanStart, windows.first().startMs)
+        assertEquals(NOW, windows.last().endMs)
+        windows.zipWithNext().forEach { (a, b) -> assertEquals(a.endMs, b.startMs) }
         assertEquals("", fx.store.reconcileGapsText)
     }
 

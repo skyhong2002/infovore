@@ -40,7 +40,8 @@ export const MAX_CONFIRMED_RECONCILE_DELETES = 2000;
 // A complete read of one data type over [start, end) on the sending device:
 // recordIds lists every Health Connect record id the app saw starting in that
 // window. The server deletes this device's rows of the type that start in the
-// window, end by its end, and are not listed (see Repository.ingestHealthConnect).
+// window, end before its end, and are not listed (see Repository.ingestHealthConnect);
+// a row reaching the window end or beyond is never deleted by that window.
 //
 // confirmDelete (optional): the user saw a 409 refusal for this window and
 // explicitly confirmed deleting exactly `expected` rows. The deletion limits
@@ -87,6 +88,30 @@ export interface HealthReconcileResult {
   alreadyApplied?: true;
   // The deletion went beyond the automatic limits because the user confirmed it.
   confirmed?: true;
+  // With `confirmed`: which source apps the deleted rows came from (see byOrigin).
+  byOrigin?: HealthOriginCount[];
+}
+
+// How many of the rows a reconcile window deletes (or would delete) came from
+// each source app (`data_origin`, a package name). Counts only: no record ids
+// or health values. At most MAX_ORIGIN_COUNTS entries, largest first; the rest
+// are merged into one `other` entry.
+export interface HealthOriginCount {
+  origin: string;
+  count: number;
+}
+
+export const MAX_ORIGIN_COUNTS = 10;
+export const OTHER_ORIGINS = 'other';
+
+export function countByOrigin(origins: Iterable<string>, limit = MAX_ORIGIN_COUNTS): HealthOriginCount[] {
+  const counts = new Map<string, number>();
+  for (const origin of origins) counts.set(origin, (counts.get(origin) ?? 0) + 1);
+  const sorted = [...counts].map(([origin, count]) => ({ origin, count }))
+    .sort((a, b) => b.count - a.count || (a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : 0));
+  if (sorted.length <= limit) return sorted;
+  const rest = sorted.slice(limit).reduce((sum, entry) => sum + entry.count, 0);
+  return [...sorted.slice(0, limit), { origin: OTHER_ORIGINS, count: rest }];
 }
 
 export interface HealthConnectIngestResult {
@@ -100,7 +125,7 @@ export interface HealthConnectIngestResult {
 // Thrown when a reconcile window would delete an implausible share of the
 // stored rows; the whole batch is rolled back and nothing is deleted.
 export class HealthReconcileRejected extends Error {
-  constructor(readonly wouldDelete: number, readonly checked: number) {
+  constructor(readonly wouldDelete: number, readonly checked: number, readonly byOrigin: HealthOriginCount[] = []) {
     super(`Reconcile refused: it would delete ${wouldDelete} of ${checked} stored records in the window`);
     this.name = 'HealthReconcileRejected';
   }

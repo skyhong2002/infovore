@@ -13,6 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.SwitchCompat
 import tw.skyhong.infovore.health.MainViewModel.ScreenTask
 import tw.skyhong.infovore.health.R
+import tw.skyhong.infovore.health.SyncFailureNotifier
 import tw.skyhong.infovore.health.screen.Exclusions
 import tw.skyhong.infovore.health.screen.ObservationQueue
 import tw.skyhong.infovore.health.screen.ScreenActivityService
@@ -308,9 +309,10 @@ class ScreenController(
                 otherDestinationPending = queue.countOtherDestinations(destination),
                 rejected = queue.countRejected(),
                 requeueable = queue.countRequeueable(destination),
+                notificationsOn = host.settings.notifyOnSyncFailure && SyncFailureNotifier.permissionGranted(host.activity),
             ),
         )
-        rejectedBox.text = ui.rejectedNote
+        rejectedBox.text = listOfNotNull(ui.rejectedNote, ui.notificationHint).joinToString("\n\n")
         rejectedBox.visibility = if (ui.rejectedNote == null) View.GONE else View.VISIBLE
         kit.setTone(rejectedBox, if (ui.quarantineFull) Tone.ERROR else Tone.WARNING)
         deleteRejectedButton.visibility = rejectedBox.visibility
@@ -322,7 +324,14 @@ class ScreenController(
         statusBox.text = listOfNotNull(ui.headline, ui.nextStep).joinToString("\n")
         kit.setTone(statusBox, ui.tone)
         details.text = ui.details
-        section.setSummary(ui.summary, if (ui.tone == Tone.OK) Tone.OK else Tone.NEUTRAL)
+        section.setSummary(
+            ui.summary,
+            when {
+                ui.quarantineFull -> Tone.WARNING
+                ui.tone == Tone.OK -> Tone.OK
+                else -> Tone.NEUTRAL
+            },
+        )
 
         accessibilityStatus.text = host.string(if (serviceEnabled) R.string.accessibility_on else R.string.accessibility_off)
         kit.setTone(accessibilityStatus, if (serviceEnabled) Tone.OK else Tone.NEUTRAL, tintBackground = false)

@@ -154,3 +154,34 @@ test('the Time page scope text follows the sources in the table', async () => {
   }
   assert.match(render([])('.page-intro-aside').text(), /^No platform has recorded time yet\. Computer activity/);
 });
+
+test('the Time page hides the window picker without JavaScript and marks the default sort', async () => {
+  const { statsPage } = await import('../src/output/stats.js');
+  const w = (n: number) => ({ last24h: n, last28d: n, day: n, week: n, month: n, year: n, allTime: n });
+  const render = (allTimes: number[]) => load(statsPage('Sample', { generatedAt: new Date().toISOString(), measuredTotal: w(1), total: w(9),
+    sources: ['statsfm', 'health', 'events'].map((source, index) => ({ source, method: 'measured', windows: { ...w(1), allTime: allTimes[index] } })) } as never));
+  const $ = render([30, 20, 10]);
+  // Without the script nothing reveals the picker; the script unhides it before wiring it up.
+  assert.notEqual($('label.time-window-pick').attr('hidden'), undefined);
+  assert.match($('script').text(), /pick\.closest\('label'\)\.hidden=false/);
+  // Rows arrive in all-time order, and the heading says so before any click.
+  assert.deepEqual($('th[aria-sort]').map((_, th) => [[$(th).text(), $(th).attr('aria-sort')]]).get(), [['All time', 'descending']]);
+  // Rows in another order claim no sort.
+  assert.equal(render([10, 30, 20])('th[aria-sort]').length, 0);
+});
+
+test('the stylesheet keeps a hidden window picker hidden at every width', async () => {
+  const css = await (await app.request('/styles.css')).text();
+  assert.match(css, /\.time-window-pick\[hidden\]\{display:none!important\}/);
+});
+
+test('the API page code block is keyboard scrollable and named, and /status is documented as HTML or JSON', async () => {
+  const $ = load(await (await app.request('/api')).text());
+  const pre = $('.api-doc pre');
+  assert.equal(pre.attr('tabindex'), '0');
+  assert.equal(pre.attr('role'), 'region');
+  assert.equal($(`#${pre.attr('aria-labelledby')}`).text(), 'Examples');
+  const service = $('.api-doc h2').filter((_, h2) => $(h2).text() === 'Service').next('table').text();
+  assert.match(service, /\/status\.json[\s\S]*as JSON[\s\S]*\/status[\s\S]*HTML page/);
+  assert.match(service, /\/mcpPOST, not GET/);
+});

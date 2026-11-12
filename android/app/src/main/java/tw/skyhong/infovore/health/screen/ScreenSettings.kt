@@ -69,6 +69,13 @@ class ScreenSettings(context: Context) {
         get() = preferences.getString(KEY_LAST_UPLOAD_STATUS, "尚未上傳") ?: "尚未上傳"
         set(value) { preferences.edit { putString(KEY_LAST_UPLOAD_STATUS, value) } }
 
+    /** The quarantine level last seen by [tw.skyhong.infovore.health.QuarantineNotifier], so each warning shows once. */
+    var quarantineAlertLevel: QuarantineAlerts.Level
+        get() = preferences.getString(KEY_QUARANTINE_ALERT, null)
+            ?.let { name -> QuarantineAlerts.Level.entries.firstOrNull { it.name == name } }
+            ?: QuarantineAlerts.Level.NONE
+        set(value) { preferences.edit { putString(KEY_QUARANTINE_ALERT, value.name) } }
+
     fun isPaused(nowMs: Long = System.currentTimeMillis()) = pausedUntil > nowMs
 
     fun isRecording(nowMs: Long = System.currentTimeMillis()) = enabled && !isPaused(nowMs)
@@ -82,5 +89,6 @@ class ScreenSettings(context: Context) {
         const val KEY_EXCLUSIONS = "exclusions"
         const val KEY_LAST_CAPTURE_AT = "last_capture_at"
         const val KEY_LAST_UPLOAD_STATUS = "last_upload_status"
+        const val KEY_QUARANTINE_ALERT = "quarantine_alert_level"
     }
 }

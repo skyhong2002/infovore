@@ -75,7 +75,7 @@ test('The shared confirmed-deletion case is a valid batch and the field is stric
   assert.ok(parsed.success, parsed.success ? '' : JSON.stringify(parsed.error.issues));
   assert.deepEqual(parsed.data.reconcile, request.reconcile);
   assert.equal(healthConnectBatchSchema.safeParse({
-    ...request, reconcile: { ...request.reconcile, confirmDelete: { expected: 25, all: true } },
+    ...request, reconcile: { ...request.reconcile, confirmDelete: { expected: 27, all: true } },
   }).success, false);
 });
 

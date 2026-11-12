@@ -6,9 +6,12 @@ import type { DatabaseSync } from 'node:sqlite';
 // floored to the minute (…:00.000Z) and sometimes under a relinked track id.
 // The activity identity includes the exact endTime (and the track id), so
 // both shapes used to land as separate rows. A floored row is the same play
-// as another row in the same minute with the same track id, or with the same
-// title (and artist, when both carry one). Two rows that both keep their
-// seconds are never merged: those are separate plays.
+// as a seconds-precision row in the same minute with the same track id, or
+// with the same title (and artist, when both carry one). Two floored rows are
+// the same play only under the same track id: two short songs sharing a title
+// can both end in one minute, and with no seconds to go on, a different id is
+// the only evidence left. Two rows that both keep their seconds are never
+// merged: those are separate plays.
 
 export interface StatsfmPlay {
   id: string;
@@ -34,8 +37,11 @@ function canonical(value: string): string {
 
 export function samePlay(a: StatsfmPlay, b: StatsfmPlay): boolean {
   if (playMinute(a.occurredAt) !== playMinute(b.occurredAt)) return false;
-  if (!isMinuteFloored(a.occurredAt) && !isMinuteFloored(b.occurredAt)) return false;
+  const aFloored = isMinuteFloored(a.occurredAt);
+  const bFloored = isMinuteFloored(b.occurredAt);
+  if (!aFloored && !bFloored) return false;
   if (a.sourceItemId && a.sourceItemId === b.sourceItemId) return true;
+  if (aFloored && bFloored) return false;
   if (canonical(a.title) !== canonical(b.title)) return false;
   return !a.artist || !b.artist || canonical(a.artist) === canonical(b.artist);
 }

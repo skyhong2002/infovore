@@ -223,6 +223,49 @@ class ConfirmedDeleteTest {
     }
 
     @Test
+    fun theSourceAppsOfARefusalAreSavedAndShownInBothPlaces() {
+        val origins = listOf(OriginCount("com.garmin.fixture", 20), OriginCount("com.fitbit.fixture", 4), OriginCount(OriginCount.OTHER, 1))
+        val h = Harness()
+        h.reader.pages["steps"] = listOf(listOf(item("s1", scanStart + hour)))
+        h.uploader.onReconcile = { window ->
+            if (window.dataType == "steps") {
+                throw InfovoreApi.HttpStatusException(409, "Infovore HTTP 409", ReconcileRefusal(25, 26, origins))
+            } else {
+                ok
+            }
+        }
+        runBlocking { h.engine().run() }
+        val gap = h.gaps.single()
+        assertEquals(origins, gap.refusal!!.byOrigin)
+        // Persisted (package names and counts only) and read back unchanged.
+        assertEquals(gap, h.engine(h.store.reloaded()).gaps.single())
+        assertFalse(h.store.reconcileGapsText.contains("s1"))
+
+        val ui = ReconcileStatus.map(listOf(gap), Instant.ofEpochMilli(NOW), ZoneOffset.UTC, syncReady = true, syncHint = null)!!
+        val line = "來自：20 筆 com.garmin.fixture、4 筆 com.fitbit.fixture、1 筆其他 App"
+        assertTrue(ui.refusals.single().explanation, ui.refusals.single().explanation.contains(line))
+        val (first, _) = ReconcileStatus.confirmDialogs(gap, ZoneOffset.UTC)!!
+        assertTrue(first.message, first.message.contains(line))
+
+        // An older server reports no origins: the texts keep the counts-only wording.
+        val plain = gap.copy(refusal = gap.refusal!!.copy(byOrigin = emptyList()))
+        assertFalse(ReconcileStatus.confirmDialogs(plain, ZoneOffset.UTC)!!.first.message.contains("來自"))
+        assertNull(ReconcileStatus.origins(plain.refusal!!))
+    }
+
+    @Test
+    fun originsFromTheServerAreSanitisedAndBounded() {
+        val entries = (0 until 15).joinToString(",") { "{\"origin\":\"com.example.app$it\\tx|y=z\",\"count\":${15 - it}}" }
+        val body = "{\"reconcile\":{\"status\":\"rejected\",\"wouldDelete\":120,\"checked\":130,\"byOrigin\":[" +
+            "{\"origin\":\"\",\"count\":3},{\"origin\":\"bad.count\",\"count\":0},$entries]}}"
+        val refusal = ReconcileRefusal.fromResponse(409, body)!!
+        assertEquals(OriginCount.MAX_ENTRIES, refusal.byOrigin.size)
+        assertEquals(OriginCount("com.example.app0_x_y_z", 15), refusal.byOrigin.first())
+        val gap = ReconcileGap("steps", 1, 2, "r", 3, GapRefusal(1, 2, 120, 130, 4, refusal.byOrigin))
+        assertEquals(gap, ReconcileGaps.decode(ReconcileGaps.encode(listOf(gap))).single())
+    }
+
+    @Test
     fun theConfirmationIsSerializedOnlyWhenSet() {
         val window = ReconcileWindow("steps", 0, 1_000, listOf("a"))
         val plain = MiniJson.parse(window.toJson()) as Map<*, *>

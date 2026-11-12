@@ -15,7 +15,8 @@ import androidx.core.content.ContextCompat
  * Applies [SyncFailureAlerts] decisions: keeps the consecutive-failure count in [SecureSettings]
  * and shows one local notification on the "同步問題" channel, which opens the app's health
  * section. Notifications are posted only when the user turned them on in the app and granted
- * POST_NOTIFICATIONS; the text never contains health values, error details or tokens.
+ * POST_NOTIFICATIONS; the text never contains health values, error details or tokens. The same
+ * channel and opt-in carry the screen-record quarantine warning ([QuarantineNotifier]).
  */
 object SyncFailureNotifier {
     private const val CHANNEL_ID = "sync_problems"
@@ -31,12 +32,23 @@ object SyncFailureNotifier {
     fun permissionGranted(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
+    /** Removes this notification and the screen-record quarantine warning (e.g. when the user turns notifications off). */
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+        QuarantineNotifier.cancel(context)
     }
 
     private fun show(context: Context, failures: Int) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val text = SyncFailureAlerts.text(failures)
+        post(context, NOTIFICATION_ID, SyncFailureAlerts.title(), text, MainActivity.EXTRA_OPEN_HEALTH)
+    }
+
+    /**
+     * Posts [title]/[text] as notification [id] on the "同步問題" channel; tapping it opens the
+     * app with [openExtra] set. Does nothing without POST_NOTIFICATIONS.
+     */
+    internal fun post(context: Context, id: Int, title: String, text: String, openExtra: String) {
+        if (!permissionGranted(context)) return
         val manager = NotificationManagerCompat.from(context)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, context.getString(R.string.notification_channel_sync), NotificationManager.IMPORTANCE_DEFAULT).apply {
@@ -45,16 +57,15 @@ object SyncFailureNotifier {
         )
         val open = PendingIntent.getActivity(
             context,
-            0,
+            id,
             Intent(context, MainActivity::class.java)
-                .putExtra(MainActivity.EXTRA_OPEN_HEALTH, true)
+                .putExtra(openExtra, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val text = SyncFailureAlerts.text(failures)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_sync_problem)
-            .setContentTitle(SyncFailureAlerts.title())
+            .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
@@ -64,7 +75,7 @@ object SyncFailureNotifier {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .build()
         try {
-            manager.notify(NOTIFICATION_ID, notification)
+            manager.notify(id, notification)
         } catch (_: SecurityException) {
             // The permission was revoked in between; the in-app status still shows the failure.
         }

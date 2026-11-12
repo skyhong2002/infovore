@@ -2,6 +2,7 @@ package tw.skyhong.infovore.health.ui
 
 import tw.skyhong.infovore.health.GapRefusal
 import tw.skyhong.infovore.health.HealthCatalog
+import tw.skyhong.infovore.health.OriginCount
 import tw.skyhong.infovore.health.ReconcileGap
 import tw.skyhong.infovore.health.ReconcileWindow
 import java.time.Instant
@@ -81,6 +82,7 @@ object ReconcileStatus {
             append(label).append("（").append(dayRange(refusal.startMs, refusal.endMs, zone)).append("）：")
             append("伺服器偵測到要刪除 ").append(refusal.wouldDelete).append(" 筆（窗內共 ").append(refusal.checked)
             append(" 筆），因超過自動上限而保留資料。")
+            origins(refusal)?.let { append(it).append("。") }
             if (gap.confirmable) {
                 append("若你確定這些資料已在來源端（Health Connect 或寫入它的 App）刪除，可確認刪除；否則請保留。")
             } else {
@@ -111,7 +113,7 @@ object ReconcileStatus {
         val first = DialogText(
             title = "刪除伺服器上的 $count 筆${label}資料？",
             message = "資料類型：$label\n時間範圍：$range\n將刪除：$count 筆（伺服器上這段範圍共 ${refusal.checked} 筆，" +
-                "屬於這支手機）\n\n只在你確定這些紀錄已在來源端（Health Connect 或寫入它的 App）刪除時才繼續。" +
+                "屬於這支手機）" + (origins(refusal)?.let { "\n$it" } ?: "") + "\n\n只在你確定這些紀錄已在來源端（Health Connect 或寫入它的 App）刪除時才繼續。" +
                 "按下後會先重新讀取這段範圍；若數字已改變，不會刪除任何資料，並請你重新確認。",
             ok = "繼續",
         )
@@ -149,6 +151,17 @@ object ReconcileStatus {
             text = "已忽略的對帳提醒：${dismissed.joinToString("、") { HealthCatalog.label(it.dataType) }}" +
                 "（保留伺服器資料，未刪除任何資料）",
         )
+    }
+
+    /**
+     * "來自：25 筆 com.garmin.connect、2 筆其他 App" — which source apps the rows to delete came
+     * from, as the server reported it; null for servers before 0.4.3 (counts only).
+     */
+    fun origins(refusal: GapRefusal): String? {
+        if (refusal.byOrigin.isEmpty()) return null
+        return "來自：" + refusal.byOrigin.joinToString("、") { entry ->
+            if (entry.origin == OriginCount.OTHER) "${entry.count} 筆其他 App" else "${entry.count} 筆 ${entry.origin}"
+        }
     }
 
     private fun dayRange(startMs: Long, endMs: Long, zone: ZoneId): String {

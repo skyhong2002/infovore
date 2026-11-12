@@ -80,9 +80,11 @@ class ScreenUploadEngine(
     }
 
     fun upload(target: ScreenTarget): Outcome {
-        queue.prune()
+        queue.prune(destination = target.destination)
         target.problem()?.let { return Outcome(0, 0, 0, queue.count(target.destination), it) }
-        // A full quarantine stops uploads (nothing is deleted) until the user deals with it.
+        // A full quarantine stops uploads until the user deals with it. Rejected records are never
+        // deleted automatically, and the pending queue stops dropping records for their age
+        // meanwhile (the 40 MB cap still applies; see ObservationQueue.prune).
         if (queue.countRejected() >= maxRejected) return Outcome(0, 0, 0, queue.count(target.destination), QUARANTINE_FULL)
         val totals = Totals()
         var error: String? = null
@@ -161,7 +163,7 @@ class ScreenUploadEngine(
         const val MAX_BATCHES_PER_RUN = 50
         const val REJECTED_WHOLE_BATCH = "伺服器拒收了整批畫面紀錄（已隔離，未刪除）；暫停上傳到下次執行"
         const val QUARANTINE_FULL =
-            "被拒收的畫面紀錄已達上限 ${ObservationQueue.MAX_REJECTED} 筆，已停止上傳（未刪除任何紀錄）；請先放回佇列重送或刪除被拒收的紀錄"
+            "被拒收的畫面紀錄已達上限 ${ObservationQueue.MAX_REJECTED} 筆，已停止上傳；請先放回佇列重送或刪除被拒收的紀錄"
     }
 }
 

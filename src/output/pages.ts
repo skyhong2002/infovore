@@ -326,11 +326,12 @@ export function apiPage(ownerName: string, docs: ApiDocs): string {
     </tbody></table>`;
   const service = `<h2>Service</h2><table>
     <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead><tbody>
-    ${row('/status', 'Collector status: refresh schedule, database counts, last fetch and error per source, card list.')}
+    ${row('/status.json', 'Collector status as JSON: refresh schedule, public activity count, latest run per source with its error category only (no upstream details), card list, and each source\'s last fetch.')}
+    ${row('/status', 'The same freshness information as a readable HTML page for browsers; requests without <code>text/html</code> in <code>Accept</code> get the JSON above.')}
     ${row('/healthz', '<code>healthy</code>, <code>degraded</code> or <code>unhealthy</code> (HTTP 503) from source freshness.')}
-    ${row('/mcp', 'Model Context Protocol endpoint (POST) exposing the archive as tools for AI agents.')}
+    ${row('/mcp', '<code>POST</code>, not <code>GET</code>: Model Context Protocol endpoint (JSON-RPC) exposing the archive as tools for AI agents.')}
     </tbody></table>`;
-  const examples = `<h2>Examples</h2><pre><code># Everything with "Daft Punk" in it, last 90 days
+  const examples = `<h2 id="api-examples">Examples</h2><pre tabindex="0" role="region" aria-labelledby="api-examples"><code># Everything with "Daft Punk" in it, last 90 days
 curl -s '${html(docs.baseUrl)}/api/activities.json?q=Daft%20Punk&since=2026-07-06T00:00:00Z' | jq '.data[] | {title, source, occurredAt}'
 
 # Hours per platform this month

@@ -79,12 +79,18 @@ class MainActivity : AppCompatActivity() {
         handleOpenIntent(intent)
     }
 
-    /** The "同步問題" notification opens the health section. */
+    /** The "同步問題" notifications open the health section or the screen-record section. */
     private fun handleOpenIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra(EXTRA_OPEN_HEALTH, false) != true) return
+        if (intent == null) return
+        val section = when {
+            intent.getBooleanExtra(EXTRA_OPEN_HEALTH, false) -> health.section
+            intent.getBooleanExtra(EXTRA_OPEN_SCREEN, false) -> screen.section
+            else -> return
+        }
         intent.removeExtra(EXTRA_OPEN_HEALTH)
-        health.section.setExpanded(true)
-        host.scrollTo(health.section.root)
+        intent.removeExtra(EXTRA_OPEN_SCREEN)
+        section.setExpanded(true)
+        host.scrollTo(section.root)
     }
 
     override fun onResume() {
@@ -228,6 +234,9 @@ class MainActivity : AppCompatActivity() {
     companion object {
         /** Intent extra: expand and scroll to the health section (from the sync-problem notification). */
         const val EXTRA_OPEN_HEALTH = "tw.skyhong.infovore.health.OPEN_HEALTH"
+
+        /** Intent extra: expand and scroll to the screen-record section (from the quarantine warning). */
+        const val EXTRA_OPEN_SCREEN = "tw.skyhong.infovore.health.OPEN_SCREEN"
         private const val STATE_CONNECTION_OPEN = "connection_open"
         private const val STATE_HEALTH_OPEN = "health_open"
         private const val STATE_SCREEN_OPEN = "screen_open"

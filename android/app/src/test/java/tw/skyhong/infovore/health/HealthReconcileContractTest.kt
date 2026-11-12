@@ -108,6 +108,31 @@ class HealthReconcileContractTest {
     }
 
     @Test
+    fun theAppReadsTheSharedRefusalWithItsSourceAppCounts() {
+        val case = fixture["confirmedDeleteCase"].obj()
+        val expected = case["expectedRefusalWithoutConfirmation"].obj()
+        // The server's 409 body as the fixture states it (the test on the server side posts the
+        // same case and compares its response to this object).
+        val raw = org.json.JSONObject(fixtureFile().readText())
+            .getJSONObject("confirmedDeleteCase").getJSONObject("expectedRefusalWithoutConfirmation")
+        val body = org.json.JSONObject().put("error", "Reconcile refused").put("reconcile", raw).toString()
+        val refusal = requireNotNull(ReconcileRefusal.fromResponse(409, body))
+
+        assertEquals((expected["wouldDelete"] as Double).toInt(), refusal.wouldDelete)
+        assertEquals((expected["checked"] as Double).toInt(), refusal.checked)
+        @Suppress("UNCHECKED_CAST")
+        val origins = (expected["byOrigin"] as List<Map<String, Any?>>).map {
+            OriginCount(it["origin"] as String, (it["count"] as Double).toInt())
+        }
+        assertEquals(origins, refusal.byOrigin)
+        assertEquals(refusal.wouldDelete, refusal.byOrigin.sumOf { it.count })
+        // A server before 0.4.3 sends no byOrigin: same counts, no origins.
+        val legacy = org.json.JSONObject().put("reconcile", org.json.JSONObject(raw.toString()).apply { remove("byOrigin") }).toString()
+        assertEquals(ReconcileRefusal(refusal.wouldDelete, refusal.checked), ReconcileRefusal.fromResponse(409, legacy))
+        assertEquals(null, ReconcileRefusal.fromResponse(400, body))
+    }
+
+    @Test
     fun recordsAndDeletionsAreEmbeddedAsGiven() {
         val body = HealthBatchJson.body(
             "fixture-sync-0001", "fixture-device-01", Instant.parse("2026-09-10T00:00:00.123Z"),

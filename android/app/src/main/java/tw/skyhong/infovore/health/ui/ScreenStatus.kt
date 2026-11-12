@@ -1,6 +1,7 @@
 package tw.skyhong.infovore.health.ui
 
 import tw.skyhong.infovore.health.screen.ObservationQueue
+import tw.skyhong.infovore.health.screen.QuarantineAlerts
 import java.time.Instant
 import java.time.ZoneId
 
@@ -24,6 +25,8 @@ data class ScreenInputs(
     val requeueable: Int = 0,
     /** Quarantine size at which uploads stop until the user deals with it. */
     val maxRejected: Int = ObservationQueue.MAX_REJECTED,
+    /** "同步失敗時通知我" is on and POST_NOTIFICATIONS granted: quarantine warnings reach the user in the background. */
+    val notificationsOn: Boolean = true,
 )
 
 enum class ScreenState { OFF, NEEDS_SERVICE, PAUSED, RECORDING }
@@ -49,18 +52,29 @@ data class ScreenUi(
     val requeueLabel: String? = null,
     /** The quarantine is full: uploads are stopped until the user requeues or deletes records. */
     val quarantineFull: Boolean = false,
+    /**
+     * The quarantine is nearly or completely full while notifications are off: suggests turning
+     * them on, so the next warning also reaches the user in the background. Null otherwise.
+     */
+    val notificationHint: String? = null,
 )
 
 /** Maps phone screen-recording settings to UI text. Never changes any setting itself. */
 object ScreenStatus {
     const val QUARANTINE_FULL_STEP =
-        "被拒收的畫面紀錄已達上限 %d 筆，已停止上傳。被拒收的紀錄不會自動刪除，但停止上傳期間，待傳佇列仍會照常刪除超過 7 天或超出 40 MB 容量的最舊紀錄。請放回佇列重送或刪除被拒收的紀錄，讓上傳繼續。"
+        "被拒收的畫面紀錄已達上限 %d 筆，已停止上傳。被拒收的紀錄不會自動刪除；停止上傳期間，目前目的地的待傳紀錄也不會因超過 7 天而刪除（停止的時間不計入 7 天），但待傳佇列超出 40 MB 容量時仍會刪除最舊的紀錄。請放回佇列重送或刪除被拒收的紀錄，讓上傳繼續。"
+
+    const val NOTIFICATION_HINT =
+        "「同步失敗時通知我」目前關閉，所以 App 不在前景時不會提醒這個狀態。建議到「健康資料同步」區塊開啟它：被拒收的紀錄接近或達到上限時會發出通知（只含筆數，不含畫面內容）。"
 
     private fun rejectedNote(input: ScreenInputs, full: Boolean): String = buildString {
         append(input.rejected).append(" 筆畫面紀錄被伺服器拒收（HTTP 400，格式不被接受）。它們已移出上傳佇列，不會自動再送出，")
         append("也不會自動刪除。")
         if (full) {
-            append("已達上限 ").append(input.maxRejected).append(" 筆：上傳已停止，處理後才會繼續。停止期間，待傳佇列仍會刪除超過 7 天或超出 40 MB 的最舊紀錄。")
+            append("已達上限 ").append(input.maxRejected).append(" 筆：上傳已停止，處理後才會繼續。")
+            append("停止期間，目前目的地的待傳紀錄不會因超過 7 天而刪除，但待傳佇列超出 40 MB 時仍會刪除最舊的紀錄。")
+        } else if (QuarantineAlerts.level(input.rejected, input.maxRejected) == QuarantineAlerts.Level.NEAR) {
+            append("已接近上限：達 ").append(input.maxRejected).append(" 筆時會停止上傳，請儘早處理。")
         } else {
             append("其他紀錄照常上傳；達 ").append(input.maxRejected).append(" 筆時會停止上傳。")
         }
@@ -82,7 +96,8 @@ object ScreenStatus {
             paused -> ScreenState.PAUSED
             else -> ScreenState.RECORDING
         }
-        val quarantineFull = input.rejected >= input.maxRejected
+        val quarantineLevel = QuarantineAlerts.level(input.rejected, input.maxRejected)
+        val quarantineFull = quarantineLevel == QuarantineAlerts.Level.FULL
         val pausedUntil = Instant.ofEpochMilli(input.pausedUntilMs)
         val headline = when (state) {
             ScreenState.OFF -> "記錄已關閉"
@@ -127,6 +142,11 @@ object ScreenStatus {
             ScreenState.NEEDS_SERVICE -> "等待開啟無障礙服務"
             ScreenState.PAUSED -> "已暫停"
             ScreenState.RECORDING -> "記錄中"
+        } + when (quarantineLevel) {
+            // Visible on the collapsed header, without opening the section.
+            QuarantineAlerts.Level.FULL -> " · 上傳已停止"
+            QuarantineAlerts.Level.NEAR -> " · 被拒收 ${input.rejected} 筆"
+            QuarantineAlerts.Level.NONE -> ""
         } + if (input.pending > 0) " · 佇列 ${input.pending} 筆" else ""
         val uploadHint = when {
             !input.tokenConfigured -> "需先儲存 DAYFLOW_PHONE_TOKEN"
@@ -154,6 +174,7 @@ object ScreenStatus {
             rejectedNote = if (input.rejected > 0) rejectedNote(input, quarantineFull) else null,
             requeueLabel = if (input.requeueable > 0) "放回佇列重送（${input.requeueable} 筆）" else null,
             quarantineFull = quarantineFull,
+            notificationHint = if (quarantineLevel != QuarantineAlerts.Level.NONE && !input.notificationsOn) NOTIFICATION_HINT else null,
         )
     }
 }

@@ -156,7 +156,7 @@ class ScreenQuarantineTest {
     }
 
     @Test
-    fun aFullQuarantineSaysThePendingQueueIsStillPruned() {
+    fun aFullQuarantineSaysPendingRecordsAreKeptPastSevenDaysButNotPastTheSizeCap() {
         val base = tw.skyhong.infovore.health.ui.ScreenInputs(
             recordingEnabled = true, pausedUntilMs = 0, serviceEnabled = true, tokenConfigured = true, pending = 5,
             lastCaptureAtMs = 0, lastUploadStatus = "尚未上傳", nowMs = 0, zone = java.time.ZoneOffset.UTC,
@@ -164,7 +164,7 @@ class ScreenQuarantineTest {
         val ui = tw.skyhong.infovore.health.ui.ScreenStatus.map(base.copy(rejected = 500, maxRejected = 500))
         assertTrue(ui.quarantineFull)
         for (text in listOf(ui.rejectedNote!!, ui.nextStep!!)) {
-            assertTrue(text, text.contains("超過 7 天") && text.contains("40 MB"))
+            assertTrue(text, text.contains("不會因超過 7 天而刪除") && text.contains("40 MB") && text.contains("仍會刪除最舊的紀錄"))
             assertTrue(text, !text.contains("不會自動刪除任何紀錄"))
         }
     }

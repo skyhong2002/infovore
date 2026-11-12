@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { Repository } from '../src/data/database.js';
 import { createIngestApp } from '../src/ingest.js';
-import { HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES, MAX_RECONCILE_RECORD_IDS } from '../src/health/types.js';
+import { countByOrigin, HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES, MAX_ORIGIN_COUNTS, MAX_RECONCILE_RECORD_IDS } from '../src/health/types.js';
 import type { HealthConnectBatchInput, HealthConnectRecordInput } from '../src/health/types.js';
 
 // Synthetic fixtures only: invented ids, devices and step counts.
@@ -158,7 +158,7 @@ test('The ingest endpoint validates reconcile windows and reports refusals', asy
     const refused = await post(batch('fixture-http-refused', phone, [], { reconcile: reconcile([]) as never }));
     assert.equal(refused.status, 409);
     const refusal = await refused.json() as { reconcile: { status: string; wouldDelete: number; checked: number } };
-    assert.deepEqual(refusal.reconcile, { status: 'rejected', wouldDelete: 30, checked: 30 });
+    assert.deepEqual(refusal.reconcile, { status: 'rejected', wouldDelete: 30, checked: 30, byOrigin: [{ origin: 'com.garmin.fixture', count: 30 }] });
     assert.equal(ids(repository).length, 30);
 
     const accepted = await post(batch('fixture-http-ok', phone, [], { reconcile: reconcile(seed.slice(1).map((row) => row.id)) as never }));
@@ -310,6 +310,7 @@ test('A confirmed deletion with the exact count goes beyond the limits and is au
     assert.equal(result.deleted, 25);
     assert.deepEqual(result.reconciled, {
       dataType: 'steps', start: windowStart, end: windowEnd, checked: 30, deleted: 25, confirmed: true,
+      byOrigin: [{ origin: 'com.garmin.fixture', count: 25 }],
     });
     assert.deepEqual(ids(repository), stored.slice(0, 5));
     const rows = audit(repository);
@@ -387,11 +388,12 @@ test('Over HTTP, confirmDelete is validated, refusals carry only counts, and old
     }
     assert.equal(ids(repository).length, 30, 'invalid confirmations delete nothing');
 
-    // An old client (no confirmDelete) gets exactly the same refusal as before.
+    // An old client (no confirmDelete) gets the same counts as before; the added
+    // byOrigin (source-app counts only) is a new field such clients ignore.
     const legacy = await post(batch('fixture-http-legacy', phone, [], { reconcile: reconcile(stored.slice(0, 5)) as never }));
     assert.equal(legacy.status, 409);
     const legacyBody = await legacy.json() as Record<string, unknown>;
-    assert.deepEqual(legacyBody.reconcile, { status: 'rejected', wouldDelete: 25, checked: 30 });
+    assert.deepEqual(legacyBody.reconcile, { status: 'rejected', wouldDelete: 25, checked: 30, byOrigin: [{ origin: 'com.garmin.fixture', count: 25 }] });
 
     // A wrong count is refused with fresh counts and no record content.
     const mismatch = await post(batch('fixture-http-mismatch', phone, [], {
@@ -399,7 +401,7 @@ test('Over HTTP, confirmDelete is validated, refusals carry only counts, and old
     }));
     assert.equal(mismatch.status, 409);
     const mismatchText = await mismatch.text();
-    assert.deepEqual((JSON.parse(mismatchText) as Record<string, unknown>).reconcile, { status: 'rejected', wouldDelete: 25, checked: 30 });
+    assert.deepEqual((JSON.parse(mismatchText) as Record<string, unknown>).reconcile, { status: 'rejected', wouldDelete: 25, checked: 30, byOrigin: [{ origin: 'com.garmin.fixture', count: 25 }] });
     assert.ok(!stored.some((id) => mismatchText.includes(id)));
     assert.equal(ids(repository).length, 30);
 
@@ -433,6 +435,88 @@ test('Migration 20 adds the confirmed-deletion audit table', () => {
       'id', 'confirmed_at', 'device_id', 'data_type', 'window_start', 'window_end', 'deleted_count', 'checked_count',
     ]);
     assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 21);
+  } finally {
+    repository.close();
+  }
+});
+
+test('A reader that misses a record crossing or reaching the window end never gets it deleted', () => {
+  // HealthConnectReaderTest (Android) pins that FakeHealthConnectClient only returns interval
+  // records ending before the read range's end, so a record starting in the window and ending at
+  // or after its end is missing from that window's recordIds. The server only deletes rows that
+  // end before the window end, so such rows survive the reconcile; rows fully inside still go.
+  const repository = new Repository(':memory:');
+  try {
+    repository.ingestHealthConnect(batch('fixture-crossing-seed', phone, [
+      steps('listed', '2026-09-07T20:00:00.000Z', '2026-09-07T20:15:00.000Z'),
+      steps('deleted-at-source', '2026-09-07T21:00:00.000Z', '2026-09-07T21:15:00.000Z'),
+      steps('long-sleep-like', '2026-09-07T22:00:00.000Z', '2026-09-08T06:00:00.000Z'),
+      steps('ends-at-window-end', '2026-09-07T23:00:00.000Z', windowEnd),
+    ]), received);
+    // The fake reader listed only `listed`: neither edge record is in recordIds.
+    const result = repository.ingestHealthConnect(batch('fixture-crossing-rescan', phone, [], {
+      reconcile: { dataType: 'steps', start: windowStart, end: windowEnd, recordIds: ['listed'] },
+    }), received);
+    assert.deepEqual(result.reconciled, { dataType: 'steps', start: windowStart, end: windowEnd, checked: 2, deleted: 1 });
+    assert.deepEqual(ids(repository), ['ends-at-window-end', 'listed', 'long-sleep-like']);
+  } finally {
+    repository.close();
+  }
+});
+
+test('Source-app counts list at most ten apps, largest first, and merge the rest into other', () => {
+  assert.deepEqual(countByOrigin([]), []);
+  assert.deepEqual(countByOrigin(['b.app', 'a.app', 'b.app', 'c.app', 'a.app', 'b.app']), [
+    { origin: 'b.app', count: 3 }, { origin: 'a.app', count: 2 }, { origin: 'c.app', count: 1 },
+  ]);
+  const many = Array.from({ length: 12 }, (_, index) => `com.example.app${String(index).padStart(2, '0')}`);
+  const origins = many.flatMap((origin, index) => Array(12 - index).fill(origin));
+  const counted = countByOrigin(origins);
+  assert.equal(counted.length, MAX_ORIGIN_COUNTS + 1);
+  assert.deepEqual(counted.slice(0, 2), [{ origin: many[0], count: 12 }, { origin: many[1], count: 11 }]);
+  // app10 (2 rows) and app11 (1 row) are merged.
+  assert.deepEqual(counted.at(-1), { origin: 'other', count: 3 });
+  assert.equal(counted.reduce((sum, entry) => sum + entry.count, 0), origins.length);
+});
+
+test('A refused or confirmed deletion reports which source apps the deleted rows came from', async () => {
+  const repository = new Repository(':memory:');
+  const ingest = createIngestApp(repository);
+  const headers = { 'content-type': 'application/json', authorization: 'Bearer test-token-with-at-least-32-characters' };
+  const post = (body: unknown) => ingest.request('/api/ingest/health-connect', { method: 'POST', headers, body: JSON.stringify(body) });
+  try {
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      ...steps(`origin-${String(index).padStart(2, '0')}`, new Date(Date.parse(windowStart) + index * 3_600_000).toISOString()),
+      dataOrigin: index < 20 ? 'com.garmin.fixture' : index < 27 ? 'com.fitbit.fixture' : 'com.example.kept',
+    }));
+    assert.equal((await post(batch('fixture-origin-seed', phone, rows))).status, 201);
+    // The phone still has the three com.example.kept rows; the other 27 would go.
+    const keep = rows.slice(27).map((row) => row.id);
+    const window = { dataType: 'steps', start: windowStart, end: windowEnd, recordIds: keep };
+    const expectedOrigins = [{ origin: 'com.garmin.fixture', count: 20 }, { origin: 'com.fitbit.fixture', count: 7 }];
+
+    const refused = await post(batch('fixture-origin-refused', phone, [], { reconcile: window as never }));
+    assert.equal(refused.status, 409);
+    const text = await refused.text();
+    assert.deepEqual((JSON.parse(text) as { reconcile: unknown }).reconcile,
+      { status: 'rejected', wouldDelete: 27, checked: 30, byOrigin: expectedOrigins });
+    // Counts and package names only: no record ids or health values.
+    assert.ok(!rows.some((row) => text.includes(row.id)));
+    assert.ok(!text.includes('com.example.kept'));
+    assert.ok(!text.includes('"count":100'));
+
+    const confirmed = await post(batch('fixture-origin-confirmed', phone, [], {
+      reconcile: { ...window, confirmDelete: { expected: 27 } } as never,
+    }));
+    assert.equal(confirmed.status, 200);
+    const body = await confirmed.json() as { reconciled: { byOrigin?: unknown; deleted: number } };
+    assert.equal(body.reconciled.deleted, 27);
+    assert.deepEqual(body.reconciled.byOrigin, expectedOrigins);
+    assert.deepEqual(ids(repository), keep);
+
+    // An ordinary (unconfirmed) reconcile response does not carry it.
+    const ordinary = await post(batch('fixture-origin-ordinary', phone, [], { reconcile: window as never }));
+    assert.equal((await ordinary.json() as { reconciled: { byOrigin?: unknown } }).reconciled.byOrigin, undefined);
   } finally {
     repository.close();
   }

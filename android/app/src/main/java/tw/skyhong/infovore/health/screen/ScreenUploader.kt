@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import tw.skyhong.infovore.health.DestinationChange
 import tw.skyhong.infovore.health.InfovoreApi
+import tw.skyhong.infovore.health.QuarantineNotifier
 import tw.skyhong.infovore.health.SecureSettings
 import java.time.Instant
 
@@ -31,8 +32,12 @@ object ScreenUploader {
                 val response = InfovoreApi(target.endpoint).postJson(OBSERVATIONS_PATH, target.token, body)
                 ObservationTransport.Response(response.optInt("accepted"), response.optInt("duplicates"))
             }
-            val engine = ScreenUploadEngine(ObservationQueue.get(app), transport)
-            engine.upload(currentTarget(app)).also { record(ScreenSettings(app), it) }
+            val queue = ObservationQueue.get(app)
+            val target = currentTarget(app)
+            ScreenUploadEngine(queue, transport).upload(target).also {
+                record(ScreenSettings(app), it)
+                QuarantineNotifier.record(app, queue.countRejected(), queue.count(target.destination))
+            }
         }
     }
 
@@ -77,6 +82,7 @@ object ScreenUploader {
     fun deleteRejected(context: Context): Int? {
         var removed: Int? = null
         tryExclusive { removed = ObservationQueue.get(context).removeRejected() }
+        if (removed != null) recheckQuarantine(context)
         return removed
     }
 
@@ -87,7 +93,14 @@ object ScreenUploader {
     fun requeueRejected(context: Context): Int? {
         var moved: Int? = null
         tryExclusive { moved = ObservationQueue.get(context).requeueRejected(currentDestination(context)) }
+        if (moved != null) recheckQuarantine(context)
         return moved
+    }
+
+    /** After the user dealt with the quarantine: removes a warning that no longer applies. */
+    private fun recheckQuarantine(context: Context) {
+        val queue = ObservationQueue.get(context)
+        QuarantineNotifier.record(context.applicationContext, queue.countRejected(), queue.count(currentDestination(context)))
     }
 
     private fun record(settings: ScreenSettings, outcome: ScreenUploadEngine.Outcome) {

@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.4.2) reads selected records from Android Health Connect and
+This private companion (current version 0.4.3) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -66,7 +66,8 @@ always starts collapsed. Each section header shows its current state.
   36 hours) it posts one notification on the **同步問題** channel that opens the
   health section. Retries within one six-hour period do not count. The text has
   only the failure count, never health values, error details or tokens. Any
-  successful full sync resets the count and removes the notification.
+  successful full sync resets the count and removes the notification. The same
+  switch also covers the screen recorder's quarantine (see 手機 Dayflow).
 - The UI supports TalkBack (section headings, expand/collapse state, field
   labels and errors), large fonts, 48 dp touch targets, dark mode, and
   edge-to-edge insets.
@@ -121,8 +122,16 @@ windows: `{dataType, start, end, recordIds}` listing every record id that
 starts in the window (long histories are split into windows of at most 2,000
 ids, cut only between distinct start times; the server accepts at most 5,000).
 In the same transaction the server deletes only rows that came from this
-device (`deviceId`), have that data type, start in `[start, end)`, end no later
-than `end`, and are not listed. It refuses the window (HTTP 409, nothing
+device (`deviceId`), have that data type, start in `[start, end)`, end before
+`end`, and are not listed. A row that reaches the window end or beyond is never
+deleted by that window (since 0.4.3; before, a row ending exactly at `end` could
+be): Health Connect may leave such records out of a complete read (the official
+`FakeHealthConnectClient` only returns interval records ending before the range
+end), so their absence proves nothing. The cost is the other way round: such a
+record deleted at the source stays on the server until a later reconcile window
+contains it entirely, typically the next history scan, which ends at that
+scan's "now"; a re-verified gap that ends at a past time does not remove a
+sleep session crossing that time. It refuses the window (HTTP 409, nothing
 deleted) when that would remove more than 20 rows and either more than 10% of
 the device's stored rows in the window or more than 200 rows, and answers 400 to malformed or oversized
 windows. Batches without `reconcile` behave exactly as before.
@@ -157,11 +166,16 @@ A legitimate large deletion at the source (for example removing a duplicate
 writer app from Health Connect) is refused by the server's automatic limits
 every time, so since 0.4.1 the app keeps the counts of a refused (HTTP 409)
 window with its gap: `{window, wouldDelete, checked, sentIds}` (counts and
-times only). The box then says **伺服器偵測到要刪除 N 筆（窗內共 M 筆），因超過自動上限而保留資料**
+times only). Since 0.4.3 the server's 409 also carries
+`byOrigin: [{origin, count}]`, how many of the rows it would delete came from
+each source app (`data_origin`, a package name; at most 10 apps, largest first,
+the rest merged as `other`; never record ids or values), and the app keeps it
+with the gap. The box then says **伺服器偵測到要刪除 N 筆（窗內共 M 筆），因超過自動上限而保留資料**
+(plus **來自：X 筆 com.example.app、…** when the server reported origins)
 and offers two choices:
 
 - **我確認來源端已刪除，刪除這 N 筆**: two dialogs, the first naming the data
-  type, the time range and the count, the second stating that it cannot be
+  type, the time range, the count and (when reported) the source apps, the second stating that it cannot be
   undone. Only then does the app re-read that window completely. If the
   re-read lists a different number of records than the refused request did,
   nothing is sent and the reminder asks the user to re-verify and confirm the
@@ -171,8 +185,9 @@ and offers two choices:
   (`MAX_CONFIRMED_RECONCILE_DELETES`), and in the same transaction writes an
   audit row to `health_connect_confirmed_deletes` (migration 20: time, device
   id, data type, window, deleted and checked counts; no record ids or health
-  values). Any other count gets a 409 with the new `wouldDelete`/`checked`
-  (never record content), nothing is deleted, and the reminder shows the new
+  values). The confirmed response also carries `reconciled.byOrigin`. Any other
+  count gets a 409 with the new `wouldDelete`/`checked`/`byOrigin` (never record
+  content), nothing is deleted, and the reminder shows the new
   number for a fresh confirmation. After a confirmed deletion the rest of the
   gap is re-verified under the normal limits. Above 2,000 rows the app offers
   no confirmation at all. A server older than 0.4.1 rejects the unknown field
@@ -234,7 +249,8 @@ Capture runs only while recording is enabled and not paused (**暫停 1 小時**
 and only while the screen is on and unlocked: once a minute, plus on a
 foreground-app change (at most one capture per five seconds). Observations are
 queued as JSON files in the app's no-backup storage (capped at about 40 MB;
-items older than seven days are dropped) and uploaded in batches of at most 40
+items older than seven days are dropped, except while a full quarantine stops
+uploads, see below) and uploaded in batches of at most 40
 items and 6 MB to `POST /api/ingest/dayflow-phone/observations`: every five
 minutes from the service while online, every 15 minutes via WorkManager as a
 fallback, and on **立即上傳**. Files are deleted only after the server
@@ -253,9 +269,22 @@ destination back into its upload queue, for when a server-side problem
 rejected valid records. Records of another destination, records quarantined
 before 0.4.1 (destination unknown) and records older than the queue's
 seven-day limit cannot go back and can only be deleted. The quarantine holds
-at most 500 records: at that size every upload stops (nothing is deleted, new
-captures stay queued under the usual 40 MB / seven-day limits) and the section
-says so until the user puts records back or deletes them. If every record of a
+at most 500 records: at that size every upload stops and the section says so
+(also on its collapsed header, **上傳已停止**) until the user puts records back
+or deletes them. Quarantined records are never deleted automatically. Since
+0.4.3 the time uploads stay stopped does not count toward the current
+destination's seven-day limit (the queue persists the stop period in
+`screen-queue/age-hold`), so records waiting only because of the stop are not
+dropped for their age, and after the user deals with the quarantine they get
+the rest of their seven days to upload. The 40 MB cap still applies throughout
+and drops the oldest records first, so a stop lasting long enough still loses
+records; records of other destinations keep the plain seven-day rule. The
+quarantine warns once at 80% (400 records, **被拒收 N 筆** on the collapsed
+header) and once when full: with **同步失敗時通知我** on and the permission
+granted, a notification on the **同步問題** channel (counts only: rejected and
+pending records, never screen content or app names) opens this section, and is
+removed once the user brings the quarantine back down. With notifications off,
+the section shows the state and suggests turning them on. If every record of a
 batch is rejected, the run stops after quarantining that batch so a
 server-side problem cannot drain the queue.
 
@@ -293,10 +322,14 @@ payload field by field against `tests/fixtures/health-reconcile-contract.json`,
 which the server's `tests/health-reconcile-contract.test.ts` parses and ingests.
 `HealthConnectReaderTest` runs the real `HealthConnectReader` over the official
 `FakeHealthConnectClient` (`androidx.health.connect:connect-testing`) into the
-real engine: paging, window edges, read order, permissions and change tokens.
+real engine: paging (including records sharing one start time across a page
+boundary), window edges, read order, permissions and change tokens.
 The fake keeps insertion order, ignores `ascendingOrder`, only matches interval
-records that lie fully inside the time range, and its `nextChangesToken` misses
-later changes; the test's comments say where each of these matters.
+records that lie fully inside the time range (ending before its end), and its
+`nextChangesToken` misses later changes; the test's comments say where each of
+these matters. A record the fake leaves out because it reaches the window end
+is not deleted by the server, which only deletes rows ending before the window
+end (`tests/health-reconcile.test.ts` covers that case).
 
 ### Private HTTP host
 

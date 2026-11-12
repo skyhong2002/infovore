@@ -138,14 +138,7 @@ class InfovoreApi(endpoint: String) {
     ) : IllegalStateException(message)
 
     private companion object {
-        fun refusalOf(status: Int, responseText: String): ReconcileRefusal? {
-            if (status != 409) return null
-            val reconcile = runCatching { JSONObject(responseText).optJSONObject("reconcile") }.getOrNull() ?: return null
-            if (reconcile.optString("status") != "rejected") return null
-            val wouldDelete = reconcile.optInt("wouldDelete", -1)
-            val checked = reconcile.optInt("checked", -1)
-            return if (wouldDelete >= 0 && checked >= 0) ReconcileRefusal(wouldDelete, checked) else null
-        }
+        fun refusalOf(status: Int, responseText: String): ReconcileRefusal? = ReconcileRefusal.fromResponse(status, responseText)
 
         const val MAX_ATTEMPTS = 4
         val RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L, 4_000L)
