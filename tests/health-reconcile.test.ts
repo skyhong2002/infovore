@@ -229,3 +229,38 @@ test('Migration 19 records the uploading device, backfilling only an unambiguous
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('Large windows may only lose a small share, and never more than 200 rows at once', () => {
+  const day = (index: number) => new Date(Date.parse(windowStart) + (index % 6) * 86_400_000 + index * 1000).toISOString();
+  const fill = (repository: Repository, count: number) => {
+    const rows = Array.from({ length: count }, (_, index) => steps(`bulk-${String(index).padStart(5, '0')}`, day(index)));
+    repository.ingestHealthConnect(batch(`fixture-bulk-${count}`, phone, rows), received);
+    return rows.map((row) => row.id);
+  };
+  const small = new Repository(':memory:');
+  try {
+    const stored = fill(small, 1000);
+    // 99 of 1,000 (under 10%) is accepted.
+    const result = small.ingestHealthConnect(batch('fixture-bulk-ok', phone, [], {
+      reconcile: { dataType: 'steps', start: windowStart, end: windowEnd, recordIds: stored.slice(99) },
+    }), received);
+    assert.equal(result.deleted, 99);
+    // 150 of the remaining 901 (over 10%) is refused.
+    assert.throws(() => small.ingestHealthConnect(batch('fixture-bulk-share', phone, [], {
+      reconcile: { dataType: 'steps', start: windowStart, end: windowEnd, recordIds: stored.slice(249) },
+    }), received), HealthReconcileRejected);
+  } finally {
+    small.close();
+  }
+  const large = new Repository(':memory:');
+  try {
+    const stored = fill(large, 3000);
+    // 250 of 3,000 is under 10% but over the absolute ceiling.
+    assert.throws(() => large.ingestHealthConnect(batch('fixture-bulk-cap', phone, [], {
+      reconcile: { dataType: 'steps', start: windowStart, end: windowEnd, recordIds: stored.slice(250) },
+    }), received), HealthReconcileRejected);
+    assert.equal(ids(large).length, 3000);
+  } finally {
+    large.close();
+  }
+});

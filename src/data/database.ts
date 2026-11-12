@@ -25,9 +25,11 @@ import type {
 import { HealthReconcileRejected } from '../health/types.js';
 
 // A reconcile window may delete up to this many rows without question; above
-// it, deleting more than this share of the window's stored rows is refused.
+// it, the deletion must stay within this share of the window's stored rows and
+// under an absolute ceiling, or the whole batch is refused.
 const RECONCILE_MAX_SILENT_DELETES = 20;
-const RECONCILE_MAX_DELETE_SHARE = 0.5;
+const RECONCILE_MAX_DELETE_SHARE = 0.1;
+const RECONCILE_MAX_DELETES = 200;
 
 export interface SyncRun {
   id: number;
@@ -1626,7 +1628,8 @@ export class Repository {
     });
     const keep = new Set(window.recordIds);
     const stale = inWindow.filter((row) => !keep.has(row.record_id));
-    if (stale.length > RECONCILE_MAX_SILENT_DELETES && stale.length > inWindow.length * RECONCILE_MAX_DELETE_SHARE) {
+    if (stale.length > RECONCILE_MAX_SILENT_DELETES
+      && (stale.length > inWindow.length * RECONCILE_MAX_DELETE_SHARE || stale.length > RECONCILE_MAX_DELETES)) {
       throw new HealthReconcileRejected(stale.length, inWindow.length);
     }
     let deleted = 0;

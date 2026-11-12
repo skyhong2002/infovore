@@ -115,8 +115,8 @@ ids, cut only between distinct start times; the server accepts at most 5,000).
 In the same transaction the server deletes only rows that came from this
 device (`deviceId`), have that data type, start in `[start, end)`, end no later
 than `end`, and are not listed. It refuses the window (HTTP 409, nothing
-deleted) when that would remove more than 20 rows and more than half of the
-device's stored rows in the window, and answers 400 to malformed or oversized
+deleted) when that would remove more than 20 rows and either more than 10% of
+the device's stored rows in the window or more than 200 rows, and answers 400 to malformed or oversized
 windows. Batches without `reconcile` behave exactly as before.
 
 A type that could not be fully re-verified (the server refused or does not

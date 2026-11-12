@@ -25,7 +25,7 @@ const tokens = `
   --text:#15171c;--muted:#565d67;--quiet:#5f6670;
   --accent:#3d5f8f;--accent-strong:#2b4a76;--accent-soft:rgba(61,95,143,.1);
   --gold:#7a5c2c;--brand-blue:#5e7599;--brand-gold:#a07f4a;--violet:#5e6168;--green:#179f46;
-  --ok:#146c38;--warn:#7a4e0d;
+  --ok:#0f5c2f;--warn:#7a4e0d;
   --shadow:0 1px 2px rgba(21,23,28,.05),0 10px 30px -20px rgba(21,23,28,.25);
   --header-bg:rgba(244,243,239,.8);
 }
@@ -36,7 +36,7 @@ const tokens = `
   --text:#15171c;--muted:#565d67;--quiet:#5f6670;
   --accent:#3d5f8f;--accent-strong:#2b4a76;--accent-soft:rgba(61,95,143,.1);
   --gold:#7a5c2c;--brand-blue:#5e7599;--brand-gold:#a07f4a;--violet:#5e6168;--green:#179f46;
-  --ok:#146c38;--warn:#7a4e0d;
+  --ok:#0f5c2f;--warn:#7a4e0d;
   --shadow:0 1px 2px rgba(21,23,28,.05),0 10px 30px -20px rgba(21,23,28,.25);
   --header-bg:rgba(244,243,239,.8);
 }}
@@ -278,7 +278,7 @@ th[data-sort]{user-select:none}.th-sort{background:none;border:0;color:inherit;c
 .search-form button{background:var(--text);border:0;border-radius:12px;color:var(--bg);cursor:pointer;font:inherit;font-weight:700;padding:0 20px}
 .search-filters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 20px}
 .search-filters a{align-items:center;border:1px solid var(--line);border-radius:999px;color:var(--muted);display:inline-flex;font-size:13px;min-height:36px;padding:6px 13px;text-decoration:none}
-.search-filters a:hover,.search-filters a[aria-current=true]{background:var(--surface-raised);border-color:var(--line-strong);color:var(--text)}
+.search-filters small{font-size:12px}.search-filters a:hover,.search-filters a[aria-current=true]{background:var(--surface-raised);border-color:var(--line-strong);color:var(--text)}
 .details-toggle{align-items:center;background:var(--surface-raised);color:var(--muted);cursor:pointer;display:flex;font-size:13px;font-weight:500;gap:12px;justify-content:space-between;list-style:none;padding:10px 16px;user-select:none}.details-toggle::-webkit-details-marker{display:none}.details-toggle::after{color:var(--accent);content:"Show"}details[open]>.details-toggle::after{content:"Hide"}.details-toggle:hover{color:var(--text)}
 .pager{display:flex;gap:10px;justify-content:space-between;margin-top:24px}
 .platform-layout{align-items:start;display:grid;gap:20px;grid-template-columns:minmax(0,1fr) 300px;margin-top:24px}
