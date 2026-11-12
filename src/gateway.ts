@@ -1,7 +1,7 @@
 import { securityHeaders } from './security-headers.js';
 import { homeSnapshot } from './home-snapshot.js';
 import { fork, type ChildProcess } from 'node:child_process';
-import { createServer, request, type IncomingHttpHeaders, type ServerResponse } from 'node:http';
+import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http';
 
 // delayed/delayAfterHours: the source's own (informational) delay threshold; absent from older backends.
 export interface SourceHealth {
@@ -96,8 +96,8 @@ export function startGateway(options: {
     }
     if (home.serve(req, res)) return;
     const error = transportError();
-    if (!backendPort || error) return json(res, 503, { error: error ?? 'backend_starting' });
-    if (inFlight >= maxInFlight) return json(res, 503, { error: 'backend_busy' });
+    if (!backendPort || error) return unavailable(req, res, error ?? 'backend_starting');
+    if (inFlight >= maxInFlight) return unavailable(req, res, 'backend_busy');
     inFlight++;
     // Streaming proxy: preserve binary, compressed, MCP/SSE, Host, methods,
     // authorization, status codes and headers without buffering response bodies.
@@ -116,7 +116,7 @@ export function startGateway(options: {
     // On deadline the client gets 503, but admission stays occupied until the
     // actual backend response settles. Never race a DB write then start another
     // copy of it, or accumulate an unbounded queue of abandoned operations.
-    const timer = setTimeout(() => { json(res, 503, { error: 'backend_deadline' }); }, deadlineMs);
+    const timer = setTimeout(() => { unavailable(req, res, 'backend_deadline'); }, deadlineMs);
     upstream.on('response', (response) => {
       responding = true;
       clearTimeout(timer);
@@ -129,7 +129,7 @@ export function startGateway(options: {
         response.pipe(res);
       }
     });
-    upstream.on('error', () => { finish(); json(res, 503, { error: 'backend_unavailable' }); });
+    upstream.on('error', () => { finish(); unavailable(req, res, 'backend_unavailable'); });
     req.on('aborted', () => upstream.destroy());
     res.on('close', () => { if (responding && !res.writableFinished) upstream.destroy(); });
     req.pipe(upstream);
@@ -145,6 +145,22 @@ export function startGateway(options: {
     server.close();
     if (child.connected) child.disconnect();
   } };
+}
+
+// A temporary 503 from the gateway. Browsers asking for a page get a short,
+// readable page with a retry link; scripts and APIs keep the JSON body. Both
+// carry Retry-After so clients back off instead of hammering a busy backend.
+const UNAVAILABLE_RETRY_SECONDS = 15;
+function unavailable(req: IncomingMessage, res: ServerResponse, reason: string): void {
+  if (res.headersSent || res.writableEnded || res.destroyed) return;
+  const wantsPage = (req.method === 'GET' || req.method === 'HEAD') && (req.headers.accept ?? '').includes('text/html');
+  if (!wantsPage) {
+    res.setHeader('Retry-After', String(UNAVAILABLE_RETRY_SECONDS));
+    return json(res, 503, { error: reason });
+  }
+  const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Busy for a moment · infovore</title><style>body{background:#0e0f12;color:#f3f4f6;font:16px/1.6 system-ui,sans-serif;margin:0;padding:48px 20px}main{margin:0 auto;max-width:560px}h1{font-size:26px;margin:0 0 12px}p{color:#c4c9d0}a{color:#a9c1e6;display:inline-block;padding:10px 0}@media(prefers-color-scheme:light){body{background:#f4f3ef;color:#15171c}p{color:#3f454e}a{color:#2b4a76}}</style></head><body><main><h1>infovore is busy for a moment</h1><p>The site is starting up or handling too many requests. Nothing is lost: the data is safe and the page should work again within about ${UNAVAILABLE_RETRY_SECONDS} seconds.</p><p><a href="">Try again</a></p></main></body></html>`;
+  res.writeHead(503, { ...securityHeaders, 'Content-Type': 'text/html; charset=UTF-8', 'Cache-Control': 'no-store', 'Retry-After': String(UNAVAILABLE_RETRY_SECONDS) });
+  res.end(req.method === 'HEAD' ? undefined : page);
 }
 
 function json(res: ServerResponse, status: number, value: unknown, head = false): void {

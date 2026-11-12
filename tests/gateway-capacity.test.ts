@@ -24,7 +24,19 @@ test('deadlined async work retains bounded capacity and health never reports hea
   const stalled = await fetch(`${base}/stall`);
   assert.equal(stalled.status, 503);
   assert.equal((await stalled.json() as any).error, 'backend_deadline');
-  assert.equal((await fetch(`${base}/other`).then((r) => r.json()) as any).error, 'backend_busy');
+  const busyApi = await fetch(`${base}/other`);
+  assert.equal(busyApi.headers.get('retry-after'), '15');
+  assert.equal((await busyApi.json() as any).error, 'backend_busy');
+  // A browser asking for a page gets a readable page with a retry link, not JSON.
+  const busyPage = await fetch(`${base}/other`, { headers: { accept: 'text/html,application/xhtml+xml' } });
+  assert.equal(busyPage.status, 503);
+  assert.match(busyPage.headers.get('content-type') ?? '', /text\/html/);
+  assert.equal(busyPage.headers.get('retry-after'), '15');
+  assert.equal(busyPage.headers.get('x-content-type-options'), 'nosniff');
+  const busyHtml = await busyPage.text();
+  assert.match(busyHtml, /busy for a moment/);
+  assert.match(busyHtml, /<a href="">Try again<\/a>/);
+  assert.doesNotMatch(busyHtml, /<script/);
   const saturated = await fetch(`${base}/healthz`);
   assert.equal(saturated.status, 503);
   const body = await saturated.json() as any;
