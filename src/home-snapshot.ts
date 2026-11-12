@@ -1,3 +1,4 @@
+import { securityHeaders } from './security-headers.js';
 import { gzip } from 'node:zlib';
 import { request, type IncomingMessage, type ServerResponse } from 'node:http';
 
@@ -85,7 +86,7 @@ export function homeSnapshot(options: HomeOptions) {
     if (page && ageMs > maxAgeMs) page = null;
     if (!page) {
       refresh();
-      res.writeHead(503, { 'Content-Type': 'application/json; charset=UTF-8', 'Cache-Control': 'no-store' });
+      res.writeHead(503, { ...securityHeaders, 'Content-Type': 'application/json; charset=UTF-8', 'Cache-Control': 'no-store' });
       res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ error: 'home_snapshot_unavailable' }));
       return true;
     }
@@ -96,7 +97,7 @@ export function homeSnapshot(options: HomeOptions) {
     });
     const body = gzipAccepted ? page.zipped : page.body;
     const stale = ageMs >= refreshMs || Boolean(error || options.backendError());
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=UTF-8', 'Cache-Control': 'no-store',
+    res.writeHead(200, { ...securityHeaders, 'Content-Type': 'text/html; charset=UTF-8', 'Cache-Control': 'no-store',
       'X-Home-Generated-At': new Date(page.generatedAt).toISOString(), Age: String(Math.floor(ageMs / 1000)),
       'X-Home-Stale': String(stale), 'X-Home-Error': error ?? options.backendError() ?? 'none',
       'Content-Length': String(body.length), Vary: 'Accept-Encoding',

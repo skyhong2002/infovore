@@ -1,3 +1,4 @@
+import { securityHeaders } from './security-headers.js';
 import { homeSnapshot } from './home-snapshot.js';
 import { fork, type ChildProcess } from 'node:child_process';
 import { createServer, request, type IncomingHttpHeaders, type ServerResponse } from 'node:http';
@@ -83,7 +84,7 @@ export function startGateway(options: {
     // Static and backend-independent: a robots.txt 5xx makes Google treat the
     // whole host as unavailable and pause crawling.
     if (path === '/robots.txt' && options.robotsTxt !== undefined && (req.method === 'GET' || req.method === 'HEAD')) {
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=UTF-8', 'Cache-Control': 'public, max-age=3600',
+      res.writeHead(200, { ...securityHeaders, 'Content-Type': 'text/plain; charset=UTF-8', 'Cache-Control': 'public, max-age=3600',
         'Content-Length': String(Buffer.byteLength(options.robotsTxt)) });
       res.end(req.method === 'HEAD' ? undefined : options.robotsTxt);
       return;
@@ -143,7 +144,7 @@ export function startGateway(options: {
 
 function json(res: ServerResponse, status: number, value: unknown, head = false): void {
   if (res.headersSent || res.writableEnded || res.destroyed) return;
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=UTF-8', 'Cache-Control': 'no-store' });
+  res.writeHead(status, { ...securityHeaders, 'Content-Type': 'application/json; charset=UTF-8', 'Cache-Control': 'no-store' });
   res.end(head ? undefined : JSON.stringify(value));
 }
 

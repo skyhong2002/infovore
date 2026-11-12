@@ -93,6 +93,7 @@ test('failed, private, varying and oversized refreshes keep only the old real pa
     assert.equal(response.status, 200, mode);
     assert.equal(response.headers.get('x-home-generated-at'), generatedAt, mode);
     assert.equal(response.headers.get('x-home-stale'), 'true', mode);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff', mode);
     assert.equal(response.headers.get('x-home-error'), mode === 'oversize' ? 'snapshot_too_large' : mode === 'reset' ? 'backend_unavailable' : 'invalid_home_response', mode);
     assert.equal(await response.text(), html, mode);
   }
@@ -162,6 +163,9 @@ test('cached homepage serves valid gzip and matching HEAD without per-visitor re
   assert.equal(gunzipSync(zipped.body).toString(), html);
   assert.equal(Number(zipped.headers['content-length']), zipped.body.length);
   assert.equal(zipped.headers.vary, 'Accept-Encoding');
+  assert.equal(zipped.headers['x-content-type-options'], 'nosniff');
+  assert.equal(zipped.headers['x-frame-options'], 'SAMEORIGIN');
+  assert.equal(zipped.headers['referrer-policy'], 'strict-origin-when-cross-origin');
   const head = await raw(origin, { 'accept-encoding': 'gzip' }, 'HEAD');
   assert.equal(head.headers['content-encoding'], 'gzip');
   assert.equal(head.headers['content-length'], zipped.headers['content-length']);

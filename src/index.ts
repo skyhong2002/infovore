@@ -4,6 +4,7 @@ import { buildNowCard } from './output/now.js';
 import { buildCloudTerms, buildWordCloudCard, type CloudEntry, type CloudTerm } from './output/cloud.js';
 import { platformOverview, platformSync } from './output/overview.js';
 import { notFoundPage, publicError, statusPage } from './output/status.js';
+import { securityHeaders } from './security-headers.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js';
 import type { ComputaiSnapshot } from './computai/types.js';
@@ -196,10 +197,7 @@ app.use('*', compress());
 // no CSP here. Framing is limited to this origin.
 app.use('*', async (c, next) => {
   await next();
-  c.header('X-Content-Type-Options', 'nosniff');
-  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
-  c.header('X-Frame-Options', 'SAMEORIGIN');
-  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  for (const [name, value] of Object.entries(securityHeaders)) c.header(name, value);
 });
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
 const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
