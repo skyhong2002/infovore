@@ -35,7 +35,7 @@ object SyncRunner {
             }
             val summary = if (kind == SyncKind.SLEEP) sync.runSleep(report) else sync.run(report)
             if (kind == SyncKind.FULL) {
-                settings.lastStatus = "${Instant.now()}：同步完成，新增 ${summary.inserted}、更新 ${summary.updated}、刪除 ${summary.deleted}"
+                settings.lastStatus = "${Instant.now()}：同步完成，新增 ${summary.inserted}、更新 ${summary.updated}、刪除 ${summary.deleted}${ReconcileText.note(summary.unverified)}"
                 settings.lastSyncFailed = false
                 settings.initialImportDone = true
             }

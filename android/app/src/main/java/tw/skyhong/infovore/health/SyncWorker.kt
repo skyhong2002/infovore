@@ -17,7 +17,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
 
     private suspend fun syncOnce(settings: SecureSettings): Result = try {
         val result = HealthConnectSync(applicationContext).run { settings.lastStatus = it }
-        settings.lastStatus = "${Instant.now()}：背景同步完成，新增 ${result.inserted}、更新 ${result.updated}、刪除 ${result.deleted}"
+        settings.lastStatus = "${Instant.now()}：背景同步完成，新增 ${result.inserted}、更新 ${result.updated}、刪除 ${result.deleted}${ReconcileText.note(result.unverified)}"
         settings.lastSyncFailed = false
         settings.initialImportDone = true
         SyncRunner.coordinator.clearFailure(SyncKind.FULL)

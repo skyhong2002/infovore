@@ -14,6 +14,32 @@ import org.json.JSONObject
 import java.time.Instant
 
 object HealthRecordJson {
+    /** The server's dataType for a record class, as written by [encode]. */
+    fun typeName(type: kotlin.reflect.KClass<out Record>): String = when (type) {
+        ExerciseSessionRecord::class -> "exercise_session"
+        StepsRecord::class -> "steps"
+        DistanceRecord::class -> "distance"
+        TotalCaloriesBurnedRecord::class -> "total_calories_burned"
+        HeartRateRecord::class -> "heart_rate"
+        SleepSessionRecord::class -> "sleep_session"
+        WeightRecord::class -> "weight"
+        BodyFatRecord::class -> "body_fat"
+        else -> error("Unsupported Health Connect record: ${type.simpleName}")
+    }
+
+    /** The time the server stores as start_at: the start of an interval, or an instant's time. */
+    fun startOf(record: Record): Instant = when (record) {
+        is ExerciseSessionRecord -> record.startTime
+        is StepsRecord -> record.startTime
+        is DistanceRecord -> record.startTime
+        is TotalCaloriesBurnedRecord -> record.startTime
+        is HeartRateRecord -> record.startTime
+        is SleepSessionRecord -> record.startTime
+        is WeightRecord -> record.time
+        is BodyFatRecord -> record.time
+        else -> error("Unsupported Health Connect record: ${record::class.simpleName}")
+    }
+
     fun encode(record: Record): JSONObject {
         val (type, start, end, payload) = when (record) {
             is ExerciseSessionRecord -> Encoded(

@@ -75,10 +75,58 @@ class SecureSettings(context: Context) {
         preferences.edit {
             putString(KEY_ENDPOINT, newEndpoint.trim().trimEnd('/'))
             remove(KEY_CHANGES_TOKEN)
+            removeHistoryScan()
             putBoolean(KEY_FIRST_SYNC_DONE, false)
             putBoolean(KEY_LAST_SYNC_FAILED, false)
             if (status == null) remove(KEY_LAST_STATUS) else putString(KEY_LAST_STATUS, status)
         }
+    }
+
+    /** An interrupted history scan to resume, or null. See [HistoryScan]. */
+    val historyScan: HistoryScan?
+        get() {
+            val token = preferences.getString(KEY_SCAN_TOKEN, null) ?: return null
+            return HistoryScan(
+                changesToken = token,
+                startMs = preferences.getLong(KEY_SCAN_START, 0L),
+                endMs = preferences.getLong(KEY_SCAN_END, 0L),
+                destination = preferences.getString(KEY_SCAN_DESTINATION, null) ?: return null,
+                completed = preferences.getStringSet(KEY_SCAN_COMPLETED, null).orEmpty().toSet(),
+            )
+        }
+
+    fun saveHistoryScan(scan: HistoryScan) {
+        preferences.edit {
+            putString(KEY_SCAN_TOKEN, scan.changesToken)
+            putLong(KEY_SCAN_START, scan.startMs)
+            putLong(KEY_SCAN_END, scan.endMs)
+            putString(KEY_SCAN_DESTINATION, scan.destination)
+            putStringSet(KEY_SCAN_COMPLETED, scan.completed.toSet())
+        }
+    }
+
+    /** Ends a scan: its token becomes the sync cursor and the saved progress goes, in one write. */
+    fun finishHistoryScan(changesToken: String) {
+        preferences.edit {
+            putString(KEY_CHANGES_TOKEN, changesToken)
+            removeHistoryScan()
+        }
+    }
+
+    /** Forgets the cursor and any interrupted scan, e.g. after Health Connect expired the token. */
+    fun resetChangesToken() {
+        preferences.edit {
+            remove(KEY_CHANGES_TOKEN)
+            removeHistoryScan()
+        }
+    }
+
+    private fun android.content.SharedPreferences.Editor.removeHistoryScan() {
+        remove(KEY_SCAN_TOKEN)
+        remove(KEY_SCAN_START)
+        remove(KEY_SCAN_END)
+        remove(KEY_SCAN_DESTINATION)
+        remove(KEY_SCAN_COMPLETED)
     }
 
     /** History is uploaded and a cursor exists, but the first full sync has not finished yet. */
@@ -101,6 +149,11 @@ class SecureSettings(context: Context) {
         private const val KEY_LAST_SYNC_FAILED = "last_sync_failed"
         private const val KEY_FIRST_SYNC_DONE = "first_full_sync_done"
         private const val KEY_ALIAS = "infovore-health-ingest-token"
+        private const val KEY_SCAN_TOKEN = "history_scan_token"
+        private const val KEY_SCAN_START = "history_scan_start"
+        private const val KEY_SCAN_END = "history_scan_end"
+        private const val KEY_SCAN_DESTINATION = "history_scan_destination"
+        private const val KEY_SCAN_COMPLETED = "history_scan_completed"
     }
 }
 

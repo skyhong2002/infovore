@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.3.1) reads selected records from Android Health Connect and
+This private companion (current version 0.3.2) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -15,7 +15,7 @@ is disabled, and the server keeps raw Health Connect records outside the public
 activity, feed, and MCP projections. Infovore's Health platform page uses only
 safe aggregates and recent workout summaries.
 
-## App layout (0.3.1)
+## App layout (0.3.2)
 
 The screen is split into a **開始使用** checklist (connection → Health Connect
 permission → first sync, with a button for the next step) and three collapsible
@@ -33,11 +33,15 @@ always starts collapsed. Each section header shows its current state.
   only in the ViewModel's memory (never in the saved-instance-state bundle,
   preferences, or logs) and are cleared when saved or discarded.
 - Changing the sync destination (the endpoint after normalising case, default
-  ports and trailing slashes) after a sync asks for confirmation, then clears
-  the Health Connect change token and the first-sync flag, so the next
-  **立即同步** re-imports the recent history window into the new server.
-  Changing only the token keeps the cursor. The destination cannot change while
-  a sync is running.
+  ports and trailing slashes) clears the Health Connect change token and the
+  first-sync flag, so the next **立即同步** re-imports the recent history
+  window into the new server. It asks for confirmation first whenever anything
+  is tied to the old destination: a previous sync, queued phone screen records
+  (the dialog gives their count), or a saved `DAYFLOW_PHONE_TOKEN`, which is
+  cleared and must be re-entered for the new destination. Changing only the
+  token keeps everything. The destination cannot change while a sync or a
+  phone screen upload is running: the change takes both locks or is refused
+  with an explanation.
 - Health Connect status follows `HealthConnectClient.getSdkStatus`: when an
   install or update is required the app offers to open the Play Store; when it
   is unsupported it says so and disables syncing. **只同步睡眠（優先）** needs
@@ -98,6 +102,41 @@ Subsequent imports use Health Connect change tokens and apply both upserts and
 deletions. Change tokens expire after 30 days, so an expired token safely falls
 back to another historical scan.
 
+### Re-verifying deletions after a history scan
+
+A history scan (first sync, a new destination, or an expired change token)
+re-uploads everything still in Health Connect, but records deleted at the
+source while no change token covered them would otherwise stay on the server.
+So during such a scan, once every page of a data type in the scan window
+`[start, end)` has been read successfully, the app also sends reconcile
+windows: `{dataType, start, end, recordIds}` listing every record id that
+starts in the window (long histories are split into windows of at most 2,000
+ids, cut only between distinct start times; the server accepts at most 5,000).
+In the same transaction the server deletes only rows that came from this
+device (`deviceId`), have that data type, start in `[start, end)`, end no later
+than `end`, and are not listed. It refuses the window (HTTP 409, nothing
+deleted) when that would remove more than 20 rows and more than half of the
+device's stored rows in the window, and answers 400 to malformed or oversized
+windows. Batches without `reconcile` behave exactly as before.
+
+A type that could not be fully re-verified (the server refused or does not
+support reconciling, or the read was out of order) is named in the sync
+result as **未重新核實**; its rows are left as they were. Reconciling runs only
+inside history scans and only with the read permissions a full sync already
+requires; incremental syncs and **只同步睡眠** are unchanged. Server rows
+uploaded before 0.3.2 are tied to a device only when every earlier sync came
+from a single device; otherwise they are never reconciled until the app
+uploads them again.
+
+A history scan saves its progress after each data type (the change token it
+started with, its fixed window, the destination, and the finished types). If
+the system stops the app mid-scan, the next sync continues with the remaining
+types instead of starting over; the change token becomes the sync cursor only
+after every type is done, so changes made in between are still picked up. A
+type interrupted halfway is read again from its start (uploads are
+idempotent). Changing the destination or an expired token discards the saved
+progress.
+
 ## 手機 Dayflow
 
 Version 0.2.0 adds a passive phone activity recorder, the Android counterpart of
@@ -143,6 +182,18 @@ items and 6 MB to `POST /api/ingest/dayflow-phone/observations`: every five
 minutes from the service while online, every 15 minutes via WorkManager as a
 fallback, and on **立即上傳**. Files are deleted only after the server
 acknowledges a batch; observation ids make retries idempotent.
+
+Each observation is filed under the sync destination saved when it was
+captured. An upload run reads the endpoint, phone token and device id once at
+its start and sends every batch of that run there, and it only sends records
+filed under that destination. The phone token is stored with the destination
+it was saved for and is never sent anywhere else. Records left from an earlier
+destination (or queued by a version before 0.3.2, whose destination is
+unknown) are never uploaded automatically and never migrated: the section
+shows **N 筆待傳紀錄屬於舊目的地** with a **刪除這些紀錄** button that asks
+before deleting them. Switching back to the earlier destination uploads them
+there. Changing the destination never turns recording on, never changes the
+exclusion list, and never triggers a capture.
 
 ### Privacy
 

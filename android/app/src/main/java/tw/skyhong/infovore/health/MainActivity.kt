@@ -42,6 +42,7 @@ import tw.skyhong.infovore.health.screen.Exclusions
 import tw.skyhong.infovore.health.screen.ObservationQueue
 import tw.skyhong.infovore.health.screen.ScreenActivityService
 import tw.skyhong.infovore.health.screen.ScreenSettings
+import tw.skyhong.infovore.health.screen.ScreenUploader
 import tw.skyhong.infovore.health.ui.CollapsibleSection
 import tw.skyhong.infovore.health.ui.Field
 import tw.skyhong.infovore.health.ui.FormState
@@ -126,6 +127,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var screenProgress: ProgressBar
     private lateinit var screenResult: TextView
     private lateinit var screenRetryButton: Button
+    private lateinit var otherDestinationBox: TextView
+    private lateinit var deleteOtherDestinationButton: Button
 
     private var availability: HealthConnectAvailability? = null
     private var granted: Set<String>? = null
@@ -369,6 +372,17 @@ class MainActivity : AppCompatActivity() {
             setPadding(kit.dp(4), kit.dp(6), 0, 0)
         }
         section.add(screenDetails)
+        // Records left from an earlier destination: never uploaded, only deleted on request.
+        otherDestinationBox = kit.statusBox().apply {
+            visibility = View.GONE
+            kit.setTone(this, Tone.WARNING)
+        }
+        section.add(otherDestinationBox, 8)
+        deleteOtherDestinationButton = kit.secondaryButton(getString(R.string.action_delete_other_destination)).apply {
+            visibility = View.GONE
+            setOnClickListener { confirmDeleteOtherDestination() }
+        }
+        section.add(deleteOtherDestinationButton, 4)
 
         // Step 1: token and exclusions
         section.add(kit.heading(Style.SUBHEAD, getString(R.string.screen_step_settings)), 20)
@@ -496,7 +510,7 @@ class MainActivity : AppCompatActivity() {
     private fun endpointResult(): FieldResult<String> {
         val result = InputValidation.endpoint(endpointField.value)
         val note = (result as? FieldResult.Valid)?.let {
-            DestinationChange.fieldNote(settings.endpoint, it.value, settings.hasSyncProgress)
+            DestinationChange.fieldNote(settings.endpoint, it.value, destinationTies())
         }
         return if (result is FieldResult.Valid && note != null) result.copy(note = note) else result
     }
@@ -534,21 +548,25 @@ class MainActivity : AppCompatActivity() {
         val endpointValue = requireNotNull(endpoint.valueOrNull())
         val tokenValue = requireNotNull(token.valueOrNull())
         val daysValue = requireNotNull(days.valueOrNull())
-        return when (DestinationChange.decide(settings.endpoint, endpointValue, settings.hasSyncProgress)) {
+        val ties = destinationTies()
+        return when (DestinationChange.decide(settings.endpoint, endpointValue, ties)) {
             DestinationChange.Action.KEEP -> commitConnection(endpointValue, tokenValue, daysValue, reset = null, showSuccess)
             DestinationChange.Action.RESET ->
                 commitConnection(endpointValue, tokenValue, daysValue, reset = ResetKind.QUIET, showSuccess)
             DestinationChange.Action.CONFIRM_RESET -> {
-                if (model.sync.value.busy) {
+                if (model.sync.value.busy || ScreenUploader.isUploading) {
                     showDestinationBusy()
                     return SaveResult.BLOCKED
                 }
                 val reimportDays = DestinationChange.reimportDays(daysValue, historyPermissionGranted)
+                val kind = if (ties.hasSyncProgress) ResetKind.REIMPORT else ResetKind.QUIET
                 AlertDialog.Builder(this)
                     .setTitle(R.string.destination_change_title)
-                    .setMessage(getString(R.string.destination_change_message, hostOf(endpointValue), reimportDays))
-                    .setPositiveButton(R.string.destination_change_ok) { _, _ ->
-                        val saved = commitConnection(endpointValue, tokenValue, daysValue, ResetKind.REIMPORT, showSuccess)
+                    .setMessage(DestinationChange.confirmMessage(hostOf(endpointValue), ties, reimportDays.takeIf { ties.hasSyncProgress }))
+                    .setPositiveButton(
+                        if (ties.hasSyncProgress) R.string.destination_change_ok else R.string.destination_change_ok_no_reimport,
+                    ) { _, _ ->
+                        val saved = commitConnection(endpointValue, tokenValue, daysValue, kind, showSuccess)
                         if (saved == SaveResult.SAVED) afterConfirmedSave()
                     }
                     .setNegativeButton(R.string.action_cancel, null)
@@ -568,13 +586,25 @@ class MainActivity : AppCompatActivity() {
         } else {
             val reimportDays = DestinationChange.reimportDays(daysValue, historyPermissionGranted)
             val status = if (reset == ResetKind.REIMPORT) "${Instant.now()}：${DestinationChange.resetStatus(reimportDays)}" else null
-            // Under the sync lock, so a sync can never write the old destination's cursor afterwards.
-            val done = SyncRunner.coordinator.tryExclusive { settings.changeEndpointAndResetSync(endpointValue, status) }
+            // Under both the screen-upload and the sync lock, so neither an upload run nor a sync can
+            // straddle the change or write the old destination's state afterwards. The phone token
+            // belongs to the old destination and is cleared; queued screen records stay filed
+            // under the old destination and are never sent to the new one.
+            var done = false
+            ScreenUploader.tryExclusive {
+                done = SyncRunner.coordinator.tryExclusive {
+                    settings.changeEndpointAndResetSync(endpointValue, status)
+                    screenSettings.clearToken()
+                }
+            }
             if (!done) {
                 showDestinationBusy()
                 return SaveResult.BLOCKED
             }
             reimportDaysAfterSave = if (reset == ResetKind.REIMPORT) reimportDays else null
+            savedPhoneToken = ""
+            model.drafts.clear(SecretDrafts.Key.PHONE_TOKEN)
+            if (phoneTokenField.value.isNotEmpty()) phoneTokenField.setValue("")
         }
         settings.token = tokenValue
         savedHealthToken = tokenValue
@@ -596,6 +626,15 @@ class MainActivity : AppCompatActivity() {
         connectionSaveState.text = getString(R.string.destination_change_busy)
         kit.setTone(connectionSaveState, Tone.ERROR, tintBackground = false)
     }
+
+    /** What is tied to the saved destination: sync progress, queued screen records, a phone token. */
+    private fun destinationTies() = DestinationChange.Ties(
+        hasSyncProgress = settings.hasSyncProgress,
+        screenPending = ObservationQueue.get(this).count(currentDestination()),
+        phoneTokenSaved = savedPhoneToken.isNotEmpty(),
+    )
+
+    private fun currentDestination(): String = DestinationChange.normalize(settings.endpoint)
 
     private fun renderConnectionState() {
         val dirty = connectionDirty()
@@ -885,7 +924,8 @@ class MainActivity : AppCompatActivity() {
             return false
         }
         savedPhoneToken = requireNotNull(token.valueOrNull())
-        screenSettings.token = savedPhoneToken
+        // Bound to the destination saved right now; uploads never send it anywhere else.
+        screenSettings.saveToken(savedPhoneToken, currentDestination())
         model.drafts.clear(SecretDrafts.Key.PHONE_TOKEN)
         screenSettings.exclusionsText = requireNotNull(exclusions.valueOrNull())
         if (phoneTokenField.value != savedPhoneToken) phoneTokenField.setValue(savedPhoneToken)
@@ -913,20 +953,28 @@ class MainActivity : AppCompatActivity() {
     private fun renderScreen() {
         if (!::screenStatusBox.isInitialized) return
         val serviceEnabled = isScreenServiceEnabled()
+        val queue = ObservationQueue.get(this)
+        val destination = currentDestination()
+        val tokenUsable = savedPhoneToken.length >= InputValidation.MIN_TOKEN_LENGTH &&
+            screenSettings.tokenDestination == destination
         val ui = ScreenStatus.map(
             ScreenInputs(
                 recordingEnabled = screenSettings.enabled,
                 pausedUntilMs = screenSettings.pausedUntil,
                 serviceEnabled = serviceEnabled,
-                tokenConfigured = savedPhoneToken.length >= InputValidation.MIN_TOKEN_LENGTH,
-                pending = ObservationQueue.get(this).count(),
+                tokenConfigured = tokenUsable,
+                pending = queue.count(destination),
                 lastCaptureAtMs = screenSettings.lastCaptureAt,
                 lastUploadStatus = screenSettings.lastUploadStatus,
                 nowMs = System.currentTimeMillis(),
                 zone = ZoneId.systemDefault(),
                 use24Hour = use24Hour,
+                otherDestinationPending = queue.countOtherDestinations(destination),
             ),
         )
+        otherDestinationBox.text = ui.otherDestinationNote
+        otherDestinationBox.visibility = if (ui.otherDestinationNote == null) View.GONE else View.VISIBLE
+        deleteOtherDestinationButton.visibility = otherDestinationBox.visibility
         screenStatusBox.text = listOfNotNull(ui.headline, ui.nextStep).joinToString("\n")
         kit.setTone(screenStatusBox, ui.tone)
         screenDetails.text = ui.details
@@ -944,7 +992,7 @@ class MainActivity : AppCompatActivity() {
         val task = model.screen.value
         val busy = task.running != null
         uploadButton.isEnabled = ui.uploadEnabled && !busy
-        testButton.isEnabled = savedPhoneToken.length >= InputValidation.MIN_TOKEN_LENGTH && !busy
+        testButton.isEnabled = tokenUsable && !busy
         uploadHint.text = ui.uploadHint
         uploadHint.visibility = if (ui.uploadHint == null) View.GONE else View.VISIBLE
         screenProgress.visibility = if (busy) View.VISIBLE else View.GONE
@@ -976,6 +1024,30 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.action_cancel, null)
             .setOnDismissListener { renderScreen() }
+            .show()
+    }
+
+    /** Deletes, after confirmation, the queued records of earlier destinations. Never migrates them. */
+    private fun confirmDeleteOtherDestination() {
+        val count = ObservationQueue.get(this).countOtherDestinations(currentDestination())
+        if (count == 0) {
+            renderScreen()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.delete_other_destination_title)
+            .setMessage(getString(R.string.delete_other_destination_message, count))
+            .setPositiveButton(R.string.delete_other_destination_ok) { _, _ ->
+                val removed = ScreenUploader.deleteOtherDestinations(this)
+                Toast.makeText(
+                    this,
+                    if (removed == null) getString(R.string.delete_other_destination_busy)
+                    else getString(R.string.delete_other_destination_done, removed),
+                    Toast.LENGTH_LONG,
+                ).show()
+                renderScreen()
+            }
+            .setNegativeButton(R.string.action_cancel, null)
             .show()
     }
 

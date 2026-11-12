@@ -228,7 +228,8 @@ class ScreenActivityService : AccessibilityService() {
                 }
             }
         }
-        withContext(Dispatchers.IO) { queue.enqueue(observation) }
+        // Filed under the destination saved right now; it is only ever uploaded there.
+        withContext(Dispatchers.IO) { queue.enqueue(ScreenUploader.currentDestination(this@ScreenActivityService), observation) }
     }
 
     private fun appLabel(pkg: String): String = labelCache.getOrPut(pkg) {

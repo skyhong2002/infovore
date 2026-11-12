@@ -28,24 +28,68 @@ const healthRecordSchema = z.object({
   }
 });
 
+// Upper bound on the record ids one reconcile window may list; the app splits
+// larger windows. Keeps a single request from describing (and so deleting) an
+// unbounded range.
+export const MAX_RECONCILE_RECORD_IDS = 5000;
+
+// A complete read of one data type over [start, end) on the sending device:
+// recordIds lists every Health Connect record id the app saw starting in that
+// window. The server deletes this device's rows of the type that start in the
+// window, end by its end, and are not listed (see Repository.ingestHealthConnect).
+const healthReconcileSchema = z.object({
+  dataType: z.enum(healthDataTypes),
+  start: isoTimestamp,
+  end: isoTimestamp,
+  recordIds: z.array(z.string().min(1).max(256)).max(MAX_RECONCILE_RECORD_IDS),
+}).strict().superRefine((window, context) => {
+  if (!(Date.parse(window.start) < Date.parse(window.end))) {
+    context.addIssue({ code: 'custom', path: ['end'], message: 'reconcile end must be after start' });
+  }
+});
+
 export const healthConnectBatchSchema = z.object({
   syncId: z.string().min(8).max(128),
   deviceId: z.string().min(8).max(128),
   observedAt: isoTimestamp,
   records: z.array(healthRecordSchema).max(250),
   deletedRecordIds: z.array(z.string().min(1).max(256)).max(500),
-}).refine((batch) => batch.records.length > 0 || batch.deletedRecordIds.length > 0, {
-  message: 'The batch must contain records or deleted record ids',
+  reconcile: healthReconcileSchema.optional(),
+}).refine((batch) => batch.records.length > 0 || batch.deletedRecordIds.length > 0 || batch.reconcile !== undefined, {
+  message: 'The batch must contain records, deleted record ids, or a reconcile window',
 });
 
 export type HealthConnectRecordInput = z.infer<typeof healthRecordSchema>;
 export type HealthConnectBatchInput = z.infer<typeof healthConnectBatchSchema>;
+
+export type HealthReconcileInput = z.infer<typeof healthReconcileSchema>;
+
+export interface HealthReconcileResult {
+  dataType: string;
+  start: string;
+  end: string;
+  // This device's stored rows of the type inside the window before reconciling.
+  checked: number;
+  deleted: number;
+  // The same sync id was already committed, reconcile included.
+  alreadyApplied?: true;
+}
 
 export interface HealthConnectIngestResult {
   inserted: number;
   updated: number;
   deleted: number;
   totalStored: number;
+  reconciled?: HealthReconcileResult;
+}
+
+// Thrown when a reconcile window would delete an implausible share of the
+// stored rows; the whole batch is rolled back and nothing is deleted.
+export class HealthReconcileRejected extends Error {
+  constructor(readonly wouldDelete: number, readonly checked: number) {
+    super(`Reconcile refused: it would delete ${wouldDelete} of ${checked} stored records in the window`);
+    this.name = 'HealthReconcileRejected';
+  }
 }
 
 export interface HealthConnectStatus {

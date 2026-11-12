@@ -8,12 +8,15 @@ data class ScreenInputs(
     val pausedUntilMs: Long,
     val serviceEnabled: Boolean,
     val tokenConfigured: Boolean,
+    /** Queued for the current sync destination. */
     val pending: Int,
     val lastCaptureAtMs: Long,
     val lastUploadStatus: String,
     val nowMs: Long,
     val zone: ZoneId,
     val use24Hour: Boolean = true,
+    /** Queued for a previous (or unknown) destination; never uploaded automatically. */
+    val otherDestinationPending: Int = 0,
 )
 
 enum class ScreenState { OFF, NEEDS_SERVICE, PAUSED, RECORDING }
@@ -31,6 +34,8 @@ data class ScreenUi(
     val pauseEnabled: Boolean,
     val uploadEnabled: Boolean,
     val uploadHint: String?,
+    /** Explains records left from an earlier destination, or null when there are none. */
+    val otherDestinationNote: String? = null,
 )
 
 /** Maps phone screen-recording settings to UI text. Never changes any setting itself. */
@@ -75,6 +80,9 @@ object ScreenStatus {
             append("最後擷取：").append(lastCapture)
             append("\n佇列中：").append(input.pending).append(" 筆待上傳")
             append("\n最後上傳：").append(TimeText.humanizeStatus(input.lastUploadStatus, now, input.zone, input.use24Hour))
+            if (input.otherDestinationPending > 0) {
+                append("\n舊目的地：").append(input.otherDestinationPending).append(" 筆（不會上傳）")
+            }
         }
         val summary = when (state) {
             ScreenState.OFF -> "關閉"
@@ -98,6 +106,12 @@ object ScreenStatus {
             pauseEnabled = input.recordingEnabled,
             uploadEnabled = input.tokenConfigured && input.pending > 0,
             uploadHint = uploadHint,
+            otherDestinationNote = if (input.otherDestinationPending > 0) {
+                "${input.otherDestinationPending} 筆待傳紀錄屬於舊目的地（變更同步目的地前，或 0.3.2 版以前擷取），" +
+                    "不會送到目前的目的地。不需要時可刪除。"
+            } else {
+                null
+            },
         )
     }
 }

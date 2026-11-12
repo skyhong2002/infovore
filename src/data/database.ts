@@ -19,7 +19,15 @@ import type {
   HealthConnectIngestResult,
   HealthConnectStatus,
   HealthDailySummary,
+  HealthReconcileInput,
+  HealthReconcileResult,
 } from '../health/types.js';
+import { HealthReconcileRejected } from '../health/types.js';
+
+// A reconcile window may delete up to this many rows without question; above
+// it, deleting more than this share of the window's stored rows is refused.
+const RECONCILE_MAX_SILENT_DELETES = 20;
+const RECONCILE_MAX_DELETE_SHARE = 0.5;
 
 export interface SyncRun {
   id: number;
@@ -381,6 +389,33 @@ export class Repository {
     if (afterHardcover.user_version < 17) migrateDayflowQuality(this.db);
     const afterDayflowQuality = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterDayflowQuality.user_version < 18) migrateDayflowPhone(this.db);
+    const afterDayflowPhone = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterDayflowPhone.user_version < 19) this.migrateHealthRecordDevice();
+  }
+
+  // Remembers which device last uploaded each Health Connect record, so a
+  // reconcile window from one phone can never delete another phone's rows.
+  // Older rows only get a device when every sync so far came from a single
+  // device; otherwise they stay NULL and are never reconciled.
+  private migrateHealthRecordDevice(): void {
+    this.db.exec('BEGIN');
+    try {
+      this.db.exec('ALTER TABLE health_connect_records ADD COLUMN device_id TEXT');
+      const devices = this.db.prepare('SELECT DISTINCT device_id FROM health_connect_syncs LIMIT 2')
+        .all() as Array<{ device_id: string }>;
+      if (devices.length === 1) {
+        this.db.prepare('UPDATE health_connect_records SET device_id=?').run(devices[0].device_id);
+      }
+      this.db.exec(`
+        CREATE INDEX health_connect_records_device_type_time_idx
+          ON health_connect_records(device_id, data_type, start_at);
+        PRAGMA user_version = 19;
+      `);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   // Goodreads shut down its RSS feeds in 2026; books now come from Hardcover,
@@ -1479,18 +1514,25 @@ export class Repository {
       'SELECT 1 FROM health_connect_syncs WHERE sync_id=?'
     ).get(batch.syncId);
     if (alreadyProcessed) {
-      return { inserted: 0, updated: 0, deleted: 0, totalStored: this.healthConnectCount() };
+      const repeated: HealthConnectIngestResult = { inserted: 0, updated: 0, deleted: 0, totalStored: this.healthConnectCount() };
+      // A retried request whose first attempt committed: its reconcile already ran.
+      if (batch.reconcile) {
+        const { dataType, start, end } = batch.reconcile;
+        repeated.reconciled = { dataType, start, end, checked: 0, deleted: 0, alreadyApplied: true };
+      }
+      return repeated;
     }
 
     let inserted = 0;
     let updated = 0;
     let deleted = 0;
+    let reconciled: HealthReconcileResult | undefined;
     const exists = this.db.prepare('SELECT 1 FROM health_connect_records WHERE record_id=?');
     const upsert = this.db.prepare(`
       INSERT INTO health_connect_records (
         record_id, data_type, data_origin, start_at, end_at, last_modified_at,
-        payload_json, first_seen_at, last_seen_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payload_json, first_seen_at, last_seen_at, device_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(record_id) DO UPDATE SET
         data_type=excluded.data_type,
         data_origin=excluded.data_origin,
@@ -1498,7 +1540,8 @@ export class Repository {
         end_at=excluded.end_at,
         last_modified_at=excluded.last_modified_at,
         payload_json=excluded.payload_json,
-        last_seen_at=excluded.last_seen_at
+        last_seen_at=excluded.last_seen_at,
+        device_id=excluded.device_id
     `);
     const remove = this.db.prepare('DELETE FROM health_connect_records WHERE record_id=?');
 
@@ -1516,12 +1559,17 @@ export class Repository {
           JSON.stringify(record.payload),
           receivedAt,
           receivedAt,
+          batch.deviceId,
         );
         if (present) updated++;
         else inserted++;
       }
       for (const id of new Set(batch.deletedRecordIds)) {
         if (Number(remove.run(id).changes) > 0) deleted++;
+      }
+      if (batch.reconcile) {
+        reconciled = this.reconcileHealthWindow(batch.deviceId, batch.reconcile, remove);
+        deleted += reconciled.deleted;
       }
       this.db.prepare(`
         INSERT INTO health_connect_syncs (
@@ -1543,7 +1591,49 @@ export class Repository {
       this.db.exec('ROLLBACK');
       throw error;
     }
-    return { inserted, updated, deleted, totalStored: this.healthConnectCount() };
+    const result: HealthConnectIngestResult = { inserted, updated, deleted, totalStored: this.healthConnectCount() };
+    if (reconciled) result.reconciled = reconciled;
+    return result;
+  }
+
+  // Deletes this device's rows of the window's type that start in [start, end),
+  // end by `end`, and are missing from the complete id list the app read. Runs
+  // inside the ingest transaction; an implausibly large deletion throws
+  // HealthReconcileRejected so the caller rolls everything back.
+  private reconcileHealthWindow(
+    deviceId: string,
+    window: HealthReconcileInput,
+    remove: ReturnType<DatabaseSync['prepare']>,
+  ): HealthReconcileResult {
+    const startMs = Date.parse(window.start);
+    const endMs = Date.parse(window.end);
+    // Stored timestamps may differ in precision or offset, so the indexed text
+    // range is widened by a day and the exact bounds are checked numerically.
+    const day = 24 * 60 * 60 * 1000;
+    const candidates = this.db.prepare(`
+      SELECT record_id, start_at, end_at FROM health_connect_records
+      WHERE device_id=? AND data_type=? AND start_at >= ? AND start_at < ?
+    `).all(
+      deviceId,
+      window.dataType,
+      new Date(startMs - day).toISOString(),
+      new Date(endMs + day).toISOString(),
+    ) as Array<{ record_id: string; start_at: string; end_at: string }>;
+    const inWindow = candidates.filter((row) => {
+      const rowStart = Date.parse(row.start_at);
+      const rowEnd = Date.parse(row.end_at);
+      return rowStart >= startMs && rowStart < endMs && rowEnd <= endMs;
+    });
+    const keep = new Set(window.recordIds);
+    const stale = inWindow.filter((row) => !keep.has(row.record_id));
+    if (stale.length > RECONCILE_MAX_SILENT_DELETES && stale.length > inWindow.length * RECONCILE_MAX_DELETE_SHARE) {
+      throw new HealthReconcileRejected(stale.length, inWindow.length);
+    }
+    let deleted = 0;
+    for (const row of stale) {
+      if (Number(remove.run(row.record_id).changes) > 0) deleted++;
+    }
+    return { dataType: window.dataType, start: window.start, end: window.end, checked: inWindow.length, deleted };
   }
 
   private healthConnectCount(): number {

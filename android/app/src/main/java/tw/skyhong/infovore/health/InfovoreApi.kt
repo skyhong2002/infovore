@@ -9,28 +9,40 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
-class InfovoreApi(private val settings: SecureSettings) {
+/**
+ * HTTP client for one fixed destination. [endpoint] is captured when the instance is created and
+ * never re-read from settings, so every request of one sync or upload run goes to the same
+ * server even if the saved endpoint changes meanwhile.
+ */
+class InfovoreApi(endpoint: String) {
+    val endpoint: String = endpoint.trim().trimEnd('/')
+
     fun upload(
+        token: String,
+        deviceId: String,
         records: List<Record>,
         deletedRecordIds: List<String>,
+        reconcile: ReconcileWindow? = null,
         onRetry: (attempt: Int, message: String) -> Unit = { _, _ -> },
     ): UploadResult {
-        require(settings.token.length >= 32) { "請先輸入至少 32 字元的 HEALTH_CONNECT_TOKEN" }
+        require(token.length >= 32) { "請先輸入至少 32 字元的 HEALTH_CONNECT_TOKEN" }
         validateEndpoint()
         val body = JSONObject()
             .put("syncId", UUID.randomUUID().toString())
-            .put("deviceId", settings.deviceId)
+            .put("deviceId", deviceId)
             .put("observedAt", java.time.Instant.now().toString())
             .put("records", JSONArray(records.map(HealthRecordJson::encode)))
             .put("deletedRecordIds", JSONArray(deletedRecordIds))
+            .apply { if (reconcile != null) put("reconcile", JSONObject(reconcile.toJson())) }
             .toString()
             .toByteArray(StandardCharsets.UTF_8)
 
-        val response = postJson("/api/ingest/health-connect", settings.token, body, onRetry)
+        val response = postJson("/api/ingest/health-connect", token, body, onRetry)
         return UploadResult(
             inserted = response.optInt("inserted"),
             updated = response.optInt("updated"),
             deleted = response.optInt("deleted"),
+            reconciled = response.optJSONObject("reconciled") != null,
         )
     }
 
@@ -58,10 +70,10 @@ class InfovoreApi(private val settings: SecureSettings) {
     }
 
     private fun validateEndpoint() {
-        require(settings.endpoint.startsWith("http://") || settings.endpoint.startsWith("https://")) {
+        require(endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
             "Endpoint 必須以 http:// 或 https:// 開頭"
         }
-        val endpointUrl = URL(settings.endpoint)
+        val endpointUrl = URL(endpoint)
         require(endpointUrl.protocol == "https" || endpointUrl.host == EndpointPolicy.TAILSCALE_HTTP_HOST) {
             "自訂 endpoint 必須使用 HTTPS；HTTP 僅允許預設 Tailscale IP"
         }
@@ -87,7 +99,7 @@ class InfovoreApi(private val settings: SecureSettings) {
     }
 
     private fun requestOnce(method: String, path: String, token: String, body: ByteArray?): JSONObject {
-        val connection = URL("${settings.endpoint}$path").openConnection() as HttpURLConnection
+        val connection = URL("$endpoint$path").openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = method
             connection.connectTimeout = 15_000
@@ -112,7 +124,8 @@ class InfovoreApi(private val settings: SecureSettings) {
         }
     }
 
-    data class UploadResult(val inserted: Int, val updated: Int, val deleted: Int)
+    /** [reconciled]: the server confirmed the batch's reconcile window (false when none was sent). */
+    data class UploadResult(val inserted: Int, val updated: Int, val deleted: Int, val reconciled: Boolean = false)
 
     /** A non-retryable HTTP failure (e.g. 400, 401, 413). */
     class HttpStatusException(val status: Int, message: String) : IllegalStateException(message)

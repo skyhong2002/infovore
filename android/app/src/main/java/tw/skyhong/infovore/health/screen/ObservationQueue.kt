@@ -3,6 +3,7 @@ package tw.skyhong.infovore.health.screen
 import android.content.Context
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -37,17 +38,31 @@ data class Observation(
 }
 
 /**
- * Durable FIFO of observations: one JSON file per observation in noBackupFilesDir/screen-queue/,
- * named `<capturedAtMs>-<id>.json` so name order is capture order.
+ * Durable FIFO of observations, kept per sync destination: each observation is filed under the
+ * destination (normalised endpoint, see [tw.skyhong.infovore.health.DestinationChange.normalize])
+ * that was saved when it was captured, in `noBackupFilesDir/screen-queue/d-<hash>/`, one JSON file
+ * named `<capturedAtMs>-<id>.json` so name order is capture order. Uploads read only the bucket of
+ * the destination they send to, so records captured for one server are never sent to another.
+ * Files directly in `screen-queue/` come from versions before 0.3.2, whose destination is unknown;
+ * they count as belonging to another destination.
+ *
+ * Android-free apart from [get], so it can be unit tested; [isValidJson] defaults to org.json.
  */
-class ObservationQueue private constructor(private val dir: File) {
+class ObservationQueue internal constructor(
+    private val root: File,
+    private val isValidJson: (String) -> Boolean = { json -> runCatching { JSONObject(json) }.isSuccess },
+) {
 
     data class Entry(val file: File, val json: String)
 
     @Synchronized
-    fun enqueue(observation: Observation) {
-        val json = observation.toJson().toString()
-        val name = "${observation.capturedAtMs.toString().padStart(15, '0')}-${observation.id}.json"
+    fun enqueue(destination: String, observation: Observation) =
+        enqueueJson(destination, observation.capturedAtMs, observation.id, observation.toJson().toString())
+
+    @Synchronized
+    internal fun enqueueJson(destination: String, capturedAtMs: Long, id: String, json: String) {
+        val dir = bucket(destination).apply { mkdirs() }
+        val name = "${capturedAtMs.toString().padStart(15, '0')}-$id.json"
         val temp = File(dir, "$name.tmp")
         temp.writeText(json, Charsets.UTF_8)
         if (!temp.renameTo(File(dir, name))) {
@@ -57,15 +72,34 @@ class ObservationQueue private constructor(private val dir: File) {
         prune()
     }
 
+    /** Pending observations for [destination]. */
     @Synchronized
-    fun count(): Int = files().size
+    fun count(destination: String): Int = files(bucket(destination)).size
+
+    /** Pending observations that belong to any other (or an unknown, pre-0.3.2) destination. */
+    @Synchronized
+    fun countOtherDestinations(destination: String): Int = otherDirs(destination).sumOf { files(it).size }
+
+    /** Deletes every pending observation not filed under [destination]; returns how many. */
+    @Synchronized
+    fun removeOtherDestinations(destination: String): Int {
+        var removed = 0
+        for (dir in otherDirs(destination)) {
+            for (file in files(dir)) if (file.delete()) removed++
+            dir.listFiles { file -> file.name.endsWith(".tmp") }?.forEach { it.delete() }
+            if (dir != root) dir.delete()
+        }
+        return removed
+    }
 
     /** Drops stale items and the oldest items beyond the size cap; also removes orphaned temp files. */
     @Synchronized
     fun prune(nowMs: Long = System.currentTimeMillis()) {
-        dir.listFiles { file -> file.name.endsWith(".tmp") && nowMs - file.lastModified() > 60_000L }
-            ?.forEach { it.delete() }
-        val all = files()
+        for (dir in allDirs()) {
+            dir.listFiles { file -> file.name.endsWith(".tmp") && nowMs - file.lastModified() > 60_000L }
+                ?.forEach { it.delete() }
+        }
+        val all = allDirs().flatMap(::files).sortedBy { it.name }
         val cutoff = nowMs - MAX_AGE_MS
         val fresh = all.filter { file ->
             val stale = capturedAt(file)?.let { it < cutoff } ?: true
@@ -80,14 +114,14 @@ class ObservationQueue private constructor(private val dir: File) {
         }
     }
 
-    /** Oldest-first entries, skipping and deleting unreadable files. */
+    /** Oldest-first entries for [destination], skipping and deleting unreadable files. */
     @Synchronized
-    fun read(limit: Int): List<Entry> {
+    fun read(destination: String, limit: Int): List<Entry> {
         val result = mutableListOf<Entry>()
-        for (file in files()) {
+        for (file in files(bucket(destination))) {
             if (result.size >= limit) break
             val json = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
-            if (json == null || runCatching { JSONObject(json) }.isFailure) {
+            if (json == null || !isValidJson(json)) {
                 file.delete()
                 continue
             }
@@ -101,7 +135,17 @@ class ObservationQueue private constructor(private val dir: File) {
         entries.forEach { it.file.delete() }
     }
 
-    private fun files(): List<File> =
+    private fun bucket(destination: String): File = File(root, bucketName(destination))
+
+    private fun allDirs(): List<File> =
+        listOf(root) + root.listFiles { file -> file.isDirectory && file.name.startsWith(BUCKET_PREFIX) }.orEmpty()
+
+    private fun otherDirs(destination: String): List<File> {
+        val own = bucketName(destination)
+        return allDirs().filter { it.name != own }
+    }
+
+    private fun files(dir: File): List<File> =
         dir.listFiles { file -> file.isFile && file.name.endsWith(".json") }
             ?.sortedBy { it.name }
             .orEmpty()
@@ -120,5 +164,12 @@ class ObservationQueue private constructor(private val dir: File) {
 
         const val MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
         const val MAX_TOTAL_BYTES = 40L * 1024 * 1024
+        private const val BUCKET_PREFIX = "d-"
+
+        /** A stable directory name for a normalised destination, without putting the URL in a path. */
+        internal fun bucketName(destination: String): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(destination.toByteArray(Charsets.UTF_8))
+            return BUCKET_PREFIX + digest.take(16).joinToString("") { String.format(Locale.ROOT, "%02x", it) }
+        }
     }
 }

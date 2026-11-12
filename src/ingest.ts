@@ -10,7 +10,7 @@ import { Hono } from 'hono';
 import { config } from './config.js';
 import { Repository } from './data/database.js';
 import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
-import { healthConnectBatchSchema } from './health/types.js';
+import { HealthReconcileRejected, healthConnectBatchSchema } from './health/types.js';
 
 function authorized(auth: string | undefined, expectedToken = config.ingestToken): boolean {
   if (!expectedToken || !auth?.startsWith('Bearer ')) return false;
@@ -128,6 +128,12 @@ export function createIngestApp(repository: Repository): Hono {
       const result = repository.ingestHealthConnect(batch);
       return c.json({ ok: true, ...result }, result.inserted > 0 ? 201 : 200);
     } catch (error) {
+      if (error instanceof HealthReconcileRejected) {
+        return c.json({
+          error: error.message,
+          reconcile: { status: 'rejected', wouldDelete: error.wouldDelete, checked: error.checked },
+        }, 409);
+      }
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
   });

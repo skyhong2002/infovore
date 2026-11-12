@@ -2,96 +2,75 @@ package tw.skyhong.infovore.health.screen
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import tw.skyhong.infovore.health.DestinationChange
 import tw.skyhong.infovore.health.InfovoreApi
 import tw.skyhong.infovore.health.SecureSettings
-import java.io.IOException
-import java.nio.charset.StandardCharsets
 import java.time.Instant
 
-/** Uploads queued phone observations; a process-wide mutex prevents concurrent double-sends. */
+/**
+ * Uploads queued phone observations. A process-wide mutex prevents concurrent double-sends and is
+ * also taken by a sync-destination change ([tryExclusive]), so the destination can never change
+ * in the middle of an upload run. Each run captures its [ScreenTarget] once at the start.
+ */
 object ScreenUploader {
     const val OBSERVATIONS_PATH = "/api/ingest/dayflow-phone/observations"
     const val STATUS_PATH = "/api/ingest/dayflow-phone/status"
-    const val MAX_BATCH_COUNT = 40
-    const val MAX_BATCH_BYTES = 6L * 1024 * 1024
-    private const val MAX_BATCHES_PER_RUN = 50
 
-    private val mutex = Mutex()
+    private val lock = UploadLock()
 
-    data class Outcome(val sent: Int, val accepted: Int, val duplicates: Int, val remaining: Int, val error: String?)
+    /** True while an upload run holds the lock. */
+    val isUploading: Boolean get() = lock.isLocked
 
-    suspend fun uploadPending(context: Context): Outcome = mutex.withLock {
-        withContext(Dispatchers.IO) { uploadLocked(context.applicationContext) }
+    suspend fun uploadPending(context: Context): ScreenUploadEngine.Outcome = lock.withLock {
+        withContext(Dispatchers.IO) {
+            val app = context.applicationContext
+            // Every request goes to the endpoint and token captured in the run's target.
+            val transport = ObservationTransport { target, body ->
+                val response = InfovoreApi(target.endpoint).postJson(OBSERVATIONS_PATH, target.token, body)
+                ObservationTransport.Response(response.optInt("accepted"), response.optInt("duplicates"))
+            }
+            val engine = ScreenUploadEngine(ObservationQueue.get(app), transport)
+            engine.upload(currentTarget(app)).also { record(ScreenSettings(app), it) }
+        }
     }
+
+    /**
+     * Runs a short, non-suspending [block] only while no upload is running; returns false without
+     * running it otherwise.
+     */
+    fun tryExclusive(block: () -> Unit): Boolean = lock.tryExclusive(block)
 
     suspend fun checkStatus(context: Context): JSONObject = withContext(Dispatchers.IO) {
-        val app = context.applicationContext
-        val token = ScreenSettings(app).token
-        require(token.length >= 32) { "請先輸入至少 32 字元的 DAYFLOW_PHONE_TOKEN" }
-        InfovoreApi(SecureSettings(app)).getJson(STATUS_PATH, token)
+        val target = currentTarget(context.applicationContext)
+        target.problem()?.let { throw IllegalArgumentException(it) }
+        InfovoreApi(target.endpoint).getJson(STATUS_PATH, target.token)
     }
 
-    private fun uploadLocked(context: Context): Outcome {
-        val settings = ScreenSettings(context)
+    /** The normalised destination new observations are filed under and uploads go to. */
+    fun currentDestination(context: Context): String = DestinationChange.normalize(SecureSettings(context).endpoint)
+
+    /** Snapshot of the saved endpoint, phone token and device id. */
+    fun currentTarget(context: Context): ScreenTarget {
         val shared = SecureSettings(context)
-        val queue = ObservationQueue.get(context)
-        queue.prune()
-        val token = settings.token
-        if (token.length < 32) {
-            return Outcome(0, 0, 0, queue.count(), "尚未設定 DAYFLOW_PHONE_TOKEN").also { record(settings, it) }
-        }
-        val api = InfovoreApi(shared)
-        var sent = 0
-        var accepted = 0
-        var duplicates = 0
-        var error: String? = null
-        for (round in 1..MAX_BATCHES_PER_RUN) {
-            val entries = queue.read(MAX_BATCH_COUNT)
-            if (entries.isEmpty()) break
-            val batch = Batching.split(entries, MAX_BATCH_COUNT, MAX_BATCH_BYTES) {
-                it.json.toByteArray(StandardCharsets.UTF_8).size.toLong()
-            }.first()
-            val body = buildString {
-                append("{\"schemaVersion\":1,\"deviceId\":")
-                append(JSONObject.quote(shared.deviceId))
-                append(",\"observations\":[")
-                batch.forEachIndexed { index, entry ->
-                    if (index > 0) append(',')
-                    append(entry.json)
-                }
-                append("]}")
-            }.toByteArray(StandardCharsets.UTF_8)
-            try {
-                val response = api.postJson(OBSERVATIONS_PATH, token, body)
-                queue.remove(batch)
-                sent += batch.size
-                accepted += response.optInt("accepted")
-                duplicates += response.optInt("duplicates")
-            } catch (failure: InfovoreApi.HttpStatusException) {
-                if (failure.status == 400) {
-                    // The server rejected this content and always will: drop it instead of
-                    // blocking every later observation behind it.
-                    queue.remove(batch)
-                    error = "已捨棄 ${batch.size} 筆無效資料：${failure.message}"
-                } else {
-                    // 401/413/503…: keep the batch and stop until the next scheduled run.
-                    error = failure.message
-                }
-            } catch (failure: IOException) {
-                error = failure.message ?: failure.javaClass.simpleName
-            } catch (failure: IllegalArgumentException) {
-                error = failure.message
-            }
-            if (error != null) break
-        }
-        return Outcome(sent, accepted, duplicates, queue.count(), error).also { record(settings, it) }
+        val screen = ScreenSettings(context)
+        return ScreenTarget(shared.endpoint, screen.token, screen.tokenDestination, shared.deviceId)
     }
 
-    private fun record(settings: ScreenSettings, outcome: Outcome) {
+    /**
+     * Deletes queued observations that belong to another (or an unknown) destination; returns how
+     * many, or null when an upload is running.
+     */
+    fun deleteOtherDestinations(context: Context): Int? {
+        var removed: Int? = null
+        tryExclusive {
+            removed = ObservationQueue.get(context).removeOtherDestinations(currentDestination(context))
+        }
+        return removed
+    }
+
+    private fun record(settings: ScreenSettings, outcome: ScreenUploadEngine.Outcome) {
         val now = Instant.now()
         settings.lastUploadStatus = when {
             outcome.error != null && outcome.sent > 0 ->

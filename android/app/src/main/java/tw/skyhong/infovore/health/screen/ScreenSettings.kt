@@ -9,9 +9,42 @@ class ScreenSettings(context: Context) {
     private val preferences = context.getSharedPreferences("infovore_screen", Context.MODE_PRIVATE)
     private val cipher = KeystoreCipher(KEY_ALIAS)
 
-    var token: String
+    val token: String
         get() = cipher.decrypt(preferences.getString(KEY_TOKEN, null))
-        set(value) { preferences.edit { putString(KEY_TOKEN, cipher.encrypt(value.trim())) } }
+
+    /**
+     * The normalised sync destination the token was saved for; uploads refuse to send the token
+     * anywhere else. Null when no token is saved.
+     */
+    val tokenDestination: String?
+        get() = preferences.getString(KEY_TOKEN_DESTINATION, null)
+
+    /** Saves [value] (Keystore-encrypted) together with the destination it belongs to. */
+    fun saveToken(value: String, destination: String) {
+        val trimmed = value.trim()
+        preferences.edit {
+            putString(KEY_TOKEN, cipher.encrypt(trimmed))
+            if (trimmed.isEmpty()) remove(KEY_TOKEN_DESTINATION) else putString(KEY_TOKEN_DESTINATION, destination)
+        }
+    }
+
+    /** Forgets the token, e.g. when the sync destination changes. Recording settings are untouched. */
+    fun clearToken() {
+        preferences.edit {
+            remove(KEY_TOKEN)
+            remove(KEY_TOKEN_DESTINATION)
+        }
+    }
+
+    /**
+     * Tokens saved before 0.3.2 carry no destination; they were entered for the endpoint saved at
+     * the time, so bind them to [destination] (the current one) once, at upgrade.
+     */
+    fun bindLegacyToken(destination: String) {
+        if (preferences.contains(KEY_TOKEN) && !preferences.contains(KEY_TOKEN_DESTINATION) && token.isNotEmpty()) {
+            preferences.edit { putString(KEY_TOKEN_DESTINATION, destination) }
+        }
+    }
 
     var enabled: Boolean
         get() = preferences.getBoolean(KEY_ENABLED, false)
@@ -43,6 +76,7 @@ class ScreenSettings(context: Context) {
     private companion object {
         const val KEY_ALIAS = "infovore-dayflow-phone-token"
         const val KEY_TOKEN = "token"
+        const val KEY_TOKEN_DESTINATION = "token_destination"
         const val KEY_ENABLED = "enabled"
         const val KEY_PAUSED_UNTIL = "paused_until"
         const val KEY_EXCLUSIONS = "exclusions"

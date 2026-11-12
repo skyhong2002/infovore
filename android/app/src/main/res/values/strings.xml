@@ -37,9 +37,15 @@
     <string name="save_state_fix_errors">請修正標示的欄位後再儲存</string>
     <string name="save_state_saved_new_destination">已儲存。同步目的地已變更，下次「立即同步」會重新匯入最近 %1$d 天的歷史資料</string>
     <string name="destination_change_title">變更同步目的地？</string>
-    <string name="destination_change_message">新的目的地（%1$s）不會有之前上傳到舊伺服器的資料。儲存後會清除增量同步游標，下次「立即同步」會重新匯入最近 %2$d 天的健康歷史資料，並重新完成「第一次同步」。只更換 token 不會這樣做。</string>
     <string name="destination_change_ok">變更並重新匯入</string>
-    <string name="destination_change_busy">同步進行中，完成後才能變更同步目的地</string>
+    <string name="destination_change_ok_no_reimport">變更目的地</string>
+    <string name="destination_change_busy">健康同步或畫面記錄上傳進行中，完成後才能變更同步目的地</string>
+    <string name="action_delete_other_destination">刪除這些紀錄</string>
+    <string name="delete_other_destination_title">刪除舊目的地的待傳紀錄？</string>
+    <string name="delete_other_destination_message">手機上有 %1$d 筆畫面記錄屬於先前的同步目的地，還沒上傳。刪除後無法復原，也不會送到任何伺服器。</string>
+    <string name="delete_other_destination_ok">刪除</string>
+    <string name="delete_other_destination_done">已刪除 %1$d 筆舊目的地的紀錄</string>
+    <string name="delete_other_destination_busy">畫面記錄正在上傳，請稍後再刪除</string>
     <string name="connection_summary_ready">已設定 · %1$s</string>
     <string name="connection_summary_unsaved">有未儲存的變更</string>
     <string name="connection_summary_incomplete">尚未完成</string>

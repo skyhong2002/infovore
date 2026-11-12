@@ -206,6 +206,7 @@ class StatusMappingTest {
         service: Boolean = false,
         token: Boolean = true,
         pending: Int = 0,
+        otherDestinationPending: Int = 0,
     ) = ScreenStatus.map(
         ScreenInputs(
             recordingEnabled = enabled,
@@ -217,8 +218,20 @@ class StatusMappingTest {
             lastUploadStatus = "尚未上傳",
             nowMs = nowMs,
             zone = zone,
+            otherDestinationPending = otherDestinationPending,
         ),
     )
+
+    @Test
+    fun recordsFromAnEarlierDestinationAreReportedButNotUploadable() {
+        assertNull(screen(pending = 3).otherDestinationNote)
+        val ui = screen(token = true, pending = 0, otherDestinationPending = 5)
+        assertTrue(ui.otherDestinationNote!!.startsWith("5 筆待傳紀錄屬於舊目的地"))
+        assertTrue(ui.details.contains("舊目的地：5 筆（不會上傳）"))
+        // Only the current destination's queue enables uploading.
+        assertFalse(ui.uploadEnabled)
+        assertEquals("佇列中沒有待上傳的紀錄", ui.uploadHint)
+    }
 
     @Test
     fun screenRecordingStates() {

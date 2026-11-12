@@ -63,4 +63,28 @@ class DestinationChangeTest {
     fun unparseableValuesFallBackToTrimmedText() {
         assertEquals("not a url", DestinationChange.normalize(" not a url/ "))
     }
+
+    @Test
+    fun queuedScreenRecordsOrAPhoneTokenAskFirstEvenWithoutAHealthSync() {
+        val new = "https://new.example"
+        assertEquals(Action.RESET, DestinationChange.decide(saved, new, DestinationChange.Ties(hasSyncProgress = false)))
+        assertEquals(Action.CONFIRM_RESET, DestinationChange.decide(saved, new, DestinationChange.Ties(false, screenPending = 2)))
+        assertEquals(Action.CONFIRM_RESET, DestinationChange.decide(saved, new, DestinationChange.Ties(false, phoneTokenSaved = true)))
+        assertEquals(Action.KEEP, DestinationChange.decide(saved, "$saved/", DestinationChange.Ties(true, 9, true)))
+        assertNotNull(DestinationChange.fieldNote(saved, new, DestinationChange.Ties(false, screenPending = 2)))
+    }
+
+    @Test
+    fun theConfirmationNamesEveryAffectedPart() {
+        val all = DestinationChange.confirmMessage("new.example", DestinationChange.Ties(true, 12, true), reimportDays = 30)
+        assertTrue(all.contains("new.example"))
+        assertTrue(all.contains("最近 30 天"))
+        assertTrue(all, all.contains("12 筆待傳紀錄屬於舊目的地，不會送到新目的地"))
+        assertTrue(all.contains("DAYFLOW_PHONE_TOKEN 會被清除"))
+
+        val screenOnly = DestinationChange.confirmMessage("new.example", DestinationChange.Ties(false, 3, false), reimportDays = null)
+        assertTrue(screenOnly.contains("3 筆待傳紀錄"))
+        assertFalse(screenOnly.contains("重新匯入"))
+        assertFalse(screenOnly.contains("DAYFLOW_PHONE_TOKEN"))
+    }
 }

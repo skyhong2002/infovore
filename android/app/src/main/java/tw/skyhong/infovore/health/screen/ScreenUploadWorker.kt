@@ -14,7 +14,8 @@ import java.util.concurrent.TimeUnit
 class ScreenUploadWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
         if (ScreenSettings(applicationContext).token.length < 32) return Result.success()
-        if (ObservationQueue.get(applicationContext).count() == 0) return Result.success()
+        val destination = ScreenUploader.currentDestination(applicationContext)
+        if (ObservationQueue.get(applicationContext).count(destination) == 0) return Result.success()
         // Failures are recorded in lastUploadStatus; the next periodic run retries.
         ScreenUploader.uploadPending(applicationContext)
         return Result.success()
