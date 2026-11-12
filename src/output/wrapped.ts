@@ -18,7 +18,7 @@ const number = (value: number) => new Intl.NumberFormat('en').format(value);
 const hours = (seconds: number) => `${number(Math.round(seconds / 360) / 10)}h`;
 
 function stat(label: string, value: string, note = '', tip = ''): string {
-  return `<div class="metric-card"><span class="pill">${html(label)}${tip ? info(tip) : ''}</span><span class="count">${html(value)}</span>${note ? `<span class="muted wrapped-note">${html(note)}</span>` : ''}</div>`;
+  return `<div class="metric-card"><span class="metric-card-head"><span class="pill">${html(label)}</span>${tip ? info(tip) : ''}</span><span class="count">${html(value)}</span>${note ? `<span class="muted wrapped-note">${html(note)}</span>` : ''}</div>`;
 }
 
 function timeSection(time: YearTime): string {
@@ -73,7 +73,7 @@ export function wrappedPage(ownerName: string, summary: WrappedSummary, extras: 
   const styles = `
     .wrapped-note{font-size:12px}
     .wrapped-panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);display:grid;gap:9px;padding:14px 18px}
-    .wrapped-panel-gap{margin-top:10px}.wrapped-panel-title{color:var(--quiet);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+    .wrapped-panel-gap{margin-top:10px}.wrapped-panel-title{color:var(--quiet);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
     .wrapped-row{align-items:center;display:grid;gap:10px;grid-template-columns:120px 16px minmax(0,1fr) 64px 38px;font-size:13px}
     .wrapped-row-simple{grid-template-columns:150px minmax(0,1fr) 64px}
     .wrapped-row>a,.wrapped-row>span:first-child{color:var(--text);font-weight:600;overflow:hidden;text-decoration:none;text-overflow:ellipsis;white-space:nowrap;text-transform:none}
@@ -81,7 +81,7 @@ export function wrappedPage(ownerName: string, summary: WrappedSummary, extras: 
     .wrapped-titles{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);columns:2;column-gap:0;list-style:none;margin:0;padding:6px 0}
     .wrapped-titles li{align-items:center;break-inside:avoid;display:grid;gap:10px;grid-template-columns:24px minmax(0,1fr) auto;padding:7px 18px}
     .wrapped-rank{color:var(--quiet);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
-    .wrapped-title{min-width:0}.wrapped-title a{color:var(--text);display:block;font-size:13.5px;font-weight:600;overflow:hidden;text-decoration:none;text-overflow:ellipsis;white-space:nowrap}.wrapped-title a:hover{color:var(--accent)}.wrapped-title small{color:var(--quiet);font-size:11px;text-transform:uppercase}
+    .wrapped-title{min-width:0}.wrapped-title a{color:var(--text);display:block;font-size:13.5px;font-weight:600;overflow:hidden;text-decoration:none;text-overflow:ellipsis;white-space:nowrap}.wrapped-title a:hover{color:var(--accent)}.wrapped-title small{color:var(--quiet);font-size:12px;text-transform:uppercase}
     .wrapped-titles strong{font-size:13px;font-variant-numeric:tabular-nums}
     @media(max-width:700px){.wrapped-titles{columns:1}.wrapped-row{grid-template-columns:96px 16px minmax(0,1fr) 56px}.wrapped-share{display:none}.wrapped-row-simple{grid-template-columns:110px minmax(0,1fr) 56px}}`;
   return shell(`${ownerName} · ${summary.year} Wrapped`, intro + headline + (mergedTime ? timeSection(mergedTime) : '') + (agents ? agentSection(agents) : '') + media + top, 'profile', styles, { path: `/wrapped/${summary.year}` });

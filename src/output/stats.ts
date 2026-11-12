@@ -72,7 +72,7 @@ export function statsPage(ownerName: string, summary: TimeSpentSummary, daily: D
     const trend = key === 'last28d' && totalSeries.some(Boolean)
       ? `<span class="metric-trend">${sparkline(totalSeries, { width: 140, height: 28, label: 'All platforms · daily time over the last 28 days' })}${weekDelta(totalSeries, totalApprox(summary, 'last28d'))}</span>`
       : '';
-    return `<div class="metric-card"><span class="pill">${title}${note ? info(note) : ''}</span><span class="count">${cell(summary.total[key], totalApprox(summary, key))}</span>${trend}</div>`;
+    return `<div class="metric-card"><span class="metric-card-head"><span class="pill">${title}</span>${note ? info(note) : ''}</span><span class="count">${cell(summary.total[key], totalApprox(summary, key))}</span>${trend}</div>`;
   }).join('')}</div>`;
   const table = summary.sources.length
     ? `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Per platform</div><h2>Time by platform</h2><p>Click a column to sort. Trend shows the last 28 days; the change compares the last 7 days with the 7 before.</p></div><a href="/api/time-spent.json">JSON</a></div>

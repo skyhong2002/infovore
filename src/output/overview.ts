@@ -5,7 +5,15 @@ import { compactNumber, type ComputaiSnapshot } from '../computai/types.js';
 import { taipeiDay } from '../data/time.js';
 import { timeAmount } from './pages.js';
 
-export interface PlatformOverview { source: string; image: string; title: string; detail: string }
+// `sync` is the source's own last successful sync, so a quiet platform (no new
+// activity) is not confused with a stalled one.
+export interface PlatformSync { state: 'fresh' | 'stale' | 'never'; at: string | null }
+export interface PlatformOverview { source: string; image: string; title: string; detail: string; sync?: PlatformSync }
+export function platformSync(fetchedAt: number | string | null | undefined, maxAgeHours: number, now = new Date()): PlatformSync {
+  const ms = typeof fetchedAt === 'string' ? Date.parse(fetchedAt) : fetchedAt ?? NaN;
+  if (!Number.isFinite(ms) || !ms) return { state: 'never', at: null };
+  return { state: now.getTime() - ms > maxAgeHours * 3_600_000 ? 'stale' : 'fresh', at: new Date(ms).toISOString() };
+}
 export function platformOverview(source: string, image: string, snapshot: SourceSnapshot<unknown> | null | undefined, now = new Date()): PlatformOverview {
   const result = (title: string, detail: string, art = image) => ({ source, image: art, title, detail });
   if (!snapshot) return result('Waiting for sync', 'Platform summary will appear after syncing.');

@@ -48,10 +48,69 @@ export function sparkline(values: number[], options: { width?: number; height?: 
   return `<svg class="spark" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${html(options.label ?? 'trend')}"><path d="${area}" fill="${color}" fill-opacity=".14"/><polyline points="${points.join(' ')}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
 }
 
-// A small "how is this computed" marker whose note shows on hover and focus.
-export function info(note: string): string {
-  return `<span class="info" tabindex="0" role="note" aria-label="${html(note)}" data-tip="${html(note)}">i</span>`;
+// A small "how is this computed" button. The note is a sibling tooltip that
+// shows on hover, keyboard focus or tap and closes on Escape; it stays out of
+// the surrounding heading or label so their text and accessible names are not
+// polluted. The "i" glyph is CSS-generated, so innerText never picks it up.
+let infoSequence = 0;
+export function info(note: string, label = 'How this is calculated'): string {
+  infoSequence = (infoSequence + 1) % 1_000_000;
+  const id = `tip-${createHash('sha1').update(note).digest('hex').slice(0, 6)}-${infoSequence}`;
+  return `<button type="button" class="info" aria-label="${html(label)}" aria-describedby="${id}" aria-expanded="false" aria-controls="${id}"></button><span class="info-tip" id="${id}" role="tooltip">${html(note)}</span>`;
 }
+
+// Positions tooltips inside the viewport (so they never widen the page),
+// toggles them on tap/click for touch screens and closes them on Escape or an
+// outside tap.
+const infoScript = `<script>
+(() => {
+  let pinned = null;
+  const tipFor = (button) => document.getElementById(button.getAttribute('aria-controls'));
+  const place = (button, tip) => {
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(300, window.innerWidth - 24);
+    tip.style.maxWidth = width + 'px';
+    tip.classList.add('open');
+    const tipRect = tip.getBoundingClientRect();
+    const left = Math.max(12, Math.min(rect.left - 8, window.innerWidth - tipRect.width - 12));
+    const below = rect.bottom + 8;
+    const top = below + tipRect.height > window.innerHeight - 8 && rect.top - tipRect.height - 8 > 8 ? rect.top - tipRect.height - 8 : below;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  };
+  const show = (button) => { const tip = tipFor(button); if (tip) place(button, tip); };
+  const hide = (button) => { const tip = tipFor(button); if (tip) tip.classList.remove('open'); button.setAttribute('aria-expanded', 'false'); };
+  const unpin = () => { if (pinned) { hide(pinned); pinned = null; } };
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest && event.target.closest('button.info');
+    if (!button) { unpin(); return; }
+    event.preventDefault();
+    event.stopPropagation();
+    if (pinned === button) { unpin(); return; }
+    unpin();
+    pinned = button;
+    button.setAttribute('aria-expanded', 'true');
+    show(button);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const focused = document.activeElement;
+    document.querySelectorAll('.info-tip.open').forEach((tip) => tip.classList.remove('open'));
+    if (pinned) { pinned.setAttribute('aria-expanded', 'false'); pinned = null; }
+    if (focused && focused.matches && focused.matches('button.info')) focused.dataset.dismissed = '1';
+  });
+  for (const type of ['mouseover', 'focusin']) document.addEventListener(type, (event) => {
+    const button = event.target.closest && event.target.closest('button.info');
+    if (button && button !== pinned) { delete button.dataset.dismissed; show(button); }
+  });
+  for (const type of ['mouseout', 'focusout']) document.addEventListener(type, (event) => {
+    const button = event.target.closest && event.target.closest('button.info');
+    if (button && button !== pinned && !(type === 'mouseout' && button === document.activeElement && !button.dataset.dismissed)) hide(button);
+  });
+  window.addEventListener('scroll', unpin, { passive: true });
+  window.addEventListener('resize', unpin);
+})();
+</script>`;
 
 // Change against the previous period, rendered as a signed chip.
 export function delta(current: number, previous: number, format: (value: number) => string): string {
@@ -115,13 +174,14 @@ export function shell(title: string, body: string, active: PageKey, extraStyles 
   <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${html(title)} · infovore"><meta name="twitter:description" content="${description}"><meta name="twitter:image" content="${html(config.publicBaseUrl)}/og.png?v=life-rings-muted">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=muted"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=muted"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f3ef"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e0f12"><link rel="alternate" type="application/rss+xml" title="infovore" href="/feed.xml"><title>${html(title)} · infovore</title>
   ${themeInit}<link rel="preload" href="/fonts/Figtree-Regular.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/styles.css?v=${stylesVersion}">${extraStyles ? `<style>${extraStyles}</style>` : ''}</head><body>
+  <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header"><div class="site-header-inner"><a class="site-brand" href="/"><img class="brand-mark" src="/logos/infovore.png?v=muted" alt="" width="36" height="36"><span><strong>infovore</strong><small>Sky's personal infoboard</small></span></a><nav class="site-nav" aria-label="Primary">${nav}</nav><div class="site-tools"><form class="site-search" action="/search" role="search"><input type="search" name="q" placeholder="Search the archive" aria-label="Search the archive" autocomplete="off"><button type="submit" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></form><a class="site-search-link" href="/search" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></a>${themeToggle}</div></div></header>
-  <main class="site-main">${body}</main>
+  <main class="site-main" id="main" tabindex="-1">${body}</main>
   <footer class="site-footer"><div class="footer-about"><a class="site-brand" href="/"><img class="brand-mark" src="/logos/infovore.png?v=muted" alt="" width="36" height="36"><strong>infovore</strong></a><p>Sky's media, activities, and plans gathered into one personal home.</p></div>
   <div class="footer-group"><span>Explore</span><a href="/">Home</a><a href="/now">Now</a><a href="/platforms">Platforms</a></div>
   <div class="footer-group"><span>Reflect</span><a href="/profile">Archive</a><a href="/stats">Time</a><a href="/wrapped">Wrapped</a><a href="/cards">Cards</a></div>
-  <div class="footer-group"><span>Data</span><a href="/search">Search</a><a href="/api">API</a><a href="/feed.xml">RSS</a><a href="/status">Status</a><a href="https://github.com/skyhong2002/infovore">Source</a></div></footer>
-  ${themeToggleScript}${adaptiveMediaScript}</body></html>`;
+  <div class="footer-group"><span>Data</span><a href="/search">Search</a><a href="/api">API</a><a href="/feed.xml">RSS</a><a href="/status">Sync status</a><a href="https://github.com/skyhong2002/infovore">Source</a></div></footer>
+  ${themeToggleScript}${adaptiveMediaScript}${infoScript}</body></html>`;
 }
 
 export function sourceLabel(source: string): string {
@@ -274,12 +334,12 @@ export function nowPage(ownerName: string, current: Activity[], upcoming: Activi
 }
 
 export function profilePage(ownerName: string, total: number, bySource: Record<string, number>, latest: Activity[]): string {
-  const stats = Object.entries(bySource).map(([source, count]) => `<a class="metric-card" href="/platforms/${html(source)}"><span class="pill">${html(sourceLabel(source))}</span><span class="count">${count}</span></a>`).join('');
+  const stats = Object.entries(bySource).map(([source, count]) => `<a class="metric-card" href="/platforms/${html(source)}"><span class="pill">${html(sourceLabel(source))}</span><span class="count">${count.toLocaleString('en')}</span></a>`).join('');
   const year = new Date().getUTCFullYear();
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Long-term view</div><h1>The archive</h1><p>Every durable entry collected for ${html(ownerName)}, summarized across sources without losing the original platform context.</p></div><div class="page-intro-aside">${total} public activities and counting.</div></section>
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Long-term view</div><h1>The archive</h1><p>Every durable entry collected for ${html(ownerName)}, summarized across sources without losing the original platform context.</p></div><div class="page-intro-aside">${total.toLocaleString('en')} public activities and counting.</div></section>
     <div class="archive-actions"><a class="archive-action" href="/platforms"><strong>Browse by platform →</strong><span>Open the source-specific mirrors behind these totals.</span></a>
     <a class="archive-action" href="/wrapped/${year}"><strong>Open ${year} Wrapped →</strong><span>Turn the year's activity into a compact retrospective.</span></a></div>`;
-  const overview = `<section><div class="section-heading"><div><div class="eyebrow">Coverage</div><h2>Activity by source</h2></div><span>${Object.keys(bySource).length} active sources</span></div><div class="metric-grid"><div class="metric-card"><span class="pill">All sources</span><span class="count">${total}</span></div>${stats}</div></section>`;
+  const overview = `<section><div class="section-heading"><div><div class="eyebrow">Coverage</div><h2>Activity by source</h2></div><span>${Object.keys(bySource).length} active sources</span></div><div class="metric-grid"><div class="metric-card"><span class="pill">All sources</span><span class="count">${total.toLocaleString('en')}</span></div>${stats}</div></section>`;
   const seen = new Set<string>();
   const distinct = latest.filter((activity) => {
     const key = `${activity.source}:${activity.sourceItemId ?? activity.title}`;

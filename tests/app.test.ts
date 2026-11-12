@@ -265,7 +265,7 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.doesNotMatch(homeHtml, /Music streams/);
   assert.doesNotMatch(homeHtml, /stats\.fm profile/);
   assert.doesNotMatch(homeHtml, /Up next/);
-  assert.match(homeHtml, /<a class="home-metric home-metric-link" href="\/now"><span class="home-metric-label">In progress/);
+  assert.match(homeHtml, /<a class="home-metric-label home-metric-stretch" href="\/now">In progress<\/a><button type="button" class="info"/);
   assert.doesNotMatch(homeHtml, />coming up</);
   assert.doesNotMatch(homeHtml, />in progress</);
   assert.doesNotMatch(homeHtml, />archive entries</);
@@ -481,7 +481,7 @@ test('time spent surfaces on the homepage, platform pages, /stats, and the JSON 
   repository.recordTimeLedger(simkl(130));
 
   const homeHtml = await (await app.request('/')).text();
-  assert.match(homeHtml, /class="home-metric-label">Time recorded(?:<span class="info"[^>]*>i<\/span>)?<\/span><strong class="home-metric-value">\d+%</);
+  assert.match(homeHtml, /class="home-metric-label">Time recorded<\/span>(?:<button type="button" class="info"[^>]*><\/button><span class="info-tip"[^>]*>[^<]*<\/span>)?<\/span><strong class="home-metric-value">\d+%</);
   assert.match(homeHtml, /of the last 28 days/);
   assert.match(homeHtml, /class="home-metric-label">Active days</);
   assert.match(homeHtml, /Time by platform/);

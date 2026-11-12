@@ -1,0 +1,67 @@
+import { html, shell, sourceLabel } from './pages.js';
+import { syncAge } from './home.js';
+import { dateFormat } from '../data/time.js';
+
+// Public error strings keep their category (e.g. "HTTP 404") but never the
+// upstream URL, which can name a third-party profile.
+export function publicError(error: string | null | undefined): string | null {
+  if (!error) return null;
+  return error.replace(/\bhttps?:\/\/[^\s"'<>)]+/gi, '[link removed]').slice(0, 300);
+}
+
+export interface StatusSource { source: string; lastFetched: string | null; error: string | null; json: string }
+export interface StatusView {
+  ownerName: string;
+  maxSourceAgeHours: number;
+  intervalMinutes: number;
+  nextScheduledAt: string | null;
+  running: string[];
+  sources: StatusSource[];
+  now?: Date;
+}
+
+function errorSummary(error: string): string {
+  const http = /HTTP (\d{3})/.exec(error);
+  if (http) return `last attempt failed (HTTP ${http[1]})`;
+  if (/timed? ?out|deadline/i.test(error)) return 'last attempt timed out';
+  return 'last attempt failed';
+}
+
+// A readable version of /status for people; /status.json keeps the machine view.
+export function statusPage(view: StatusView): string {
+  const now = view.now ?? new Date();
+  const absolute = (iso: string) => `${dateFormat('en', { timeZone: 'Asia/Taipei', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso))} GMT+8`;
+  const rows = view.sources.map((source) => {
+    const age = source.lastFetched ? now.getTime() - Date.parse(source.lastFetched) : null;
+    const stale = age === null || age > view.maxSourceAgeHours * 3_600_000;
+    const state = source.lastFetched === null ? 'Not synced yet' : stale ? 'Delayed' : source.error ? 'Retrying' : 'Fresh';
+    const tone = state === 'Fresh' ? 'ok' : state === 'Retrying' ? 'warn' : 'bad';
+    const running = view.running.includes(source.source) ? ' · syncing now' : '';
+    const detail = source.error ? errorSummary(source.error) : stale && source.lastFetched ? `older than ${view.maxSourceAgeHours} h; showing last good data` : '';
+    return `<tr><th scope="row"><a href="/platforms/${html(source.source)}">${html(sourceLabel(source.source))}</a></th>
+      <td><span class="status-chip ${tone}">${state}</span>${running}</td>
+      <td>${source.lastFetched ? `<time datetime="${html(source.lastFetched)}">${html(syncAge(source.lastFetched, now))}</time><span class="status-abs">${html(absolute(source.lastFetched))}</span>` : '—'}</td>
+      <td>${detail ? html(detail) : '<span class="status-quiet">—</span>'}</td>
+      <td><a href="${html(source.json)}">JSON</a></td></tr>`;
+  }).join('');
+  const fresh = view.sources.filter((source) => source.lastFetched && now.getTime() - Date.parse(source.lastFetched) <= view.maxSourceAgeHours * 3_600_000).length;
+  const summary = fresh === view.sources.length ? 'All platforms synced recently.' : `${view.sources.length - fresh} of ${view.sources.length} platforms are behind; their pages keep showing the last good data.`;
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Data freshness</div><h1>Sync status</h1><p>${html(summary)} Fetched platforms refresh every ${view.intervalMinutes} minutes; Health, Dayflow and AI agents are pushed from devices when they sync.</p></div><div class="page-intro-aside">${view.nextScheduledAt ? `Next scheduled refresh ${html(syncAgeFuture(view.nextScheduledAt, now))}.` : 'A refresh is running or not scheduled.'}<br><a href="/status.json">Machine-readable status</a> · <a href="/healthz">Health check</a></div></section>`;
+  const table = `<div class="time-table-wrap" tabindex="0" role="region" aria-label="Sync status by platform"><table class="time-table status-table"><thead><tr><th scope="col">Platform</th><th scope="col">State</th><th scope="col">Last successful sync</th><th scope="col">Note</th><th scope="col">Data</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="feed-note">“Delayed” means the platform has not synced for over ${view.maxSourceAgeHours} hours. A platform with no new activity can still be fresh. Error details stay on the server.</p>`;
+  const styles = '.status-table th,.status-table td{text-align:left!important;vertical-align:top;white-space:normal}.status-table th[scope=row] a{color:var(--text);font-weight:700;text-decoration:none}.status-chip{border-radius:999px;font-size:12.5px;font-weight:700;padding:2px 9px}.status-chip.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}.status-chip.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}.status-chip.bad{background:color-mix(in srgb,var(--warn) 28%,transparent);color:var(--text)}.status-abs{color:var(--quiet);display:block;font-size:12.5px}.status-quiet{color:var(--quiet)}.status-table tbody th{background:none;color:var(--text);font-size:14px;letter-spacing:0;text-transform:none}@media(max-width:640px){.status-table thead{display:none}.status-table tr{border-top:1px solid var(--line);display:grid;gap:4px 12px;grid-template-columns:minmax(0,1fr) auto;padding:12px 16px}.status-table tbody tr:first-child{border-top:0}.status-table tbody th,.status-table td{border:0;padding:0!important}.status-table td:nth-child(2){text-align:right!important}.status-table td:nth-child(3),.status-table td:nth-child(4){grid-column:1/-1}.status-table td:nth-child(4):has(.status-quiet){display:none}.status-table td:last-child{grid-column:1/-1}.status-table td:last-child a::before{content:"Raw data: "}.status-abs{display:inline;margin-left:6px}}';
+  return shell(`${view.ownerName} · sync status`, intro + table, 'api', styles, { path: '/status' });
+}
+
+function syncAgeFuture(iso: string, now: Date): string {
+  const minutes = Math.round((Date.parse(iso) - now.getTime()) / 60_000);
+  if (!Number.isFinite(minutes)) return '';
+  if (minutes <= 1) return 'in a minute';
+  return minutes < 60 ? `in ${minutes} min` : `in ${Math.round(minutes / 60)} h`;
+}
+
+export function notFoundPage(ownerName: string, path: string): string {
+  const body = `<section class="page-intro"><div><div class="eyebrow">404</div><h1>Nothing here</h1><p>There is no page at <code>${html(path.slice(0, 120))}</code>. It may have moved, or the link may be mistyped.</p></div></section>
+    <div class="archive-actions"><a class="archive-action" href="/"><strong>Go to the overview →</strong><span>Time, platforms and the latest activity.</span></a><a class="archive-action" href="/search"><strong>Search the archive →</strong><span>Find a title, artist, channel or venue.</span></a></div>`;
+  return shell(`${ownerName} · not found`, body, 'api', '', { noindex: true });
+}

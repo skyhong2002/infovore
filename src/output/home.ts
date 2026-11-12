@@ -40,11 +40,11 @@ const homeStyles = `
   .home-profile-main{align-items:center;display:flex;gap:16px;min-width:0}
   .home-avatar,.home-avatar-placeholder{background:var(--surface-raised);border-radius:50%;box-shadow:0 0 0 4px var(--surface),0 0 0 5px var(--line);display:block;flex:0 0 60px;height:60px;object-fit:cover;width:60px}
   .home-avatar-placeholder{align-items:center;color:var(--accent);display:flex;font-size:34px;font-weight:700;justify-content:center}
-  .home-kicker{color:var(--gold);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+  .home-kicker{color:var(--gold);font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
   .home-profile h1{font-family:var(--display);font-size:40px;font-weight:400;letter-spacing:-.02em;line-height:1;margin:0 0 4px}
   .home-handle{color:var(--muted);font-size:14px;margin:0}.home-handle a{color:var(--muted)}.home-handle a:hover{color:var(--accent)}
-  .home-profile-links{display:flex;flex-wrap:wrap;gap:4px 14px;justify-content:flex-end;margin-top:6px}
-  .home-profile-links a{color:var(--muted);font-size:13px;text-decoration:none}.home-profile-links a:hover{color:var(--accent)}
+  .home-profile-links{display:flex;flex-wrap:wrap;gap:0 4px;justify-content:flex-end;margin-top:4px}
+  .home-profile-links a{align-items:center;border-radius:8px;color:var(--muted);display:inline-flex;font-size:13.5px;min-height:36px;padding:4px 8px;text-decoration:none}.home-profile-links a:hover{color:var(--accent)}
   .home-profile-status{color:var(--quiet);display:flex;flex:0 0 auto;flex-direction:column;font-size:12.5px;text-align:right}
   .home-profile-status strong{color:var(--text);display:block;font-size:13.5px;margin:4px 0}
   .home-status-line{align-items:center;display:flex;gap:6px;justify-content:flex-end}
@@ -52,16 +52,20 @@ const homeStyles = `
   .home-metric-grid{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:10px}
   .home-metric{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:13px 16px;position:relative}
   .home-metric::before{background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:var(--radius-sm) var(--radius-sm) 0 0;content:"";height:3px;left:0;position:absolute;right:0;top:0;opacity:.8}
-  .home-metric-label{color:var(--muted);display:block;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .home-metric-label{color:var(--muted);display:block;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .home-metric-value{color:var(--text);display:block;font-size:26px;font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:-.03em;line-height:1.1;margin-top:6px}
-  .home-metric-note{color:var(--quiet);display:block;font-size:12px;margin-top:3px}.home-metric-link{color:inherit;text-decoration:none;transition:border-color .15s}.home-metric-link:hover{border-color:var(--line-strong);color:inherit}.home-metric-names{color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.45;margin-top:6px;overflow:hidden}
+  .home-metric-head{align-items:center;display:flex}
+  .home-metric-linked{transition:border-color .15s}.home-metric-linked:hover{border-color:var(--line-strong)}.home-metric-stretch{text-decoration:none}.home-metric-stretch::after{content:"";inset:0;position:absolute;z-index:0}.home-metric-linked .info{z-index:1}.home-metric-stretch:hover{color:var(--accent)}
+  .home-status-sub{color:var(--quiet);font-size:12.5px;margin-top:2px}.home-status-dot.warn{background:var(--warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 25%,transparent)}
+  .home-platform-sync{color:var(--quiet);display:block;font-size:12px;margin-top:3px}.home-platform-sync.warn{color:var(--warn);font-weight:600}
+  .home-metric-note{color:var(--quiet);display:block;font-size:12.5px;margin-top:3px}.home-metric-link{color:inherit;text-decoration:none;transition:border-color .15s}.home-metric-link:hover{border-color:var(--line-strong);color:inherit}.home-metric-names{color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.45;margin-top:6px;overflow:hidden}
   .home-metric-trend{align-items:center;display:flex;gap:10px;margin-top:8px;min-height:26px}
   .home-time-row{grid-template-columns:118px minmax(0,1fr) 60px 64px}.home-time-spark{display:block}.home-time-row:not(:has(.home-time-spark)){grid-template-columns:118px minmax(0,1fr) 60px}
   .home-section{margin-top:30px}
   .home-section-head{align-items:end;display:flex;gap:16px;justify-content:space-between;margin-bottom:10px}
   .home-section-head h2{font-size:19px;line-height:1.2;margin:0}
   .home-section-head p{color:var(--muted);font-size:13px;margin:3px 0 0}
-  .home-section-head a{color:var(--muted);font-size:13px;text-decoration:none;white-space:nowrap}.home-section-head a:hover{color:var(--accent)}
+  .home-section-head a{color:var(--muted);font-size:13.5px;padding:6px 0;text-decoration:none;white-space:nowrap}.home-section-head a:hover{color:var(--accent)}
   .home-platform-scroller{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,215px),1fr));gap:8px}
   .home-platform-tile{align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);color:inherit;display:flex;gap:11px;padding:9px;text-decoration:none;transition:border-color .15s,transform .15s}
   .home-platform-tile:hover{border-color:var(--line-strong);color:inherit;transform:translateY(-2px)}
@@ -69,22 +73,22 @@ const homeStyles = `
   .home-platform-tile img[src="/logos/healthconnect.png"],.home-recent-art[src="/logos/healthconnect.png"]{background:#fff;object-fit:contain;padding:8px}
   .home-platform-placeholder{align-items:center;color:var(--accent);display:flex;font-size:20px;font-weight:700;justify-content:center}
   .home-platform-copy{min-width:0}
-  .home-platform-source{color:var(--accent);display:block;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .home-platform-source{color:var(--accent);display:block;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
   .home-platform-title{color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:13px;font-weight:700;line-height:1.3;margin-top:3px;overflow:hidden;overflow-wrap:anywhere}
-  .home-platform-meta{color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:11.5px;line-height:1.4;margin-top:2px;overflow:hidden}
+  .home-platform-meta{color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12.5px;line-height:1.4;margin-top:2px;overflow:hidden}
   .home-platform-tile[href="/platforms/health"] .home-platform-meta,.home-platform-tile[href="/platforms/dayflow"] .home-platform-meta{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .home-dashboard-grid{align-items:start;display:grid;gap:12px;grid-template-columns:minmax(0,1.4fr) minmax(300px,.6fr)}
   .home-panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0;padding:16px 18px}
-  .home-panel h2{display:inline;font-size:16px;margin:0}
-  .home-panel-intro{color:var(--quiet);font-size:12px;margin:2px 0 12px}
-  .home-panel-link{color:var(--muted);float:right;font-size:12px;text-decoration:none}.home-panel-link:hover{color:var(--accent)}
-  .home-coverage-axis,.home-coverage-day{display:grid;gap:8px;grid-template-columns:38px minmax(0,1fr) 42px}.home-coverage-axis{color:var(--quiet);font-size:10.5px;font-variant-numeric:tabular-nums;margin:0 0 4px}.home-coverage-hours{display:flex;justify-content:space-between}
+  .home-panel h2{display:inline;font-size:16px;margin:0;vertical-align:middle}
+  .home-panel-intro{color:var(--quiet);font-size:12.5px;margin:2px 0 12px}
+  .home-panel-link{color:var(--muted);float:right;font-size:13px;padding:4px 0;text-decoration:none}.home-panel-link:hover{color:var(--accent)}
+  .home-coverage-axis,.home-coverage-day{display:grid;gap:8px;grid-template-columns:38px minmax(0,1fr) 42px}.home-coverage-axis{color:var(--quiet);font-size:12px;font-variant-numeric:tabular-nums;margin:0 0 4px}.home-coverage-hours{display:flex;justify-content:space-between}
   .home-coverage-day{align-items:center;margin-top:5px}.home-coverage-label{display:contents;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.home-coverage-label time{grid-column:1;grid-row:1}.home-coverage-label span{color:var(--text);font-weight:600;grid-column:3;grid-row:1;text-align:right}.home-coverage-track{grid-column:2;grid-row:1}
   .home-coverage-track{background:repeating-linear-gradient(to right,transparent 0,transparent calc(100% / 24 - 1px),var(--line) calc(100% / 24 - 1px),var(--line) calc(100% / 24)),var(--surface-raised);border-radius:4px;overflow:hidden;padding:2px 0}
   .home-coverage-lane{position:relative;height:6px;margin:1px 0}.home-coverage-lane span{position:absolute;top:0;height:100%;border-radius:1px}
-  .home-rhythm-legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--muted);margin-top:10px;padding-left:46px}
+  .home-rhythm-legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);margin-top:10px;padding-left:46px}
   .home-rhythm-legend i{border-radius:2px;display:inline-block;width:9px;height:9px;margin-right:5px;vertical-align:-1px}
-  .home-keywords{display:flex;flex-wrap:nowrap;gap:4px;margin-top:4px;color:var(--muted);font-size:11px;overflow:hidden}
+  .home-keywords{display:flex;flex-wrap:nowrap;gap:4px;margin-top:4px;color:var(--muted);font-size:12px;overflow:hidden}
   .home-keywords span{background:var(--surface-raised);border-radius:5px;padding:1px 6px;white-space:nowrap}
   .home-time-list{display:flex;flex-direction:column;gap:9px}
   .home-time-row{align-items:center;color:inherit;display:grid;gap:12px;text-decoration:none}
@@ -98,15 +102,15 @@ const homeStyles = `
   .home-recent-item{align-items:center;border-bottom:1px solid var(--line);display:grid;gap:12px;grid-template-columns:44px minmax(0,1fr) auto;padding:9px 14px;transition:background .15s}.home-recent-item:nth-child(odd){border-right:1px solid var(--line)}.home-recent-item:nth-last-child(-n+2):nth-child(odd),.home-recent-item:last-child{border-bottom:0}
   .home-recent-item:hover{background:var(--surface-hover)}
   .home-recent-art,.home-recent-placeholder{background:var(--surface-raised);border-radius:7px;display:block;height:44px;object-fit:cover;width:44px}
-  .home-recent-placeholder{align-items:center;color:var(--quiet);display:flex;font-size:11px;justify-content:center}
+  .home-recent-placeholder{align-items:center;color:var(--quiet);display:flex;font-size:12px;justify-content:center}
   .home-recent-copy{min-width:0}
   .home-recent-labels{align-items:center;display:flex;gap:8px}
-  .home-recent-source{color:var(--accent);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
-  .home-recent-kind{color:var(--quiet);font-size:10.5px;text-transform:uppercase}
+  .home-recent-source{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .home-recent-kind{color:var(--quiet);font-size:12px;text-transform:uppercase}
   .home-recent-title{color:var(--text);display:block;font-size:13.5px;font-weight:700;line-height:1.3;margin-top:1px;overflow:hidden;text-decoration:none;text-overflow:ellipsis;white-space:nowrap}
   a.home-recent-title:hover{color:var(--accent)}
   .home-recent-meta{color:var(--muted);display:block;font-size:12px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .home-recent-time{align-self:start;color:var(--quiet);font-size:11px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  .home-recent-time{align-self:start;color:var(--quiet);font-size:12px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
   .home-footnote{color:var(--quiet);font-size:12px;line-height:1.5;margin:12px 0 0}
   @media(max-width:900px){.home-recent-list{grid-template-columns:1fr}.home-recent-item:nth-child(odd){border-right:0}.home-recent-item:nth-last-child(-n+2):nth-child(odd){border-bottom:1px solid var(--line)}}
   @media(max-width:780px){.home-profile{align-items:flex-start;flex-direction:column;gap:10px;padding:16px}.home-profile-status{text-align:left}.home-status-line{justify-content:flex-start}.home-profile-links{justify-content:flex-start}.home-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home-dashboard-grid{grid-template-columns:1fr}}
@@ -156,7 +160,7 @@ function last28Days(): string {
 function inProgressTile(items: Activity[]): string {
   const names = items.slice(0, 3).map((item) => html(item.title)).join(' · ');
   const more = items.length > 3 ? ` +${items.length - 3}` : '';
-  return `<a class="home-metric home-metric-link" href="/now"><span class="home-metric-label">In progress${info('Games logged in the last 14 days, plus shows, anime, manga and books with progress in the last 60 days. Older ones are listed as paused on the Now page.')}</span><strong class="home-metric-value">${items.length}</strong><span class="home-metric-note home-metric-names" title="${html(items.map((item) => item.title).join(' · '))}">${names ? `${names}${more}` : 'Nothing in progress'}</span></a>`;
+  return `<div class="home-metric home-metric-linked"><span class="home-metric-head"><a class="home-metric-label home-metric-stretch" href="/now">In progress</a>${info('Games logged in the last 14 days, plus shows, anime, manga and books with progress in the last 60 days. Older ones are listed as paused on the Now page.')}</span><strong class="home-metric-value">${items.length}</strong><span class="home-metric-note home-metric-names" title="${html(items.map((item) => item.title).join(' · '))}">${names ? `${names}${more}` : 'Nothing in progress'}</span></div>`;
 }
 
 function profileAvatar(data: HomepageData): string {
@@ -169,10 +173,31 @@ function dailyKeywords(activity: Activity, dayflow?: DayflowSnapshot | null): st
   return day?.keywords?.length ? `<span class="home-keywords">${day.keywords.slice(0, 4).map(k => `<span>${html(k.name)}</span>`).join('')}</span>` : '';
 }
 
+function syncLine(item: PlatformOverview): string {
+  const sync = item.sync;
+  if (!sync) return '';
+  if (sync.state === 'never') return '<span class="home-platform-sync warn">Not synced yet</span>';
+  const when = sync.at ? `<time datetime="${html(sync.at)}">${html(syncAge(sync.at))}</time>` : '';
+  return sync.state === 'stale'
+    ? `<span class="home-platform-sync warn">Sync delayed · last good data ${when}</span>`
+    : `<span class="home-platform-sync">Synced ${when}</span>`;
+}
+
+// "just now", "35 min ago", "5 h ago", "3 days ago": how long since the source synced.
+export function syncAge(iso: string, now = new Date()): string {
+  const minutes = Math.max(0, Math.round((now.getTime() - Date.parse(iso)) / 60_000));
+  if (!Number.isFinite(minutes)) return '';
+  if (minutes < 2) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hoursAgo = Math.round(minutes / 60);
+  if (hoursAgo < 48) return `${hoursAgo} h ago`;
+  return `${Math.round(hoursAgo / 24)} days ago`;
+}
+
 function overviewTile(item: PlatformOverview): string {
   return `<a class="home-platform-tile" href="/platforms/${html(item.source)}">
     ${imageOrPlaceholder(item.image, 'home-platform-art', item.title)}
-    <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(item.source))}</span><span class="home-platform-title" title="${html(item.title)}">${html(item.title)}</span><span class="home-platform-meta">${html(item.detail)}</span></span>
+    <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(item.source))}</span><span class="home-platform-title" title="${html(item.title)}">${html(item.title)}</span><span class="home-platform-meta">${html(item.detail)}</span>${syncLine(item)}</span>
   </a>`;
 }
 
@@ -191,7 +216,7 @@ function metric(label: string, value: string, note: string, options: { tip?: str
   const trend = options.series || options.change
     ? `<span class="home-metric-trend">${options.series ? sparkline(options.series, { width: 110, height: 26, color: options.color, label: `${label} · last 28 days` }) : ''}${options.change ?? ''}</span>`
     : '';
-  return `<div class="home-metric"><span class="home-metric-label">${html(label)}${options.tip ? info(options.tip) : ''}</span><strong class="home-metric-value">${html(value)}</strong><span class="home-metric-note">${html(note)}</span>${trend}</div>`;
+  return `<div class="home-metric"><span class="home-metric-head"><span class="home-metric-label">${html(label)}</span>${options.tip ? info(options.tip) : ''}</span><strong class="home-metric-value">${html(value)}</strong><span class="home-metric-note">${html(note)}</span>${trend}</div>`;
 }
 
 // Public activities per Taipei day over the last 28 days, oldest first.
@@ -219,9 +244,10 @@ function shareBar(entries: TimeEntry[], windowKey: 'last28d' | 'allTime', label:
     const name = timeLabel(entry.source);
     return { entry, seconds, share, name, color: platformColors[entry.source] ?? '#8caacb', href: entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${entry.source}` };
   });
-  return `<div class="share-bar"><div class="share-bar-head"><strong>Where the time went</strong><span>${html(label)} · ${html(timeAmount(total))} across ${segments.length} platforms, overlaps counted per platform</span></div>
-    <div class="share-track">${segments.map((segment) => `<a href="${html(segment.href)}" style="flex:${segment.share.toFixed(4)} 0 0;background:${segment.color}" title="${html(segment.name)} · ${html(timeAmount(segment.seconds))} · ${Math.round(segment.share * 100)}%"></a>`).join('')}</div>
-    <div class="share-legend">${segments.filter((segment) => segment.share >= 0.02).map((segment) => `<span><i style="background:${segment.color}"></i>${html(segment.name)} <b>${Math.round(segment.share * 100)}%</b></span>`).join('')}</div></div>`;
+  const percent = (share: number) => share < 0.005 ? '<1%' : `${Math.round(share * 100)}%`;
+  return `<section class="share-bar" aria-labelledby="share-bar-title"><div class="share-bar-head"><strong id="share-bar-title">Where the time went</strong><span>${html(label)} · ${html(timeAmount(total))} summed per platform, so overlapping time counts once for each platform (unlike “Time recorded”, which counts it once)</span></div>
+    <div class="share-track" aria-hidden="true">${segments.map((segment) => `<span style="flex:${segment.share.toFixed(4)} 0 0;background:${segment.color}" title="${html(segment.name)} · ${html(timeAmount(segment.seconds))} · ${percent(segment.share)}"></span>`).join('')}</div>
+    <ul class="share-legend">${segments.map((segment) => `<li><a href="${html(segment.href)}"><i style="background:${segment.color}" aria-hidden="true"></i>${html(segment.name)} <b>${percent(segment.share)}</b><span class="visually-hidden"> · ${html(timeAmount(segment.seconds))}</span></a></li>`).join('')}</ul></section>`;
 }
 
 // Text word cloud of the last 28 days, sized by attention and linked to search.
@@ -241,7 +267,7 @@ function cloudSection(terms: CloudTerm[]): string {
     const cls = hot.has(term.label) ? 'hot' : warm.has(term.label) ? 'warm' : '';
     return `<a class="${cls}" href="/search?q=${encodeURIComponent(term.label)}" style="font-size:${size}px" title="${html(sourceLabel(term.source))} · ${html(term.kind)} · ${term.count} ${term.count === 1 ? 'time' : 'times'}">${html(term.label)}</a>`;
   }).join('');
-  return `<section class="home-section"><div class="home-section-head"><div><h2>On repeat${info('Artists, games, channels, books and work topics from the last 28 days, sized by attention. Click a word to search.')}</h2></div><a href="/cards#word-cloud">Share card →</a></div><div class="home-panel"><div class="cloud">${items}</div></div></section>`;
+  return `<section class="home-section"><div class="home-section-head"><div class="heading-with-info"><h2>On repeat</h2>${info('Artists, games, channels, books and work topics from the last 28 days, sized by attention. Click a word to search.')}</div><a href="/cards#word-cloud">Share card →</a></div><div class="home-panel"><div class="cloud">${items}</div></div></section>`;
 }
 
 interface TimeEntry { source: string; method: TimeMethod; windows: { last28d: number; allTime: number } }
@@ -278,7 +304,7 @@ function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows |
     entries.some((entry) => entry.source === 'computai') ? 'AI agents is wall-clock time with any Claude Code or Codex session producing output, parallel sessions counted once.' : '',
     '~ marks estimates.',
   ].filter(Boolean).join(' ');
-  return `<div class="home-panel"><h2>Time by platform${info(notes)}</h2><a class="home-panel-link" href="/stats">All windows →</a><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div></div>`;
+  return `<div class="home-panel"><h2>Time by platform</h2>${info(notes)}<a class="home-panel-link" href="/stats">All windows →</a><p class="home-panel-intro">Where the recorded time went ${window.label}.</p><div class="home-time-list">${rows}</div></div>`;
 }
 
 function rhythmPanel(coverage: CoverageDay[]): string {
@@ -290,7 +316,7 @@ function rhythmPanel(coverage: CoverageDay[]): string {
     <div class="home-coverage-track" aria-label="${day.day}: ${html(timeAmount(day.recordedSeconds))} recorded out of 24 hours">
       ${day.lanes.length ? day.lanes.map(lane => `<div class="home-coverage-lane" data-source="${html(lane.source)}">${lane.spans.map(span => `<span style="left:${span.startHour / 24 * 100}%;width:${(span.endHour - span.startHour) / 24 * 100}%;background:${sources[lane.source]?.color ?? '#8caacb'}" title="${html(sources[lane.source]?.label ?? lane.source)} · ${clock(span.startHour)}–${clock(span.endHour)}"></span>`).join('')}</div>`).join('') : '<div class="home-coverage-lane"></div>'}
     </div></div>`).join('');
-  return `<div class="home-panel"><h2>Activity rhythm${info('Overlapping time counts once. Dayflow counts active computer time only; idle records and analysis errors are excluded. Music uses track duration; YouTube uses measured or, failing that, estimated watch time. Daily totals and events without a duration are excluded.')}</h2><a class="home-panel-link" href="/card/activity-rhythm.svg">Share card ↗</a><p class="home-panel-intro">Recorded time each day · last 7 days · Taipei time</p>
+  return `<div class="home-panel"><h2>Activity rhythm</h2>${info('Overlapping time counts once. Dayflow counts active computer time only; idle records and analysis errors are excluded. Music uses track duration; YouTube uses measured or, failing that, estimated watch time. Daily totals and events without a duration are excluded.')}<a class="home-panel-link" href="/card/activity-rhythm.svg">Share card ↗</a><p class="home-panel-intro">Recorded time each day · last 7 days · Taipei time</p>
     <div class="home-coverage-axis"><span></span><span class="home-coverage-hours"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></span><span></span></div>${rows}
     <div class="home-rhythm-legend">${Object.values(sources).map(source => `<span><i style="background:${source.color}"></i>${source.label}</span>`).join('')}<span><i style="background:var(--surface-raised)"></i>Unrecorded</span></div></div>`;
 }
@@ -302,21 +328,22 @@ export function homePage(data: HomepageData): string {
   const highlights = data.platformOverviews?.length
     ? `<div class="home-platform-scroller">${data.platformOverviews.map(overviewTile).join('')}</div>`
     : '<div class="home-empty">No platform summaries are available yet.</div>';
-  const updated = data.lastUpdated ? `Updated ${data.lastUpdated}` : 'Waiting for the first sync';
+  const updated = data.lastUpdated ? `Latest sync ${data.lastUpdated}` : 'Waiting for the first sync';
   const window = homeTimeWindow(data.timeSpent);
+  const staleCount = (data.platformOverviews ?? []).filter((item) => item.sync?.state === 'stale').length;
   const coverageDays = [...(data.coverage ?? [])].sort((a, b) => a.day.localeCompare(b.day));
   const recordedSeries = coverageDays.map((day) => day.recordedSeconds);
   const activitySeries = dailyActivityCounts(data.allActivities, coverageDays.length ? coverageDays.map((day) => day.day) : (data.daily?.days ?? []));
   const body = `<div class="home-page">
     <section class="home-profile" aria-labelledby="home-title">
       <div class="home-profile-main">${profileAvatar(data)}<div><h1 id="home-title">${html(data.ownerName)}</h1><p class="home-handle">Watched, read, played, heard, attended, moved · <a href="/platforms">${html(data.connectedSources)} platforms</a></p></div></div>
-      <div class="home-profile-status"><span class="home-status-line"><span class="home-status-dot" aria-hidden="true"></span>${html(updated)}</span><span class="home-profile-links"><a href="/feed.xml">RSS</a><a href="/api">API</a><a href="/cards">Cards</a></span></div>
+      <div class="home-profile-status"><span class="home-status-line"><span class="home-status-dot${staleCount ? ' warn' : ''}" aria-hidden="true"></span>${html(updated)}</span><span class="home-status-sub">${staleCount ? `${staleCount} ${staleCount === 1 ? 'platform is' : 'platforms are'} showing older data · <a href="/status">sync status</a>` : 'Each platform below shows its own last sync'}</span><span class="home-profile-links"><a href="/feed.xml">RSS</a><a href="/api">API</a><a href="/cards">Cards</a></span></div>
     </section>
     <section class="home-metric-grid" aria-label="Overview metrics">
-      ${metric('Time recorded', shareLabel(data.recordedShare), 'of the last 28 days', { tip: 'Share of the last 28 days with any recording. Overlapping platforms count once; Dayflow idle time, daily totals and events without a duration are excluded.', series: recordedSeries, change: delta(sum(recordedSeries, 21, 28) / 7, sum(recordedSeries, 14, 21) / 7, (value) => `${timeAmount(value)}/day`) })}
+      ${metric('Time recorded', shareLabel(data.recordedShare), 'of the last 28 days · overlaps counted once', { tip: 'Share of the last 28 days with any recording. Overlapping platforms count once; Dayflow idle time, daily totals and events without a duration are excluded.', series: recordedSeries, change: delta(sum(recordedSeries, 21, 28) / 7, sum(recordedSeries, 14, 21) / 7, (value) => `${timeAmount(value)}/day`) })}
       ${metric('Active days', `${activitySeries.filter(Boolean).length}/${activitySeries.length || 28}`, 'with any activity, last 28 days', { tip: 'Taipei days in the last 28 with at least one public activity. The trend counts activities per day; the change compares active days in the last 7 with the 7 before.', series: activitySeries, change: delta(activitySeries.slice(21).filter(Boolean).length, activitySeries.slice(14, 21).filter(Boolean).length, (value) => `${value} ${value === 1 ? 'day' : 'days'}`) })}
       ${inProgressTile(data.inProgress ?? [])}
-      ${metric('Public entries', String(data.publicActivityCount), 'in the archive', { tip: 'Public activities from every source: synced media, lifetime YouTube watches from urtube, each Health sleep, workout and day of steps, each Dayflow day, and each AI agent work block. The change is media entries first collected in the last 7 days versus the 7 before.', change: data.newEntries ? delta(data.newEntries.week, data.newEntries.previous, (value) => `${value} new`) : undefined })}
+      ${metric('Public entries', data.publicActivityCount.toLocaleString('en'), 'in the archive', { tip: 'Public activities from every source: synced media, lifetime YouTube watches from urtube, each Health sleep, workout and day of steps, each Dayflow day, and each AI agent work block. The change is media entries first collected in the last 7 days versus the 7 before.', change: data.newEntries ? delta(data.newEntries.week, data.newEntries.previous, (value) => `${value} new`) : undefined })}
     </section>
     ${shareBar(timeEntries(window, data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime).entries, window.key, window.key === 'last28d' ? 'Last 28 days' : 'All time')}
     <section class="home-section"><div class="home-section-head"><div><h2>Platforms</h2></div><a href="/platforms">All platforms →</a></div>${highlights}</section>

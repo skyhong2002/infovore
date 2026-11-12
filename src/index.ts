@@ -2,7 +2,8 @@ import { buildRhythmCard } from './output/rhythm.js';
 import { measureRead } from './data/read-timing.js';
 import { buildNowCard } from './output/now.js';
 import { buildCloudTerms, buildWordCloudCard, type CloudEntry, type CloudTerm } from './output/cloud.js';
-import { platformOverview } from './output/overview.js';
+import { platformOverview, platformSync } from './output/overview.js';
+import { notFoundPage, publicError, statusPage } from './output/status.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js';
 import type { ComputaiSnapshot } from './computai/types.js';
@@ -582,6 +583,15 @@ function formatGmt8(ts: number): string {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${hh}:${mm} GMT+8`;
 }
 
+// When a source last synced successfully (cache time for fetched platforms,
+// the push timestamp for Health, Dayflow and ComputAI).
+function sourceSyncedAt(source: string): number | string | null {
+  if (source === 'health') return config.healthConnect.token ? repository.healthConnectStatus().lastSyncedAt : null;
+  if (source === 'dayflow') return dayflowEnabled ? repository.dayflow.status().lastSyncedAt : null;
+  if (source === 'computai') return computaiEnabled ? repository.computai.status().lastSyncedAt : null;
+  return getCache(`data:${source}`)?.fetchedAt ?? null;
+}
+
 // The most recent successful fetch across active sources.
 function lastUpdatedLabel(): string | null {
   const timestamps = activeSources
@@ -626,8 +636,9 @@ app.get('/', (c) => measureRead('homepage', () => {
     allActivities: combined,
     recentActivities: recent,
     platformOverviews: [
-      ...sections.map(section => platformOverview(section.source, section.logo ?? `/logos/${section.source}.png`,
-        section.source === 'health' ? healthSnapshot : getCache<SourceSnapshot<unknown>>(`data:${section.source}`)?.data, now)),
+      ...sections.map(section => ({ ...platformOverview(section.source, section.logo ?? `/logos/${section.source}.png`,
+        section.source === 'health' ? healthSnapshot : getCache<SourceSnapshot<unknown>>(`data:${section.source}`)?.data, now),
+        sync: platformSync(sourceSyncedAt(section.source), config.maxSourceAgeHours, now) })),
       ...(sourceCounts.events ? [platformOverview('events', '', manualEventsSnapshot(), now)] : []),
     ],
     timeSpent: repository.timeSpent(),
@@ -760,13 +771,13 @@ app.get('/cards', (c) => {
   return c.html(shell(`${config.ownerName} · cards`, `${intro}<div class="card-gallery">${body}</div>`, 'cards', '', { path: '/cards' }));
 });
 
-app.get('/status', (c) => {
-  const sources: Array<Record<string, unknown>> = activeSources.map((name) => {
+function statusSources(): Array<{ source: string; lastFetched: string | null; error: string | null; json: string }> {
+  const sources = activeSources.map((name) => {
     const entry = getCache(`data:${name}`);
     return {
       source: name,
       lastFetched: entry ? new Date(entry.fetchedAt).toISOString() : null,
-      error: entry?.error ?? null,
+      error: publicError(entry?.error),
       json: `/api/${name}.json`,
     };
   });
@@ -776,7 +787,16 @@ app.get('/status', (c) => {
   }
   if (dayflowEnabled) sources.push({ source: 'dayflow', lastFetched: repository.dayflow.status().lastSyncedAt, error: null, json: '/api/dayflow.json' });
   if (computaiEnabled) sources.push({ source: 'computai', lastFetched: repository.computai.status().lastSyncedAt, error: null, json: '/api/computai.json' });
-  return c.json({
+  return sources;
+}
+
+// Machine view of the collector. Runs are listed only for sources that are
+// still configured (a retired source's last failure is history, not status),
+// and errors keep their category without upstream URLs.
+function statusJson() {
+  const sources = statusSources();
+  const configured = new Set(sources.map((source) => source.source));
+  return {
     owner: config.ownerName,
     refresh: {
       intervalMinutes: config.refreshIntervalMinutes,
@@ -787,11 +807,35 @@ app.get('/status', (c) => {
       cycleCompletedAt: isoOrNull(scheduleState.cycleCompletedAt),
       running: [...runningSources].map(([source, startedAt]) => ({ source, startedAt: new Date(startedAt).toISOString() })),
     },
-    database: { activities: repository.countPublicActivities(), latestRuns: repository.latestRuns() },
+    database: {
+      activities: repository.countPublicActivities(),
+      latestRuns: repository.latestRuns().filter((run) => configured.has(run.source)).map((run) => ({ ...run, error: publicError(run.error) })),
+    },
     cards: sections.flatMap((s) => s.cards ?? []).map((n) => `/card/${n}.svg`),
     sources,
-  });
+  };
+}
+
+// Browsers get a readable page; scripts (no text/html in Accept) and
+// /status.json keep the JSON contract.
+app.get('/status', (c) => {
+  const accept = c.req.header('accept') ?? '';
+  if (c.req.query('format') !== 'json' && accept.includes('text/html')) {
+    c.header('Cache-Control', 'no-cache');
+    c.header('Vary', 'Accept');
+    return c.html(statusPage({
+      ownerName: config.ownerName,
+      maxSourceAgeHours: config.maxSourceAgeHours,
+      intervalMinutes: config.refreshIntervalMinutes,
+      nextScheduledAt: isoOrNull(scheduleState.armedFor),
+      running: [...runningSources.keys()],
+      sources: statusSources(),
+    }));
+  }
+  c.header('Vary', 'Accept');
+  return c.json(statusJson());
 });
+app.get('/status.json', (c) => c.json(statusJson()));
 
 app.get('/api/activities.json', (c) => {
   const page = repository.queryActivities({
@@ -1033,7 +1077,7 @@ app.all('/mcp', async (c) => {
 app.get('/api/:file{[a-z-]+\\.json}', (c) => {
   const name = c.req.param('file').replace(/\.json$/, '');
   const entry = getCache(`data:${name}`);
-  if (!entry || entry.data === null) return c.json({ error: entry?.error ?? 'not found' }, 404);
+  if (!entry || entry.data === null) return c.json({ error: publicError(entry?.error) ?? 'not found' }, 404);
   return c.json({ fetchedAt: new Date(entry.fetchedAt).toISOString(), data: entry.data });
 });
 
@@ -1063,7 +1107,7 @@ app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
   const svg = getCache<string>(`svg:${name}`)?.data;
   if (!svg) {
     const source = cards[name]?.source;
-    return c.text(getCache(`data:${source ?? name}`)?.error ?? 'not found', 404);
+    return c.text(publicError(getCache(`data:${source ?? name}`)?.error) ?? 'not found', 404);
   }
 
   const hash = createHash('sha1').update(svg).digest('hex').slice(0, 16);
@@ -1090,6 +1134,12 @@ app.get('/card/:file{[a-z-]+\\.(svg|png|webp)}', async (c) => {
 function isoOrNull(ms: number | null): string | null {
   return ms === null ? null : new Date(ms).toISOString();
 }
+
+// Unknown paths: a navigable page for browsers, plain text for everything else.
+app.notFound((c) => {
+  if ((c.req.header('accept') ?? '').includes('text/html')) return c.html(notFoundPage(config.ownerName, c.req.path), 404);
+  return c.text('404 Not Found', 404);
+});
 
 // Production lifecycle is owned by app-backend.ts, behind server.ts's gateway.
 export { app, repository, refreshAll, refreshSource, fetchers };
