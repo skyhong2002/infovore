@@ -1,5 +1,6 @@
 package tw.skyhong.infovore.health.ui
 
+import tw.skyhong.infovore.health.screen.ObservationQueue
 import java.time.Instant
 import java.time.ZoneId
 
@@ -19,6 +20,10 @@ data class ScreenInputs(
     val otherDestinationPending: Int = 0,
     /** Rejected by the server (HTTP 400) and quarantined; never uploaded or deleted automatically. */
     val rejected: Int = 0,
+    /** Of [rejected], how many may be put back into the current destination's queue. */
+    val requeueable: Int = 0,
+    /** Quarantine size at which uploads stop until the user deals with it. */
+    val maxRejected: Int = ObservationQueue.MAX_REJECTED,
 )
 
 enum class ScreenState { OFF, NEEDS_SERVICE, PAUSED, RECORDING }
@@ -40,10 +45,34 @@ data class ScreenUi(
     val otherDestinationNote: String? = null,
     /** Explains quarantined records the server rejected, or null when there are none. */
     val rejectedNote: String? = null,
+    /** Label of "put back into the queue", or null when no quarantined record can go back. */
+    val requeueLabel: String? = null,
+    /** The quarantine is full: uploads are stopped until the user requeues or deletes records. */
+    val quarantineFull: Boolean = false,
 )
 
 /** Maps phone screen-recording settings to UI text. Never changes any setting itself. */
 object ScreenStatus {
+    const val QUARANTINE_FULL_STEP =
+        "被拒收的畫面紀錄已達上限 %d 筆，已停止上傳（不會自動刪除任何紀錄）。請放回佇列重送或刪除被拒收的紀錄後，上傳才會繼續。"
+
+    private fun rejectedNote(input: ScreenInputs, full: Boolean): String = buildString {
+        append(input.rejected).append(" 筆畫面紀錄被伺服器拒收（HTTP 400，格式不被接受）。它們已移出上傳佇列，不會自動再送出，")
+        append("也不會自動刪除。")
+        if (full) {
+            append("已達上限 ").append(input.maxRejected).append(" 筆：上傳已停止，處理後才會繼續。")
+        } else {
+            append("其他紀錄照常上傳；達 ").append(input.maxRejected).append(" 筆時會停止上傳。")
+        }
+        val stuck = input.rejected - input.requeueable
+        when {
+            input.requeueable == 0 -> append("它們不屬於目前的目的地或已超過 7 天，無法放回佇列，只能刪除。")
+            stuck > 0 -> append("其中 ").append(input.requeueable).append(" 筆可放回目前目的地的佇列重送；")
+                .append(stuck).append(" 筆屬於其他目的地或已超過 7 天，只能刪除。")
+            else -> append("如伺服器端問題已修正，可放回佇列重送；確認不需要後也可刪除。")
+        }
+    }
+
     fun map(input: ScreenInputs): ScreenUi {
         val now = Instant.ofEpochMilli(input.nowMs)
         val paused = input.pausedUntilMs > input.nowMs
@@ -53,6 +82,7 @@ object ScreenStatus {
             paused -> ScreenState.PAUSED
             else -> ScreenState.RECORDING
         }
+        val quarantineFull = input.rejected >= input.maxRejected
         val pausedUntil = Instant.ofEpochMilli(input.pausedUntilMs)
         val headline = when (state) {
             ScreenState.OFF -> "記錄已關閉"
@@ -65,7 +95,7 @@ object ScreenStatus {
             ScreenState.OFF -> Tone.NEUTRAL
             ScreenState.NEEDS_SERVICE -> Tone.WARNING
             ScreenState.PAUSED -> Tone.NEUTRAL
-            ScreenState.RECORDING -> if (input.tokenConfigured) Tone.OK else Tone.WARNING
+            ScreenState.RECORDING -> if (input.tokenConfigured && !quarantineFull) Tone.OK else Tone.WARNING
         }
         val nextStep = when {
             !input.recordingEnabled && !input.serviceEnabled ->
@@ -73,6 +103,7 @@ object ScreenStatus {
             !input.recordingEnabled -> "無障礙服務已開啟，但記錄仍關閉；不使用時建議也關閉無障礙服務。"
             !input.serviceEnabled -> "請按「開啟無障礙設定」並開啟「Infovore 手機 Dayflow」。側載安裝需先允許受限制的設定。"
             !input.tokenConfigured -> "尚未儲存 DAYFLOW_PHONE_TOKEN，紀錄會留在手機佇列，無法上傳。"
+            quarantineFull -> QUARANTINE_FULL_STEP.format(input.maxRejected)
             else -> null
         }
         val lastCapture = if (input.lastCaptureAtMs > 0) {
@@ -99,6 +130,7 @@ object ScreenStatus {
         } + if (input.pending > 0) " · 佇列 ${input.pending} 筆" else ""
         val uploadHint = when {
             !input.tokenConfigured -> "需先儲存 DAYFLOW_PHONE_TOKEN"
+            quarantineFull -> "被拒收的紀錄已達上限 ${input.maxRejected} 筆，已停止上傳"
             input.pending == 0 -> "佇列中沒有待上傳的紀錄"
             else -> null
         }
@@ -111,7 +143,7 @@ object ScreenStatus {
             details = details,
             pauseLabel = if (paused) "恢復記錄" else "暫停 1 小時",
             pauseEnabled = input.recordingEnabled,
-            uploadEnabled = input.tokenConfigured && input.pending > 0,
+            uploadEnabled = input.tokenConfigured && input.pending > 0 && !quarantineFull,
             uploadHint = uploadHint,
             otherDestinationNote = if (input.otherDestinationPending > 0) {
                 "${input.otherDestinationPending} 筆待傳紀錄屬於舊目的地（變更同步目的地前，或 0.3.2 版以前擷取），" +
@@ -119,12 +151,9 @@ object ScreenStatus {
             } else {
                 null
             },
-            rejectedNote = if (input.rejected > 0) {
-                "${input.rejected} 筆畫面紀錄被伺服器拒收（HTTP 400，格式不被接受）。它們已移出上傳佇列，不會再送出，" +
-                    "也不會自動刪除；其他紀錄照常上傳。確認不需要後可刪除。"
-            } else {
-                null
-            },
+            rejectedNote = if (input.rejected > 0) rejectedNote(input, quarantineFull) else null,
+            requeueLabel = if (input.requeueable > 0) "放回佇列重送（${input.requeueable} 筆）" else null,
+            quarantineFull = quarantineFull,
         )
     }
 }

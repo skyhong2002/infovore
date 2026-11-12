@@ -136,13 +136,14 @@ class ObservationQueue internal constructor(
     }
 
     /**
-     * Moves observations the server rejected (HTTP 400, one by one) out of the upload queue into
-     * `screen-queue/rejected/`. They are never uploaded, pruned or deleted automatically; only
-     * [removeRejected], after the user confirms, deletes them.
+     * Moves observations of [destination] the server rejected (HTTP 400, one by one) out of the
+     * upload queue into `screen-queue/rejected/d-<hash>/`, remembering their destination. They are
+     * never uploaded, pruned or deleted automatically; only the user can put them back
+     * ([requeueRejected], same destination only) or delete them ([removeRejected]).
      */
     @Synchronized
-    fun quarantine(entries: List<Entry>) {
-        val dir = rejectedDir().apply { mkdirs() }
+    fun quarantine(destination: String, entries: List<Entry>) {
+        val dir = rejectedBucket(destination).apply { mkdirs() }
         for (entry in entries) {
             val target = File(dir, entry.file.name)
             if (!entry.file.renameTo(target)) {
@@ -153,22 +154,67 @@ class ObservationQueue internal constructor(
         }
     }
 
-    /** Observations the server rejected, kept until the user deletes them. */
+    /** Observations the server rejected, kept until the user deletes them or puts them back. */
     @Synchronized
-    fun countRejected(): Int = files(rejectedDir()).size
+    fun countRejected(): Int = rejectedDirs().sumOf { files(it).size }
+
+    /**
+     * Rejected observations that may go back to [destination]'s upload queue: quarantined from
+     * that destination (records quarantined before 0.4.1 have no known destination) and still
+     * younger than [MAX_AGE_MS], which the queue would otherwise drop at once.
+     */
+    @Synchronized
+    fun countRequeueable(destination: String, nowMs: Long = System.currentTimeMillis()): Int =
+        requeueable(destination, nowMs).size
+
+    /**
+     * Moves the [countRequeueable] observations back into [destination]'s upload queue, after
+     * the user confirmed; returns how many. Everything else stays quarantined.
+     */
+    @Synchronized
+    fun requeueRejected(destination: String, nowMs: Long = System.currentTimeMillis()): Int {
+        val target = bucket(destination).apply { mkdirs() }
+        var moved = 0
+        for (file in requeueable(destination, nowMs)) {
+            val back = File(target, file.name)
+            if (file.renameTo(back)) {
+                moved++
+            } else {
+                // Never lose a record: copy, and remove the quarantined copy only once it is written.
+                val copied = runCatching { file.copyTo(back, overwrite = true) }.isSuccess
+                if (copied && file.delete()) moved++
+            }
+        }
+        rejectedBucket(destination).delete()
+        return moved
+    }
 
     /** Deletes every rejected observation; returns how many. */
     @Synchronized
     fun removeRejected(): Int {
         var removed = 0
-        for (file in files(rejectedDir())) if (file.delete()) removed++
+        for (dir in rejectedDirs()) {
+            for (file in files(dir)) if (file.delete()) removed++
+            if (dir != rejectedDir()) dir.delete()
+        }
         return removed
+    }
+
+    private fun requeueable(destination: String, nowMs: Long): List<File> {
+        val cutoff = nowMs - MAX_AGE_MS
+        return files(rejectedBucket(destination)).filter { file -> capturedAt(file)?.let { it >= cutoff } ?: false }
     }
 
     private fun bucket(destination: String): File = File(root, bucketName(destination))
 
-    // Not a "d-" bucket, so uploads, pruning and destination clean-up never touch it.
+    // Not a "d-" bucket, so uploads, pruning and destination clean-up never touch it. Files
+    // directly in it were quarantined before 0.4.1 and have no known destination.
     private fun rejectedDir(): File = File(root, REJECTED_DIR)
+
+    private fun rejectedBucket(destination: String): File = File(rejectedDir(), bucketName(destination))
+
+    private fun rejectedDirs(): List<File> =
+        listOf(rejectedDir()) + rejectedDir().listFiles { file -> file.isDirectory && file.name.startsWith(BUCKET_PREFIX) }.orEmpty()
 
     private fun allDirs(): List<File> =
         listOf(root) + root.listFiles { file -> file.isDirectory && file.name.startsWith(BUCKET_PREFIX) }.orEmpty()
@@ -197,6 +243,9 @@ class ObservationQueue internal constructor(
 
         const val MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
         const val MAX_TOTAL_BYTES = 40L * 1024 * 1024
+
+        /** At this many quarantined observations uploads stop until the user deals with them. */
+        const val MAX_REJECTED = 500
         private const val BUCKET_PREFIX = "d-"
         private const val REJECTED_DIR = "rejected"
 

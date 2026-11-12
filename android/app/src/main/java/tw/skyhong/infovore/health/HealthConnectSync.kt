@@ -52,6 +52,10 @@ class HealthConnectSync(context: Context) {
     /** Re-sends the reconcile windows of every saved [ReconcileGap]; see [HealthSyncEngine.reverify]. */
     suspend fun reverify(onProgress: (String) -> Unit = {}): SyncSummary = engine.reverify(onProgress)
 
+    /** See [HealthSyncEngine.confirmDelete]. */
+    suspend fun confirmDelete(dataType: String, expected: Int, onProgress: (String) -> Unit = {}) =
+        engine.confirmDelete(dataType, expected, onProgress)
+
     companion object {
         val recordTypes: Set<KClass<out Record>> = setOf(
             ExerciseSessionRecord::class,

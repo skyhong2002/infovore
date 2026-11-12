@@ -30,12 +30,14 @@ class ScreenQuarantineTest {
         var posts = 0
         var unavailable = false
         var loseNextResponse = false
+        /** The server-side problem was fixed: records it used to reject are accepted. */
+        var acceptAll = false
 
         override fun post(target: ScreenTarget, body: ByteArray): ObservationTransport.Response {
             posts++
             if (unavailable) throw IOException("Infovore HTTP 503: {\"error\":\"Storage is temporarily unavailable\",\"retryable\":true}")
             val observations = OBSERVATION.findAll(String(body)).toList()
-            if (observations.any { it.groupValues[2].isNotEmpty() }) {
+            if (!acceptAll && observations.any { it.groupValues[2].isNotEmpty() }) {
                 throw InfovoreApi.HttpStatusException(400, "Infovore HTTP 400: Invalid phone observation batch: observations.0.capturedAt: Invalid datetime")
             }
             var accepted = 0
@@ -151,6 +153,113 @@ class ScreenQuarantineTest {
         assertTrue(ui.details.contains("被拒收：2 筆"))
         // Rejected records are not pending uploads.
         assertEquals(false, ui.uploadEnabled)
+    }
+
+    @Test
+    fun rejectedRecordsCanBePutBackIntoTheirOwnDestinationOnly() {
+        capture(4, invalid = setOf(1, 2))
+        val receiver = Receiver()
+        ScreenUploadEngine(queue, receiver).upload(target)
+        assertEquals(2, queue.countRejected())
+        assertEquals(2, queue.countRequeueable(destination))
+        // Another destination never gets them.
+        val other = DestinationChange.normalize("https://other.example")
+        assertEquals(0, queue.countRequeueable(other))
+        assertEquals(0, queue.requeueRejected(other))
+        assertEquals(2, queue.countRejected())
+
+        // A legacy (pre-0.4.1) quarantined file has no destination: it can only be deleted.
+        java.io.File(folder.root, "rejected").resolve("000000000000001-legacy.json").writeText("{\"id\":\"legacy\"}")
+        assertEquals(3, queue.countRejected())
+        assertEquals(2, queue.countRequeueable(destination))
+
+        // Back in the queue they are sent again; still invalid, they return to quarantine.
+        assertEquals(2, queue.requeueRejected(destination))
+        assertEquals(1, queue.countRejected())
+        assertEquals(2, queue.count(destination))
+        val again = ScreenUploadEngine(queue, receiver).upload(target)
+        assertEquals(2, again.rejected)
+        assertEquals(3, queue.countRejected())
+
+        // Fixed on the server side: requeued records upload.
+        receiver.acceptAll = true
+        assertEquals(2, queue.requeueRejected(destination))
+        val fixed = ScreenUploadEngine(queue, receiver).upload(target)
+        assertNull(fixed.error)
+        assertEquals(2, fixed.sent)
+        assertEquals(listOf("obs-00", "obs-03", "obs-01", "obs-02"), receiver.stored.toList())
+        assertEquals(1, queue.countRejected())
+        assertEquals(1, queue.removeRejected())
+        assertEquals(0, queue.countRejected())
+    }
+
+    @Test
+    fun recordsOlderThanTheQueueKeepsAreNotPutBack() {
+        val old = System.currentTimeMillis() - ObservationQueue.MAX_AGE_MS - 60_000
+        queue.enqueueJson(destination, System.currentTimeMillis(), "fresh", "{\"id\":\"fresh\",\"bad\":true}")
+        val engine = ScreenUploadEngine(queue, Receiver())
+        engine.upload(target)
+        // Quarantine an old record directly, as if it had been rejected a week ago.
+        queue.enqueueJson(destination, System.currentTimeMillis(), "tmp", "{}")
+        val entry = queue.read(destination, 1).single()
+        val aged = ObservationQueue.Entry(java.io.File(entry.file.parentFile, "${old.toString().padStart(15, '0')}-aged.json").also { entry.file.renameTo(it) }, "{}")
+        queue.quarantine(destination, listOf(aged))
+        assertEquals(2, queue.countRejected())
+        assertEquals(1, queue.countRequeueable(destination))
+        assertEquals(1, queue.requeueRejected(destination))
+        assertEquals(1, queue.countRejected())
+    }
+
+    @Test
+    fun aFullQuarantineStopsUploadsAndDeletesNothing() {
+        capture(6, invalid = setOf(0, 2, 4))
+        val receiver = Receiver()
+        // Room for two more rejections: the third rejected record stops the run and stays queued.
+        val engine = ScreenUploadEngine(queue, receiver, maxBatchCount = 1, maxRejected = 2)
+        val outcome = engine.upload(target)
+        assertEquals(ScreenUploadEngine.QUARANTINE_FULL, outcome.error)
+        assertEquals(2, outcome.rejected)
+        assertEquals(2, queue.countRejected())
+        assertEquals(listOf("obs-01", "obs-03"), receiver.stored.toList())
+        assertEquals(2, queue.count(destination))
+
+        // While full, nothing is sent at all.
+        val posts = receiver.posts
+        val blocked = engine.upload(target)
+        assertEquals(ScreenUploadEngine.QUARANTINE_FULL, blocked.error)
+        assertEquals(posts, receiver.posts)
+        assertEquals(2, queue.count(destination))
+
+        // Dealing with the quarantine resumes uploads.
+        queue.removeRejected()
+        receiver.acceptAll = true
+        val resumed = engine.upload(target)
+        assertNull(resumed.error)
+        assertEquals(0, queue.count(destination))
+    }
+
+    @Test
+    fun theScreenSectionExplainsRequeueAndAFullQuarantine() {
+        val base = tw.skyhong.infovore.health.ui.ScreenInputs(
+            recordingEnabled = true, pausedUntilMs = 0, serviceEnabled = true, tokenConfigured = true, pending = 3,
+            lastCaptureAtMs = 0, lastUploadStatus = "尚未上傳", nowMs = 0, zone = java.time.ZoneOffset.UTC,
+        )
+        val some = tw.skyhong.infovore.health.ui.ScreenStatus.map(base.copy(rejected = 3, requeueable = 2))
+        assertEquals("放回佇列重送（2 筆）", some.requeueLabel)
+        assertTrue(some.rejectedNote!!, some.rejectedNote!!.contains("其中 2 筆可放回"))
+        assertEquals(false, some.quarantineFull)
+        assertEquals(true, some.uploadEnabled)
+
+        val none = tw.skyhong.infovore.health.ui.ScreenStatus.map(base.copy(rejected = 3, requeueable = 0))
+        assertNull(none.requeueLabel)
+        assertTrue(none.rejectedNote!!.contains("只能刪除"))
+
+        val full = tw.skyhong.infovore.health.ui.ScreenStatus.map(base.copy(rejected = ObservationQueue.MAX_REJECTED))
+        assertTrue(full.quarantineFull)
+        assertEquals(false, full.uploadEnabled)
+        assertTrue(full.uploadHint!!.contains("已停止上傳"))
+        assertTrue(full.nextStep!!.contains("已停止上傳"))
+        assertEquals(tw.skyhong.infovore.health.ui.Tone.WARNING, full.tone)
     }
 
     @Test

@@ -1,5 +1,5 @@
 {
-  "description": "Shared wire contract for one Health Connect reconcile batch (synthetic data only). The Android app's serializer must produce `request` exactly from `planner` (android/app/src/test/.../HealthReconcileContractTest.kt), and the server must accept it and apply it to `seedRecords` with `expectedResponse` (tests/health-reconcile-contract.test.ts). Change both sides together.",
+  "description": "Shared wire contract for one Health Connect reconcile batch (synthetic data only). The Android app's serializer must produce `request` exactly from `planner` (android/app/src/test/.../HealthReconcileContractTest.kt), and the server must accept it and apply it to `seedRecords` with `expectedResponse` (tests/health-reconcile-contract.test.ts). `confirmedDeleteCase` is the same contract for a user-confirmed deletion beyond the automatic limits (`reconcile.confirmDelete`); its seed is `seedRecords` plus `seedSeries`, expanded by the server test. Change both sides together.",
   "planner": {
     "dataType": "steps",
     "start": "2026-09-01T00:00:00Z",
@@ -72,5 +72,71 @@
       "deleted": 1
     }
   },
-  "expectedRemainingIds": ["contract-steps-before-window", "contract-steps-kept-1", "contract-steps-kept-2"]
+  "expectedRemainingIds": ["contract-steps-before-window", "contract-steps-kept-1", "contract-steps-kept-2"],
+  "confirmedDeleteCase": {
+    "planner": {
+      "dataType": "steps",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "items": [
+        { "id": "contract-confirm-kept-1", "start": "2026-09-02T08:00:00Z" }
+      ],
+      "confirmDeleteExpected": 25
+    },
+    "request": {
+      "syncId": "fixture-contract-confirm-0001",
+      "deviceId": "fixture-contract-device-01",
+      "observedAt": "2026-09-10T00:00:00Z",
+      "records": [],
+      "deletedRecordIds": [],
+      "reconcile": {
+        "dataType": "steps",
+        "start": "2026-09-01T00:00:00Z",
+        "end": "2026-09-08T00:00:00Z",
+        "recordIds": ["contract-confirm-kept-1"],
+        "confirmDelete": { "expected": 25 }
+      }
+    },
+    "seedRecords": [
+      {
+        "id": "contract-confirm-kept-1",
+        "dataType": "steps",
+        "dataOrigin": "com.garmin.fixture",
+        "startTime": "2026-09-02T08:00:00Z",
+        "endTime": "2026-09-02T08:15:00Z",
+        "lastModifiedTime": "2026-09-02T08:15:00Z",
+        "payload": { "count": 100 }
+      }
+    ],
+    "seedSeries": {
+      "idPrefix": "contract-confirm-gone-",
+      "count": 25,
+      "dataType": "steps",
+      "dataOrigin": "com.garmin.fixture",
+      "firstStart": "2026-09-03T00:00:00Z",
+      "everyMinutes": 30,
+      "durationMinutes": 15
+    },
+    "expectedRefusalWithoutConfirmation": { "status": "rejected", "wouldDelete": 25, "checked": 26 },
+    "expectedResponse": {
+      "deleted": 25,
+      "reconciled": {
+        "dataType": "steps",
+        "start": "2026-09-01T00:00:00Z",
+        "end": "2026-09-08T00:00:00Z",
+        "checked": 26,
+        "deleted": 25,
+        "confirmed": true
+      }
+    },
+    "expectedRemainingIds": ["contract-confirm-kept-1"],
+    "expectedAudit": {
+      "device_id": "fixture-contract-device-01",
+      "data_type": "steps",
+      "window_start": "2026-09-01T00:00:00Z",
+      "window_end": "2026-09-08T00:00:00Z",
+      "deleted_count": 25,
+      "checked_count": 26
+    }
+  }
 }

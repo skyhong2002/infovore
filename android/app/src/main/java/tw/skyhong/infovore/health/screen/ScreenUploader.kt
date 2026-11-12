@@ -80,6 +80,16 @@ object ScreenUploader {
         return removed
     }
 
+    /**
+     * Moves, after the user confirmed, the rejected observations of the current destination back
+     * into its upload queue; returns how many, or null when an upload is running.
+     */
+    fun requeueRejected(context: Context): Int? {
+        var moved: Int? = null
+        tryExclusive { moved = ObservationQueue.get(context).requeueRejected(currentDestination(context)) }
+        return moved
+    }
+
     private fun record(settings: ScreenSettings, outcome: ScreenUploadEngine.Outcome) {
         settings.lastUploadStatus = "${Instant.now()}：${describe(outcome)}"
     }

@@ -22,7 +22,7 @@ import type {
   HealthReconcileInput,
   HealthReconcileResult,
 } from '../health/types.js';
-import { HealthReconcileRejected } from '../health/types.js';
+import { HealthReconcileRejected, MAX_CONFIRMED_RECONCILE_DELETES } from '../health/types.js';
 
 // A reconcile window may delete up to this many rows without question; above
 // it, the deletion must stay within this share of the window's stored rows and
@@ -393,6 +393,34 @@ export class Repository {
     if (afterDayflowQuality.user_version < 18) migrateDayflowPhone(this.db);
     const afterDayflowPhone = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterDayflowPhone.user_version < 19) this.migrateHealthRecordDevice();
+    const afterHealthRecordDevice = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    if (afterHealthRecordDevice.user_version < 20) this.migrateHealthConfirmedDeletes();
+  }
+
+  // Audit trail of reconcile deletions the user explicitly confirmed beyond the
+  // automatic limits. Holds only when, which device, type and window, and the
+  // counts: never record ids or health values.
+  private migrateHealthConfirmedDeletes(): void {
+    this.db.exec('BEGIN');
+    try {
+      this.db.exec(`
+        CREATE TABLE health_connect_confirmed_deletes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          confirmed_at TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          data_type TEXT NOT NULL,
+          window_start TEXT NOT NULL,
+          window_end TEXT NOT NULL,
+          deleted_count INTEGER NOT NULL,
+          checked_count INTEGER NOT NULL
+        );
+        PRAGMA user_version = 20;
+      `);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   // Remembers which device last uploaded each Health Connect record, so a
@@ -1570,7 +1598,7 @@ export class Repository {
         if (Number(remove.run(id).changes) > 0) deleted++;
       }
       if (batch.reconcile) {
-        reconciled = this.reconcileHealthWindow(batch.deviceId, batch.reconcile, remove);
+        reconciled = this.reconcileHealthWindow(batch.deviceId, batch.reconcile, remove, receivedAt);
         deleted += reconciled.deleted;
       }
       this.db.prepare(`
@@ -1601,11 +1629,15 @@ export class Repository {
   // Deletes this device's rows of the window's type that start in [start, end),
   // end by `end`, and are missing from the complete id list the app read. Runs
   // inside the ingest transaction; an implausibly large deletion throws
-  // HealthReconcileRejected so the caller rolls everything back.
+  // HealthReconcileRejected so the caller rolls everything back. With
+  // confirmDelete, the count must equal what the user confirmed and stay within
+  // MAX_CONFIRMED_RECONCILE_DELETES; the confirmed deletion is then written to
+  // health_connect_confirmed_deletes in the same transaction.
   private reconcileHealthWindow(
     deviceId: string,
     window: HealthReconcileInput,
     remove: ReturnType<DatabaseSync['prepare']>,
+    receivedAt: string,
   ): HealthReconcileResult {
     const startMs = Date.parse(window.start);
     const endMs = Date.parse(window.end);
@@ -1628,7 +1660,14 @@ export class Repository {
     });
     const keep = new Set(window.recordIds);
     const stale = inWindow.filter((row) => !keep.has(row.record_id));
-    if (stale.length > RECONCILE_MAX_SILENT_DELETES
+    const confirmed = window.confirmDelete;
+    if (confirmed) {
+      // Exactly what the user confirmed, under the hard ceiling; anything else
+      // (the source changed since, or too much) is refused with fresh counts.
+      if (stale.length !== confirmed.expected || stale.length > MAX_CONFIRMED_RECONCILE_DELETES) {
+        throw new HealthReconcileRejected(stale.length, inWindow.length);
+      }
+    } else if (stale.length > RECONCILE_MAX_SILENT_DELETES
       && (stale.length > inWindow.length * RECONCILE_MAX_DELETE_SHARE || stale.length > RECONCILE_MAX_DELETES)) {
       throw new HealthReconcileRejected(stale.length, inWindow.length);
     }
@@ -1636,7 +1675,18 @@ export class Repository {
     for (const row of stale) {
       if (Number(remove.run(row.record_id).changes) > 0) deleted++;
     }
-    return { dataType: window.dataType, start: window.start, end: window.end, checked: inWindow.length, deleted };
+    const result: HealthReconcileResult = {
+      dataType: window.dataType, start: window.start, end: window.end, checked: inWindow.length, deleted,
+    };
+    if (confirmed) {
+      this.db.prepare(`
+        INSERT INTO health_connect_confirmed_deletes (
+          confirmed_at, device_id, data_type, window_start, window_end, deleted_count, checked_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(receivedAt, deviceId, window.dataType, window.start, window.end, deleted, inWindow.length);
+      result.confirmed = true;
+    }
+    return result;
   }
 
   private healthConnectCount(): number {

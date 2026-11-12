@@ -54,7 +54,11 @@ class ScreenUploadEngine(
     private val maxBatchCount: Int = MAX_BATCH_COUNT,
     private val maxBatchBytes: Long = MAX_BATCH_BYTES,
     private val maxBatchesPerRun: Int = MAX_BATCHES_PER_RUN,
+    private val maxRejected: Int = ObservationQueue.MAX_REJECTED,
 ) {
+    /** Quarantining one more record would exceed [maxRejected]: the run stops and the record stays queued. */
+    private class QuarantineFull : Exception()
+
     /**
      * [rejected]: observations the server refused (HTTP 400) one by one in this run, moved to the
      * queue's quarantine. [error] stops the run and leaves everything not yet confirmed queued.
@@ -78,6 +82,8 @@ class ScreenUploadEngine(
     fun upload(target: ScreenTarget): Outcome {
         queue.prune()
         target.problem()?.let { return Outcome(0, 0, 0, queue.count(target.destination), it) }
+        // A full quarantine stops uploads (nothing is deleted) until the user deals with it.
+        if (queue.countRejected() >= maxRejected) return Outcome(0, 0, 0, queue.count(target.destination), QUARANTINE_FULL)
         val totals = Totals()
         var error: String? = null
         for (round in 1..maxBatchesPerRun) {
@@ -94,6 +100,8 @@ class ScreenUploadEngine(
                     // itself rather than its content. Stop instead of probing the whole queue.
                     error = REJECTED_WHOLE_BATCH
                 }
+            } catch (_: QuarantineFull) {
+                error = QUARANTINE_FULL
             } catch (failure: InfovoreApi.HttpStatusException) {
                 // 401/403/404/413…: keep everything not yet confirmed and stop until the next run.
                 error = failure.message
@@ -125,7 +133,8 @@ class ScreenUploadEngine(
         } catch (failure: InfovoreApi.HttpStatusException) {
             if (failure.status != 400) throw failure
             if (batch.size == 1) {
-                queue.quarantine(batch)
+                if (queue.countRejected() >= maxRejected) throw QuarantineFull()
+                queue.quarantine(target.destination, batch)
                 totals.rejected++
                 return
             }
@@ -151,6 +160,8 @@ class ScreenUploadEngine(
         const val MAX_BATCH_BYTES = 6L * 1024 * 1024
         const val MAX_BATCHES_PER_RUN = 50
         const val REJECTED_WHOLE_BATCH = "伺服器拒收了整批畫面紀錄（已隔離，未刪除）；暫停上傳到下次執行"
+        const val QUARANTINE_FULL =
+            "被拒收的畫面紀錄已達上限 ${ObservationQueue.MAX_REJECTED} 筆，已停止上傳（未刪除任何紀錄）；請先放回佇列重送或刪除被拒收的紀錄"
     }
 }
 

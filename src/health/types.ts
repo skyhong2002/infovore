@@ -33,15 +33,27 @@ const healthRecordSchema = z.object({
 // unbounded range.
 export const MAX_RECONCILE_RECORD_IDS = 5000;
 
+// Hard ceiling on what one user-confirmed reconcile window may delete (see
+// confirmDelete below). Above it the server always refuses, confirmed or not.
+export const MAX_CONFIRMED_RECONCILE_DELETES = 2000;
+
 // A complete read of one data type over [start, end) on the sending device:
 // recordIds lists every Health Connect record id the app saw starting in that
 // window. The server deletes this device's rows of the type that start in the
 // window, end by its end, and are not listed (see Repository.ingestHealthConnect).
+//
+// confirmDelete (optional): the user saw a 409 refusal for this window and
+// explicitly confirmed deleting exactly `expected` rows. The deletion limits
+// are then lifted only if the window would delete exactly that many rows and no
+// more than MAX_CONFIRMED_RECONCILE_DELETES; any other count is refused (409).
 const healthReconcileSchema = z.object({
   dataType: z.enum(healthDataTypes),
   start: isoTimestamp,
   end: isoTimestamp,
   recordIds: z.array(z.string().min(1).max(256)).max(MAX_RECONCILE_RECORD_IDS),
+  confirmDelete: z.object({
+    expected: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  }).strict().optional(),
 }).strict().superRefine((window, context) => {
   if (!(Date.parse(window.start) < Date.parse(window.end))) {
     context.addIssue({ code: 'custom', path: ['end'], message: 'reconcile end must be after start' });
@@ -73,6 +85,8 @@ export interface HealthReconcileResult {
   deleted: number;
   // The same sync id was already committed, reconcile included.
   alreadyApplied?: true;
+  // The deletion went beyond the automatic limits because the user confirmed it.
+  confirmed?: true;
 }
 
 export interface HealthConnectIngestResult {

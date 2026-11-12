@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.4.0) reads selected records from Android Health Connect and
+This private companion (current version 0.4.1) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -15,7 +15,7 @@ is disabled, and the server keeps raw Health Connect records outside the public
 activity, feed, and MCP projections. Infovore's Health platform page uses only
 safe aggregates and recent workout summaries.
 
-## App layout (0.4.0)
+## App layout (0.4.1)
 
 The screen is split into a **開始使用** checklist (connection → Health Connect
 permission → first sync, with a button for the next step) and three collapsible
@@ -25,7 +25,7 @@ always starts collapsed. Each section header shows its current state.
 - Fields are validated before saving, with the reason shown under the field:
   the endpoint must be `https://` (the private Tailscale address allowed in
   `network_security_config.xml` is the only HTTP exception, same as the
-  network layer), tokens need at least 32
+  network layer; see "Private HTTP host" below), tokens need at least 32
   characters without spaces, and **初始同步範圍** must be a number from 1 to
   3650; out-of-range values are rejected instead of silently clamped. Unsaved
   edits are flagged, and leaving the screen with unsaved edits asks first.
@@ -89,7 +89,7 @@ Connect and sync the Garmin device before retrying.
    HTTP to the single private Tailscale address listed in
    `app/src/main/res/xml/network_security_config.xml` (port 3001); that traffic
    is carried inside Tailscale's encrypted tunnel. Other endpoints must use
-   HTTPS.
+   HTTPS. See "Private HTTP host" below to change that address.
 3. In Garmin Connect, enable writing data to Health Connect.
 4. Install the APK, enter the endpoint and token, save, and grant Health Connect
    permissions.
@@ -151,6 +151,40 @@ uploaded before 0.3.2 are tied to a device only when every earlier sync came
 from a single device; otherwise they are never reconciled until the app
 uploads them again.
 
+### Deletions the server refused as too large (0.4.1)
+
+A legitimate large deletion at the source (for example removing a duplicate
+writer app from Health Connect) is refused by the server's automatic limits
+every time, so since 0.4.1 the app keeps the counts of a refused (HTTP 409)
+window with its gap: `{window, wouldDelete, checked, sentIds}` (counts and
+times only). The box then says **伺服器偵測到要刪除 N 筆（窗內共 M 筆），因超過自動上限而保留資料**
+and offers two choices:
+
+- **我確認來源端已刪除，刪除這 N 筆**: two dialogs, the first naming the data
+  type, the time range and the count, the second stating that it cannot be
+  undone. Only then does the app re-read that window completely. If the
+  re-read lists a different number of records than the refused request did,
+  nothing is sent and the reminder asks the user to re-verify and confirm the
+  new numbers. Otherwise it sends the window with
+  `reconcile.confirmDelete: {"expected": N}`. The server deletes only when its
+  own count is still exactly N and at most 2,000
+  (`MAX_CONFIRMED_RECONCILE_DELETES`), and in the same transaction writes an
+  audit row to `health_connect_confirmed_deletes` (migration 20: time, device
+  id, data type, window, deleted and checked counts; no record ids or health
+  values). Any other count gets a 409 with the new `wouldDelete`/`checked`
+  (never record content), nothing is deleted, and the reminder shows the new
+  number for a fresh confirmation. After a confirmed deletion the rest of the
+  gap is re-verified under the normal limits. Above 2,000 rows the app offers
+  no confirmation at all. A server older than 0.4.1 rejects the unknown field
+  (HTTP 400) and deletes nothing.
+- **保留伺服器資料並忽略此提醒**: deletes nothing and persists the gap as
+  dismissed; **重新核實** skips it and the box hides it (a quiet note lists
+  dismissed types, with **重新顯示已忽略的提醒**). It shows again only when a
+  later pass reports something different (other counts, a wider window or
+  another reason); a completed pass still clears it.
+
+Requests without `confirmDelete` behave exactly as before.
+
 A history scan saves its progress after each data type (the change token it
 started with, its fixed window, the destination, and the finished types). If
 the system stops the app mid-scan, the next sync continues with the remaining
@@ -210,10 +244,20 @@ every record for the next run. When the server rejects a batch as invalid
 (HTTP 400), the app splits it in halves and resends each half until it has
 found the individual records the server rejects; only those are moved to a
 local quarantine (`screen-queue/rejected/`), every valid record still uploads.
-Quarantined records are never sent again and never deleted automatically: the
-section shows **N 筆畫面紀錄被伺服器拒收** with **刪除被拒收的紀錄**, which asks
-before deleting them. If every record of a batch is rejected, the run stops
-after quarantining that batch so a server-side problem cannot drain the queue.
+Quarantined records are never sent automatically and never deleted
+automatically: the section shows **N 筆畫面紀錄被伺服器拒收** with
+**刪除被拒收的紀錄**, which asks before deleting them. Since 0.4.1 each record
+is quarantined under its destination (`rejected/d-<hash>/`), and
+**放回佇列重送（N 筆）** puts, after confirmation, the records of the current
+destination back into its upload queue, for when a server-side problem
+rejected valid records. Records of another destination, records quarantined
+before 0.4.1 (destination unknown) and records older than the queue's
+seven-day limit cannot go back and can only be deleted. The quarantine holds
+at most 500 records: at that size every upload stops (nothing is deleted, new
+captures stay queued under the usual 40 MB / seven-day limits) and the section
+says so until the user puts records back or deletes them. If every record of a
+batch is rejected, the run stops after quarantining that batch so a
+server-side problem cannot drain the queue.
 
 Each observation is filed under the sync destination saved when it was
 captured. An upload run reads the endpoint, phone token and device id once at
@@ -247,6 +291,33 @@ through the narrow `HealthReader` / `HealthUploader` interfaces with fake
 implementations, and `HealthReconcileContractTest` checks the app's reconcile
 payload field by field against `tests/fixtures/health-reconcile-contract.json`,
 which the server's `tests/health-reconcile-contract.test.ts` parses and ingests.
+
+### Private HTTP host
+
+The one host plain HTTP may reach is a build setting, `100.85.214.25` by
+default. The form validator and the HTTP client read it from
+`BuildConfig.TAILSCALE_HTTP_HOST`, set by the Gradle property
+`infovore.tailscaleHttpHost`; Android's network layer allows it in
+`app/src/main/res/xml/network_security_config.xml`. To use another private
+host, change both, for example in `~/.gradle/gradle.properties` or on the
+command line:
+
+```sh
+./gradlew -Pinfovore.tailscaleHttpHost=100.64.0.9 assembleDebug
+```
+
+together with the `<domain>` in `network_security_config.xml`.
+`EndpointPolicyTest` fails when the two differ, so one cannot be changed
+without the other. Every other endpoint must use HTTPS.
+
+### Code layout
+
+`MainActivity` only assembles the screen and handles the lifecycle. Each
+section has its own controller in `main/` (`ConnectionController`,
+`HealthController`, `ReconcileController`, `ScreenController`,
+`SetupController`, sharing a `UiHost`), and every state → view decision lives
+in the pure, unit-tested mappers in `ui/` (`HealthStatus`, `ReconcileStatus`,
+`ScreenStatus`, `SetupProgress`, `FormState`, `MainPanels`).
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions
 also publishes it as the `infovore-health-debug` workflow artifact.

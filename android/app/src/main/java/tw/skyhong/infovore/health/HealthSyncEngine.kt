@@ -36,8 +36,26 @@ class HealthSyncEngine(
         )
     }
 
-    /** The persisted windows still waiting to be re-verified. */
+    /** The persisted windows still waiting to be re-verified (including dismissed ones). */
     val gaps: List<ReconcileGap> get() = ReconcileGaps.decode(store.reconcileGapsText)
+
+    /** What [confirmDelete] did; nothing is deleted unless [Deleted]. */
+    sealed interface ConfirmOutcome {
+        /** The confirmed rows were deleted; [summary] is the following re-verification of the rest of the gap. */
+        data class Deleted(val deleted: Int, val summary: SyncSummary) : ConfirmOutcome
+
+        /** The saved refusal no longer matches what the user confirmed (or is gone): nothing was sent. */
+        data object Outdated : ConfirmOutcome
+
+        /** Re-reading found different records than the refused request listed: nothing was sent. */
+        data object SourceChanged : ConfirmOutcome
+
+        /** The server counted [wouldDelete] instead of the confirmed number: nothing was deleted. */
+        data class CountChanged(val wouldDelete: Int, val checked: Int) : ConfirmOutcome
+
+        /** The server did not accept or report the confirmation (e.g. an older server): nothing was deleted. */
+        data class NotAccepted(val reason: String) : ConfirmOutcome
+    }
 
     // Independent of the all-types change token: works after upgrades and
     // when a large historical step import has never finished.
@@ -181,38 +199,132 @@ class HealthSyncEngine(
     suspend fun reverify(onProgress: (String) -> Unit = {}): SyncSummary {
         onProgress("檢查連線設定與 Health Connect 權限…")
         require(credentialsReady) { "請先儲存 Infovore endpoint 與 HEALTH_CONNECT_TOKEN" }
-        val pending = gaps
+        // Dismissed reminders stay as they are: the user chose to keep the server's rows.
+        val pending = gaps.filterNot { it.dismissed }
         if (pending.isEmpty()) return SyncSummary()
         val granted = reader.grantedPermissions()
         var summary = SyncSummary()
-        for (gap in pending) {
-            val type = HealthCatalog.type(gap.dataType)
-            if (type == null) {
-                // Not a type this version syncs (only from a damaged setting): nothing can verify it.
-                store.reconcileGapsText = ReconcileGaps.encode(gaps.filterNot { it.dataType == gap.dataType })
-                continue
-            }
-            if (type.readPermission !in granted) {
-                summary += unverified(type, gap.startMs, gap.endMs, ReconcileText.NO_READ_PERMISSION)
-                continue
-            }
-            val readable = HistoryScan.canReconcile(
-                resumed = true,
-                historyPermission = HealthCatalog.HISTORY_PERMISSION in granted,
-                startMs = gap.startMs,
-                nowMs = clock(),
-            )
-            if (!readable) {
-                summary += unverified(type, gap.startMs, gap.endMs, ReconcileText.PERMISSION_WINDOW)
-                continue
-            }
-            summary += uploadHistoryType(type, gap.startMs, gap.endMs, onProgress, reconcile = true, uploadRecords = false)
-        }
+        for (gap in pending) summary += reverifyGap(gap, granted, onProgress)
         onProgress(
             if (summary.unverified.isEmpty()) "重新核實完成：刪除 ${summary.deleted} 筆來源已刪除的資料"
             else "重新核實未完成${ReconcileText.note(summary.unverified)}",
         )
         return summary
+    }
+
+    private suspend fun reverifyGap(gap: ReconcileGap, granted: Set<String>, onProgress: (String) -> Unit): SyncSummary {
+        val type = HealthCatalog.type(gap.dataType)
+        if (type == null) {
+            // Not a type this version syncs (only from a damaged setting): nothing can verify it.
+            store.reconcileGapsText = ReconcileGaps.encode(gaps.filterNot { it.dataType == gap.dataType })
+            return SyncSummary()
+        }
+        if (type.readPermission !in granted) return unverified(type, gap.startMs, gap.endMs, ReconcileText.NO_READ_PERMISSION)
+        if (!readable(gap.startMs, granted)) return unverified(type, gap.startMs, gap.endMs, ReconcileText.PERMISSION_WINDOW)
+        return uploadHistoryType(type, gap.startMs, gap.endMs, onProgress, reconcile = true, uploadRecords = false)
+    }
+
+    private fun readable(startMs: Long, granted: Set<String>) = HistoryScan.canReconcile(
+        resumed = true,
+        historyPermission = HealthCatalog.HISTORY_PERMISSION in granted,
+        startMs = startMs,
+        nowMs = clock(),
+    )
+
+    /**
+     * Deletes, after the user explicitly confirmed it, exactly [expected] server rows of the
+     * window the server refused for [dataType] (see [GapRefusal]). Nothing is sent unless the
+     * saved refusal still says [expected] and a fresh, complete read of that window lists exactly
+     * as many records as the refused request did; the server then deletes only if its own count is
+     * still exactly [expected] (and within [ReconcileWindow.MAX_CONFIRMED_DELETES]). Any mismatch
+     * updates the gap so the user has to confirm the new numbers. After a confirmed deletion the
+     * rest of the gap is re-verified under the normal limits.
+     */
+    suspend fun confirmDelete(dataType: String, expected: Int, onProgress: (String) -> Unit = {}): ConfirmOutcome {
+        onProgress("檢查連線設定與 Health Connect 權限…")
+        require(credentialsReady) { "請先儲存 Infovore endpoint 與 HEALTH_CONNECT_TOKEN" }
+        val gap = gaps.firstOrNull { it.dataType == dataType }
+        val refusal = gap?.refusal
+        val type = HealthCatalog.type(dataType)
+        if (gap == null || refusal == null || type == null || !gap.confirmable || refusal.wouldDelete != expected) {
+            return ConfirmOutcome.Outdated
+        }
+        val granted = reader.grantedPermissions()
+        require(type.readPermission in granted) { "尚未授權讀取${type.label}，未刪除任何資料" }
+        require(readable(refusal.startMs, granted)) { "${ReconcileText.PERMISSION_WINDOW}，未刪除任何資料" }
+
+        // Re-read the refused window completely; a failed read propagates and sends nothing.
+        onProgress("重新讀取${type.label}資料以確認…")
+        val planner = ReconcilePlanner(
+            dataType, refusal.startMs, refusal.endMs, ascending = true,
+            targetIds = ReconcilePlanner.MAX_IDS, maxIds = ReconcilePlanner.MAX_IDS,
+        )
+        val windows = mutableListOf<ReconcileWindow>()
+        var pageToken: String? = null
+        do {
+            val page = reader.readPage(dataType, refusal.startMs, refusal.endMs, pageToken, ascending = true)
+            windows += planner.add(page.items.map { ReconcilePlanner.Item(it.id, it.startMs) })
+            pageToken = page.nextPageToken?.takeIf(String::isNotEmpty)
+        } while (pageToken != null)
+        planner.finish()?.let(windows::add)
+        val window = windows.singleOrNull()
+        if (planner.failure != null || window == null || window.recordIds.size != refusal.sentIds) {
+            replaceGap(dataType) { it.copy(reason = ReconcileText.CHANGED_BEFORE_CONFIRM, refusal = null, checkedAtMs = clock()) }
+            return ConfirmOutcome.SourceChanged
+        }
+
+        onProgress("刪除已確認的 $expected 筆${type.label}資料…")
+        val result = try {
+            upload(emptyList(), emptyList(), onProgress, window.copy(confirmDeleteExpected = expected))
+        } catch (refused: InfovoreApi.HttpStatusException) {
+            val counts = refused.refusal
+            return when {
+                // Nothing left to delete (e.g. an earlier attempt committed but its answer was
+                // lost): settle the rest of the gap under the normal limits.
+                refused.status == 409 && counts != null && counts.wouldDelete == 0 -> {
+                    replaceGap(dataType) { it.copy(reason = ReconcileText.NOTHING_LEFT_TO_DELETE, refusal = null, checkedAtMs = clock()) }
+                    val rest = reverifyGap(gaps.first { it.dataType == dataType }, granted, onProgress)
+                    onProgress(
+                        "伺服器上已沒有要刪除的${type.label}資料" +
+                            if (rest.unverified.isEmpty()) "，其餘範圍核實完成" else ReconcileText.note(rest.unverified),
+                    )
+                    ConfirmOutcome.Deleted(0, rest)
+                }
+                refused.status == 409 && counts != null -> {
+                    replaceGap(dataType) {
+                        it.copy(
+                            reason = ReconcileText.confirmMismatch(counts.wouldDelete),
+                            refusal = refusal.copy(wouldDelete = counts.wouldDelete, checked = counts.checked, sentIds = window.recordIds.size),
+                            checkedAtMs = clock(),
+                        )
+                    }
+                    ConfirmOutcome.CountChanged(counts.wouldDelete, counts.checked)
+                }
+                refused.status == 400 || refused.status == 409 -> {
+                    replaceGap(dataType) { it.copy(reason = ReconcileText.CONFIRM_UNSUPPORTED, refusal = null, checkedAtMs = clock()) }
+                    ConfirmOutcome.NotAccepted(ReconcileText.CONFIRM_UNSUPPORTED)
+                }
+                else -> throw refused
+            }
+        }
+        if (!result.reconciled) {
+            replaceGap(dataType) { it.copy(reason = ReconcileText.NOT_REPORTED, refusal = null, checkedAtMs = clock()) }
+            return ConfirmOutcome.NotAccepted(ReconcileText.NOT_REPORTED)
+        }
+        // The confirmed window is settled; the rest of the gap is verified under the normal limits.
+        replaceGap(dataType) { it.copy(reason = ReconcileText.confirmedDeleted(result.deleted), refusal = null, checkedAtMs = clock()) }
+        val updated = gaps.first { it.dataType == dataType }
+        val rest = reverifyGap(updated, granted, onProgress)
+        onProgress(
+            // 0: a retried request the server had already applied (it reports no count the second time).
+            (if (result.deleted > 0) "已刪除 ${result.deleted} 筆已確認的${type.label}資料" else "伺服器已套用確認的${type.label}刪除") +
+                if (rest.unverified.isEmpty()) "，其餘範圍核實完成" else ReconcileText.note(rest.unverified),
+        )
+        return ConfirmOutcome.Deleted(result.deleted, rest)
+    }
+
+    private fun replaceGap(dataType: String, change: (ReconcileGap) -> ReconcileGap) {
+        store.reconcileGapsText = ReconcileGaps.encode(ReconcileGaps.update(gaps, dataType, change))
     }
 
     // The configured window is capped by what Health Connect lets us read:
@@ -249,6 +361,7 @@ class HealthSyncEngine(
             null
         }
         var unverified: String? = null
+        var refusal: GapRefusal? = null
         fun sendWindows(windows: List<ReconcileWindow>) {
             for (window in windows) {
                 if (unverified != null) return
@@ -257,6 +370,10 @@ class HealthSyncEngine(
                 } catch (refused: InfovoreApi.HttpStatusException) {
                     if (refused.status != 400 && refused.status != 409) throw refused
                     unverified = ReconcileText.serverRejected(refused.status)
+                    // Kept so the user can review (and, within the server's ceiling, confirm) it.
+                    refusal = refused.refusal?.let {
+                        GapRefusal(window.startMs, window.endMs, it.wouldDelete, it.checked, window.recordIds.size)
+                    }
                     return
                 }
                 if (!result.reconciled) {
@@ -275,7 +392,7 @@ class HealthSyncEngine(
             } catch (error: Exception) {
                 // An incomplete read can never be reconciled: no window of the rest is sent, and the
                 // type stays unverified until a later complete pass.
-                if (planner != null) recordGap(type, startMs, endMs, unverified ?: ReconcileText.READ_FAILED)
+                if (planner != null) recordGap(type, startMs, endMs, unverified ?: ReconcileText.READ_FAILED, refusal)
                 throw error
             }
             if (uploadRecords) {
@@ -299,7 +416,7 @@ class HealthSyncEngine(
             if (unverified == null) planner.finish()?.let { sendWindows(listOf(it)) }
             val reason = unverified ?: planner.failure
             if (reason != null) {
-                summary += unverified(type, startMs, endMs, reason)
+                summary += unverified(type, startMs, endMs, reason, refusal)
             } else {
                 store.reconcileGapsText = ReconcileGaps.encode(ReconcileGaps.verified(gaps, type.key, startMs, endMs))
             }
@@ -308,14 +425,14 @@ class HealthSyncEngine(
     }
 
     /** Saves the gap and returns the summary line for it. */
-    private fun unverified(type: HealthCatalog.Type, startMs: Long, endMs: Long, reason: String): SyncSummary {
-        recordGap(type, startMs, endMs, reason)
+    private fun unverified(type: HealthCatalog.Type, startMs: Long, endMs: Long, reason: String, refusal: GapRefusal? = null): SyncSummary {
+        recordGap(type, startMs, endMs, reason, refusal)
         return SyncSummary(unverified = listOf("${type.label}（$reason）"))
     }
 
-    private fun recordGap(type: HealthCatalog.Type, startMs: Long, endMs: Long, reason: String) {
+    private fun recordGap(type: HealthCatalog.Type, startMs: Long, endMs: Long, reason: String, refusal: GapRefusal? = null) {
         store.reconcileGapsText = ReconcileGaps.encode(
-            ReconcileGaps.record(gaps, ReconcileGap(type.key, startMs, endMs, reason, clock())),
+            ReconcileGaps.record(gaps, ReconcileGap(type.key, startMs, endMs, reason, clock(), refusal)),
         )
     }
 

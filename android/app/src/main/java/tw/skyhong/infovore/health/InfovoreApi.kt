@@ -115,7 +115,9 @@ class InfovoreApi(endpoint: String) {
             if (status == 408 || status == 429 || status >= 500) {
                 throw IOException("Infovore HTTP $status: ${responseText.take(300)}")
             }
-            if (status !in 200..299) throw HttpStatusException(status, "Infovore HTTP $status: ${responseText.take(300)}")
+            if (status !in 200..299) {
+                throw HttpStatusException(status, "Infovore HTTP $status: ${responseText.take(300)}", refusalOf(status, responseText))
+            }
             JSONObject(responseText)
         } finally {
             connection.disconnect()
@@ -125,10 +127,26 @@ class InfovoreApi(endpoint: String) {
     /** [reconciled]: the server confirmed the batch's reconcile window (false when none was sent). */
     data class UploadResult(val inserted: Int, val updated: Int, val deleted: Int, val reconciled: Boolean = false)
 
-    /** A non-retryable HTTP failure (e.g. 400, 401, 413). */
-    class HttpStatusException(val status: Int, message: String) : IllegalStateException(message)
+    /**
+     * A non-retryable HTTP failure (e.g. 400, 401, 409, 413). [refusal] holds the counts of a
+     * reconcile window the server refused (HTTP 409 with `reconcile.status == "rejected"`).
+     */
+    class HttpStatusException(
+        val status: Int,
+        message: String,
+        val refusal: ReconcileRefusal? = null,
+    ) : IllegalStateException(message)
 
     private companion object {
+        fun refusalOf(status: Int, responseText: String): ReconcileRefusal? {
+            if (status != 409) return null
+            val reconcile = runCatching { JSONObject(responseText).optJSONObject("reconcile") }.getOrNull() ?: return null
+            if (reconcile.optString("status") != "rejected") return null
+            val wouldDelete = reconcile.optInt("wouldDelete", -1)
+            val checked = reconcile.optInt("checked", -1)
+            return if (wouldDelete >= 0 && checked >= 0) ReconcileRefusal(wouldDelete, checked) else null
+        }
+
         const val MAX_ATTEMPTS = 4
         val RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L, 4_000L)
     }

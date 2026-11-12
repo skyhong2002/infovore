@@ -15,6 +15,16 @@ enum class SyncKind {
 
     /** Re-send the reconcile windows that could not be verified earlier (see [ReconcileGaps]). */
     REVERIFY,
+
+    /** Delete the server rows of a refused reconcile window the user explicitly confirmed. */
+    CONFIRM_DELETE,
+    ;
+
+    /** The run's last progress line stays visible as its result ([SyncState.notice]). */
+    val keepsResult: Boolean get() = this == REVERIFY || this == CONFIRM_DELETE
+
+    /** "重試" may simply start the same kind again (a confirmed deletion must be confirmed again). */
+    val retryable: Boolean get() = this != CONFIRM_DELETE
 }
 
 data class SyncState(
@@ -26,6 +36,8 @@ data class SyncState(
     val error: String? = null,
     /** The periodic background sync ([SyncWorker]) currently holds the sync lock. */
     val backgroundRunning: Boolean = false,
+    /** The result line of the last successful run of a kind that [SyncKind.keepsResult]. */
+    val notice: String? = null,
 ) {
     val busy: Boolean get() = running != null || backgroundRunning
 }
@@ -55,7 +67,7 @@ class SyncCoordinator(
         while (true) {
             val current = _state.value
             if (current.running != null) return false
-            val claimed = current.copy(running = kind, progress = PREPARING, failed = null, error = null)
+            val claimed = current.copy(running = kind, progress = PREPARING, failed = null, error = null, notice = null)
             if (_state.compareAndSet(current, claimed)) break
         }
         scope.launch {
@@ -70,8 +82,13 @@ class SyncCoordinator(
             }
             try {
                 setProgress(kind, PREPARING)
-                work { text -> setProgress(kind, text) }
-                _state.update { it.copy(running = null, progress = null) }
+                var last: String? = null
+                work { text ->
+                    last = text
+                    setProgress(kind, text)
+                }
+                val notice = last.takeIf { kind.keepsResult }
+                _state.update { it.copy(running = null, progress = null, notice = notice) }
             } catch (cancelled: CancellationException) {
                 _state.update { it.copy(running = null, progress = null) }
                 throw cancelled

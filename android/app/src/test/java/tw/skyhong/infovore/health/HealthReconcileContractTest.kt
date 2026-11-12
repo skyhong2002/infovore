@@ -68,6 +68,46 @@ class HealthReconcileContractTest {
     }
 
     @Test
+    fun theAppSerializesTheSharedConfirmedDeletionExactly() {
+        val case = fixture["confirmedDeleteCase"].obj()
+        val planner = case["planner"].obj()
+        val request = case["request"].obj()
+        val reconcilePlanner = ReconcilePlanner(
+            dataType = planner["dataType"] as String,
+            startMs = Instant.parse(planner["start"] as String).toEpochMilli(),
+            endMs = Instant.parse(planner["end"] as String).toEpochMilli(),
+            ascending = true,
+        )
+        @Suppress("UNCHECKED_CAST")
+        val items = (planner["items"] as List<Map<String, Any?>>).map {
+            ReconcilePlanner.Item(it["id"] as String, Instant.parse(it["start"] as String).toEpochMilli())
+        }
+        assertTrue(reconcilePlanner.add(items).isEmpty())
+        val window = requireNotNull(reconcilePlanner.finish())
+            .copy(confirmDeleteExpected = (planner["confirmDeleteExpected"] as Double).toInt())
+
+        val produced = MiniJson.parse(
+            HealthBatchJson.body(
+                syncId = request["syncId"] as String,
+                deviceId = request["deviceId"] as String,
+                observedAt = Instant.parse(request["observedAt"] as String),
+                recordJson = emptyList(),
+                deletedRecordIds = emptyList(),
+                reconcile = window,
+            ),
+        ).obj()
+        assertEquals(request.keys, produced.keys)
+        for (key in request.keys) assertEquals("field $key", request[key], produced[key])
+        val expectedWindow = request["reconcile"].obj()
+        val producedWindow = produced["reconcile"].obj()
+        assertEquals(expectedWindow.keys.toList(), producedWindow.keys.toList())
+        assertEquals(expectedWindow["confirmDelete"], producedWindow["confirmDelete"])
+        // The confirmed number is also what the server's expected response reports as deleted.
+        val expectedResponse = case["expectedResponse"].obj()
+        assertEquals(expectedResponse["deleted"], (producedWindow["confirmDelete"].obj())["expected"])
+    }
+
+    @Test
     fun recordsAndDeletionsAreEmbeddedAsGiven() {
         val body = HealthBatchJson.body(
             "fixture-sync-0001", "fixture-device-01", Instant.parse("2026-09-10T00:00:00.123Z"),

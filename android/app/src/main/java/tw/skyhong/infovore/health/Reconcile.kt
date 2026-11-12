@@ -31,12 +31,17 @@ object JsonText {
  * [dataType] that starts in [startMs, endMs), read completely during this sync. The server then
  * deletes this device's stored rows of that type that start in the window, end by its end, and
  * are not listed.
+ *
+ * [confirmDeleteExpected] is set only after the user explicitly confirmed deleting exactly that
+ * many rows of a window the server refused (HTTP 409); the server then lifts its automatic limits
+ * for this window only if the count matches exactly and stays within [MAX_CONFIRMED_DELETES].
  */
 data class ReconcileWindow(
     val dataType: String,
     val startMs: Long,
     val endMs: Long,
     val recordIds: List<String>,
+    val confirmDeleteExpected: Int? = null,
 ) {
     fun toJson(): String = buildString {
         append("{\"dataType\":").append(JsonText.quote(dataType))
@@ -47,9 +52,23 @@ data class ReconcileWindow(
             if (index > 0) append(',')
             append(JsonText.quote(id))
         }
-        append("]}")
+        append(']')
+        if (confirmDeleteExpected != null) append(",\"confirmDelete\":{\"expected\":").append(confirmDeleteExpected).append('}')
+        append('}')
+    }
+
+    companion object {
+        /** The server's MAX_CONFIRMED_RECONCILE_DELETES: no confirmation lifts the limits beyond this. */
+        const val MAX_CONFIRMED_DELETES = 2000
     }
 }
+
+/**
+ * The counts of a reconcile window the server refused with HTTP 409 (its response's
+ * `reconcile.wouldDelete` / `reconcile.checked`): it would have deleted [wouldDelete] of the
+ * [checked] rows this device has stored in the window. No record ids or values.
+ */
+data class ReconcileRefusal(val wouldDelete: Int, val checked: Int)
 
 /**
  * Turns the pages of one complete history read into reconcile windows, without holding every id
@@ -153,6 +172,27 @@ object ReconcileText {
         400 -> "伺服器不接受對帳（可能是舊版伺服器）"
         else -> "伺服器回應 HTTP $status"
     }
+
+    /** Re-reading before a confirmed deletion found a different number of records: nothing was sent. */
+    const val CHANGED_BEFORE_CONFIRM = "確認後手機上的紀錄已有變動，未刪除任何資料；請按「重新核實」取得最新數字後再確認"
+
+    /** The server counted a different number than the user confirmed: nothing was deleted. */
+    fun confirmMismatch(wouldDelete: Int): String = "伺服器實際要刪除的筆數已變為 $wouldDelete 筆，未刪除任何資料；請重新確認"
+
+    const val NOTHING_LEFT_TO_DELETE = "伺服器上已沒有要刪除的資料（可能先前已刪除）；正在核實其餘範圍"
+
+    const val CONFIRM_UNSUPPORTED = "伺服器不接受確認刪除（可能是舊版伺服器），未刪除任何資料"
+
+    /** The result line of a confirmed deletion, or null when the engine already reported it. */
+    fun confirmOutcome(outcome: HealthSyncEngine.ConfirmOutcome): String? = when (outcome) {
+        is HealthSyncEngine.ConfirmOutcome.Deleted -> null
+        HealthSyncEngine.ConfirmOutcome.Outdated -> "提醒內容已更新，未刪除任何資料；請檢視最新數字後再確認"
+        HealthSyncEngine.ConfirmOutcome.SourceChanged -> CHANGED_BEFORE_CONFIRM
+        is HealthSyncEngine.ConfirmOutcome.CountChanged -> confirmMismatch(outcome.wouldDelete)
+        is HealthSyncEngine.ConfirmOutcome.NotAccepted -> outcome.reason
+    }
+
+    fun confirmedDeleted(deleted: Int): String = "已確認刪除 $deleted 筆；其餘範圍待重新核實"
 
     const val NOT_REPORTED = "伺服器未回報對帳結果（可能是舊版伺服器）"
     const val PERMISSION_WINDOW = "讀取權限無法確保涵蓋整個範圍"

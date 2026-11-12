@@ -150,4 +150,18 @@ class SyncCoordinatorTest {
         assertNull(sync.state.value.failed)
         runnerScope.cancel()
     }
+
+    @Test
+    fun reverificationAndConfirmedDeletionsKeepTheirResultLine() = runBlocking<Unit> {
+        val sync = coordinator()
+        sync.startManual(SyncKind.CONFIRM_DELETE) { progress -> progress("刪除中…"); progress("已刪除 25 筆已確認的步數資料") }
+        val done = sync.state.first { it.running == null && it.notice != null }
+        assertEquals("已刪除 25 筆已確認的步數資料", done.notice)
+        // A full sync reports through its own status instead, and a new run clears the old line.
+        sync.startManual(SyncKind.FULL) { progress -> progress("同步完成") }
+        val full = sync.state.first { it.running == null }
+        assertNull(full.notice)
+        assertFalse(SyncKind.CONFIRM_DELETE.retryable)
+        assertTrue(SyncKind.REVERIFY.retryable)
+    }
 }
