@@ -27,6 +27,9 @@ function store<T>(write: () => T): T {
   }
 }
 const storageUnavailable = { error: 'Storage is temporarily unavailable; keep the batch and retry later', retryable: true };
+// A feature without its token configured stays unavailable until the operator
+// sets it, so its 503 says retrying will not help (the Android app then stops
+// at once instead of retrying the batch).
 
 function authorized(auth: string | undefined, expectedToken = config.ingestToken): boolean {
   if (!expectedToken || !auth?.startsWith('Bearer ')) return false;
@@ -42,7 +45,7 @@ export function createIngestApp(repository: Repository): Hono {
     config.ingestToken ? 200 : 503
   ));
   app.use('/api/ingest/dayflow/*', async (c, next) => {
-    if (!config.dayflow.token) return c.json({ error: 'Dayflow ingestion is not configured' }, 503);
+    if (!config.dayflow.token) return c.json({ error: 'Dayflow ingestion is not configured', retryable: false }, 503);
     if (!authorized(c.req.header('authorization'), config.dayflow.token)) return c.json({ error: 'Unauthorized' }, 401);
     await next();
   });
@@ -63,7 +66,7 @@ export function createIngestApp(repository: Repository): Hono {
   // Android screen observations use their own token: a leaked phone token
   // cannot rewrite macOS days, and the Mac token cannot write phone data.
   app.use('/api/ingest/dayflow-phone/*', async (c, next) => {
-    if (!config.dayflow.phoneToken) return c.json({ error: 'Phone Dayflow ingestion is not configured' }, 503);
+    if (!config.dayflow.phoneToken) return c.json({ error: 'Phone Dayflow ingestion is not configured', retryable: false }, 503);
     if (!authorized(c.req.header('authorization'), config.dayflow.phoneToken)) return c.json({ error: 'Unauthorized' }, 401);
     await next();
   });
@@ -91,7 +94,7 @@ export function createIngestApp(repository: Repository): Hono {
     }
   });
   app.use('/api/ingest/computai/*', async (c, next) => {
-    if (!config.computai.token) return c.json({ error: 'ComputAI ingestion is not configured' }, 503);
+    if (!config.computai.token) return c.json({ error: 'ComputAI ingestion is not configured', retryable: false }, 503);
     if (!authorized(c.req.header('authorization'), config.computai.token)) return c.json({ error: 'Unauthorized' }, 401);
     await next();
   });
@@ -123,7 +126,7 @@ export function createIngestApp(repository: Repository): Hono {
     }
   });
   app.post('/api/ingest/events', async (c) => {
-    if (!config.ingestToken) return c.json({ error: 'Event ingestion is not configured' }, 503);
+    if (!config.ingestToken) return c.json({ error: 'Event ingestion is not configured', retryable: false }, 503);
     if (!authorized(c.req.header('authorization'))) return c.json({ error: 'Unauthorized' }, 401);
     try {
       const body = await c.req.json<{ events?: EventInput[] } | EventInput>();
@@ -149,12 +152,12 @@ export function createIngestApp(repository: Repository): Hono {
     }
   });
   app.get('/api/ingest/health-connect/status', (c) => {
-    if (!config.healthConnect.token) return c.json({ error: 'Health Connect ingestion is not configured' }, 503);
+    if (!config.healthConnect.token) return c.json({ error: 'Health Connect ingestion is not configured', retryable: false }, 503);
     if (!authorized(c.req.header('authorization'), config.healthConnect.token)) return c.json({ error: 'Unauthorized' }, 401);
     return c.json({ status: 'ready', ...repository.healthConnectStatus() });
   });
   app.post('/api/ingest/health-connect', async (c) => {
-    if (!config.healthConnect.token) return c.json({ error: 'Health Connect ingestion is not configured' }, 503);
+    if (!config.healthConnect.token) return c.json({ error: 'Health Connect ingestion is not configured', retryable: false }, 503);
     if (!authorized(c.req.header('authorization'), config.healthConnect.token)) return c.json({ error: 'Unauthorized' }, 401);
     try {
       const body = await c.req.text();

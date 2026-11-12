@@ -1,0 +1,511 @@
+{
+  "description": "Recorded by android/app/src/test/java/tw/skyhong/infovore/health/robo/SyncFlowUiTest.kt: every request the Android app sends during one successful first sync (button press on MainActivity, real HealthSyncEngine and InfovoreApi, synthetic Health Connect records, fixed clock and batch ids), with the answer the test's fake server gave. tests/android-chain.test.ts replays the requests in order into the real ingest service, checks that the real answers match, and checks the public pages. Regenerate with INFOVORE_UPDATE_GOLDEN=1 (see the test); never edit by hand. Synthetic data only.",
+  "phoneClock": "2026-09-10T04:00:00Z",
+  "requests": [
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "records": [
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "sleep_session",
+            "endTime": "2026-09-08T22:30:00Z",
+            "id": "com.example.goldenwatch:golden-sleep-1",
+            "lastModifiedTime": "2026-09-10T03:00:00Z",
+            "payload": {
+              "notes": "golden private sleep note",
+              "stages": [
+                {
+                  "endTime": "2026-09-08T18:00:00Z",
+                  "stage": 4,
+                  "startTime": "2026-09-08T15:30:00Z"
+                },
+                {
+                  "endTime": "2026-09-08T20:00:00Z",
+                  "stage": 5,
+                  "startTime": "2026-09-08T18:00:00Z"
+                },
+                {
+                  "endTime": "2026-09-08T22:30:00Z",
+                  "stage": 6,
+                  "startTime": "2026-09-08T20:00:00Z"
+                }
+              ],
+              "title": null
+            },
+            "startTime": "2026-09-08T15:30:00Z"
+          }
+        ],
+        "syncId": "android-golden-sync-0001"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 1,
+        "reconciled": false,
+        "status": 201,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "reconcile": {
+          "dataType": "sleep_session",
+          "end": "2026-09-10T04:00:00Z",
+          "recordIds": ["com.example.goldenwatch:golden-sleep-1"],
+          "start": "2026-09-03T04:00:00Z"
+        },
+        "records": [],
+        "syncId": "android-golden-sync-0002"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 0,
+        "reconciled": true,
+        "status": 200,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "records": [
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "exercise_session",
+            "endTime": "2026-09-09T00:40:00Z",
+            "id": "com.example.goldenwatch:golden-walk-1",
+            "lastModifiedTime": "2026-09-10T03:00:00.001Z",
+            "payload": {
+              "exerciseType": 79,
+              "notes": "golden private workout note",
+              "segments": [],
+              "title": null
+            },
+            "startTime": "2026-09-09T00:10:00Z"
+          }
+        ],
+        "syncId": "android-golden-sync-0003"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 1,
+        "reconciled": false,
+        "status": 201,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "reconcile": {
+          "dataType": "exercise_session",
+          "end": "2026-09-10T04:00:00Z",
+          "recordIds": ["com.example.goldenwatch:golden-walk-1"],
+          "start": "2026-09-03T04:00:00Z"
+        },
+        "records": [],
+        "syncId": "android-golden-sync-0004"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 0,
+        "reconciled": true,
+        "status": 200,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "records": [
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "steps",
+            "endTime": "2026-09-09T01:00:00Z",
+            "id": "com.example.goldenwatch:golden-steps-1",
+            "lastModifiedTime": "2026-09-10T03:00:00.002Z",
+            "payload": {
+              "count": 4000
+            },
+            "startTime": "2026-09-09T00:00:00Z"
+          },
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "steps",
+            "endTime": "2026-09-09T10:00:00Z",
+            "id": "com.example.goldenwatch:golden-steps-2",
+            "lastModifiedTime": "2026-09-10T03:00:00.003Z",
+            "payload": {
+              "count": 2543
+            },
+            "startTime": "2026-09-09T09:00:00Z"
+          }
+        ],
+        "syncId": "android-golden-sync-0005"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 2,
+        "reconciled": false,
+        "status": 201,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "reconcile": {
+          "dataType": "steps",
+          "end": "2026-09-10T04:00:00Z",
+          "recordIds": ["com.example.goldenwatch:golden-steps-1", "com.example.goldenwatch:golden-steps-2"],
+          "start": "2026-09-03T04:00:00Z"
+        },
+        "records": [],
+        "syncId": "android-golden-sync-0006"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 0,
+        "reconciled": true,
+        "status": 200,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "records": [
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "distance",
+            "endTime": "2026-09-09T01:00:00Z",
+            "id": "com.example.goldenwatch:golden-distance-1",
+            "lastModifiedTime": "2026-09-10T03:00:00.004Z",
+            "payload": {
+              "meters": 3200
+            },
+            "startTime": "2026-09-09T00:00:00Z"
+          }
+        ],
+        "syncId": "android-golden-sync-0007"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 1,
+        "reconciled": false,
+        "status": 201,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "reconcile": {
+          "dataType": "distance",
+          "end": "2026-09-10T04:00:00Z",
+          "recordIds": ["com.example.goldenwatch:golden-distance-1"],
+          "start": "2026-09-03T04:00:00Z"
+        },
+        "records": [],
+        "syncId": "android-golden-sync-0008"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 0,
+        "reconciled": true,
+        "status": 200,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "records": [
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "total_calories_burned",
+            "endTime": "2026-09-09T01:00:00Z",
+            "id": "com.example.goldenwatch:golden-calories-1",
+            "lastModifiedTime": "2026-09-10T03:00:00.005Z",
+            "payload": {
+              "kilocalories": 250
+            },
+            "startTime": "2026-09-09T00:00:00Z"
+          }
+        ],
+        "syncId": "android-golden-sync-0009"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 1,
+        "reconciled": false,
+        "status": 201,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "reconcile": {
+          "dataType": "total_calories_burned",
+          "end": "2026-09-10T04:00:00Z",
+          "recordIds": ["com.example.goldenwatch:golden-calories-1"],
+          "start": "2026-09-03T04:00:00Z"
+        },
+        "records": [],
+        "syncId": "android-golden-sync-0010"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 0,
+        "reconciled": true,
+        "status": 200,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "records": [
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "heart_rate",
+            "endTime": "2026-09-09T00:20:00Z",
+            "id": "com.example.goldenwatch:golden-heart-1",
+            "lastModifiedTime": "2026-09-10T03:00:00.006Z",
+            "payload": {
+              "samples": [
+                {
+                  "beatsPerMinute": 64,
+                  "time": "2026-09-09T00:16:00Z"
+                },
+                {
+                  "beatsPerMinute": 80,
+                  "time": "2026-09-09T00:18:00Z"
+                }
+              ]
+            },
+            "startTime": "2026-09-09T00:15:00Z"
+          }
+        ],
+        "syncId": "android-golden-sync-0011"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 1,
+        "reconciled": false,
+        "status": 201,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "reconcile": {
+          "dataType": "heart_rate",
+          "end": "2026-09-10T04:00:00Z",
+          "recordIds": ["com.example.goldenwatch:golden-heart-1"],
+          "start": "2026-09-03T04:00:00Z"
+        },
+        "records": [],
+        "syncId": "android-golden-sync-0012"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 0,
+        "reconciled": true,
+        "status": 200,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "records": [
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "weight",
+            "endTime": "2026-09-09T23:00:00Z",
+            "id": "com.example.goldenwatch:golden-weight-1",
+            "lastModifiedTime": "2026-09-10T03:00:00.007Z",
+            "payload": {
+              "kilograms": 68.4
+            },
+            "startTime": "2026-09-09T23:00:00Z"
+          }
+        ],
+        "syncId": "android-golden-sync-0013"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 1,
+        "reconciled": false,
+        "status": 201,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "reconcile": {
+          "dataType": "weight",
+          "end": "2026-09-10T04:00:00Z",
+          "recordIds": ["com.example.goldenwatch:golden-weight-1"],
+          "start": "2026-09-03T04:00:00Z"
+        },
+        "records": [],
+        "syncId": "android-golden-sync-0014"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 0,
+        "reconciled": true,
+        "status": 200,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "records": [
+          {
+            "dataOrigin": "com.example.goldenwatch",
+            "dataType": "body_fat",
+            "endTime": "2026-09-09T23:00:00Z",
+            "id": "com.example.goldenwatch:golden-body-fat-1",
+            "lastModifiedTime": "2026-09-10T03:00:00.008Z",
+            "payload": {
+              "percentage": 21.5
+            },
+            "startTime": "2026-09-09T23:00:00Z"
+          }
+        ],
+        "syncId": "android-golden-sync-0015"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 1,
+        "reconciled": false,
+        "status": 201,
+        "updated": 0
+      }
+    },
+    {
+      "authorization": "Bearer test-token-with-at-least-32-characters",
+      "body": {
+        "deletedRecordIds": [],
+        "deviceId": "android-golden-device-01",
+        "observedAt": "2026-09-10T04:00:00Z",
+        "reconcile": {
+          "dataType": "body_fat",
+          "end": "2026-09-10T04:00:00Z",
+          "recordIds": ["com.example.goldenwatch:golden-body-fat-1"],
+          "start": "2026-09-03T04:00:00Z"
+        },
+        "records": [],
+        "syncId": "android-golden-sync-0016"
+      },
+      "contentType": "application/json",
+      "method": "POST",
+      "path": "/api/ingest/health-connect",
+      "response": {
+        "deleted": 0,
+        "inserted": 0,
+        "reconciled": true,
+        "status": 200,
+        "updated": 0
+      }
+    }
+  ]
+}

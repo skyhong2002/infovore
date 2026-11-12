@@ -32,7 +32,11 @@ class HealthConnectSync(context: Context) {
     private val endpoint = settings.endpoint
     private val authToken = settings.token
     private val deviceId = settings.deviceId
-    private val api = InfovoreApi(endpoint)
+    private val api = InfovoreApi(
+        endpoint,
+        clock = { Instant.ofEpochMilli(SyncEnvironment.nowMs()) },
+        newSyncId = SyncEnvironment::newSyncId,
+    )
 
     private val engine = HealthSyncEngine(
         reader = HealthConnectReader(context),
@@ -43,6 +47,7 @@ class HealthConnectSync(context: Context) {
         ownPackage = context.packageName,
         destination = DestinationChange.normalize(endpoint),
         credentialsReady = endpoint.isNotBlank() && authToken.length >= 32,
+        clock = SyncEnvironment::nowMs,
     )
 
     suspend fun runSleep(onProgress: (String) -> Unit = {}): SyncSummary = engine.runSleep(onProgress)

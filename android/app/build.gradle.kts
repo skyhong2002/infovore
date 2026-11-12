@@ -11,8 +11,8 @@ android {
         applicationId = "tw.skyhong.infovore.health"
         minSdk = 34
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.4.5"
+        versionCode = 19
+        versionName = "0.4.6"
 
         // The one private host plain HTTP may reach (see android/README.md, "Private HTTP host").
         // It must match the <domain> in res/xml/network_security_config.xml; a unit test checks it.
@@ -40,6 +40,17 @@ android {
 
     // Robolectric tests (src/test/.../robo) inflate the real resources and manifest.
     testOptions { unitTests.isIncludeAndroidResources = true }
+}
+
+tasks.withType<Test>().configureEach {
+    // The shared fixtures the contract and chain tests compare against: a change re-runs them.
+    inputs.files(
+        rootProject.file("../tests/fixtures/health-reconcile-contract.json"),
+        rootProject.file("../tests/fixtures/android-sync-golden.json"),
+    ).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("sharedFixtures")
+    // INFOVORE_UPDATE_GOLDEN=1 makes SyncFlowUiTest rewrite tests/fixtures/android-sync-golden.json
+    // instead of comparing with it (a system property, so switching it re-runs the tests).
+    systemProperty("infovore.updateGolden", providers.environmentVariable("INFOVORE_UPDATE_GOLDEN").getOrElse(""))
 }
 
 dependencies {

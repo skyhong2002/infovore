@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseBackloggdLogFixture, parseBackloggdRecentFixture } from '../src/sources/backloggd.js';
-import { parseHardcoverBooks, type HardcoverUserBook } from '../src/sources/hardcover.js';
+import { parseHardcoverBooks, webImage, type HardcoverUserBook } from '../src/sources/hardcover.js';
 import { starString } from '../src/output/hardcover.js';
 import { parseKitsuEntries } from '../src/sources/kitsu.js';
 import { parseSimklEntries } from '../src/sources/simkl.js';
@@ -182,6 +182,20 @@ test('a finished book without a read date falls back to when it was shelved', ()
   assert.equal(entry.activityAt, '2025-09-13');
   assert.equal(entry.extra.pages, undefined);
   assert.equal(entry.image, '');
+});
+
+test('a cover browsers cannot display (a TIFF edition scan) falls back to the book cover, or to none', () => {
+  const book = (editionImage: string | null, bookImage: string | null) => parseHardcoverBooks([{
+    id: 10, status_id: 2, rating: null, date_added: '2026-09-01', last_read_date: null,
+    book: { id: 10, slug: 'y', title: 'Y', pages: 100, image: bookImage ? { url: bookImage } : null, contributions: [] },
+    edition: { title: 'Y', pages: 100, image: editionImage ? { url: editionImage } : null }, user_book_reads: [],
+  }])[0]!.image;
+  assert.equal(book('https://assets.hardcover.app/edition/1/scan.tiff', 'https://assets.hardcover.app/book/1/cover.jpeg'), 'https://assets.hardcover.app/book/1/cover.jpeg');
+  assert.equal(book('https://assets.hardcover.app/edition/1/scan.TIF', null), '');
+  assert.equal(book('https://assets.hardcover.app/edition/1/cover.jpeg', 'https://assets.hardcover.app/book/1/cover.png'), 'https://assets.hardcover.app/edition/1/cover.jpeg');
+  assert.equal(webImage('https://example.test/a.tiff?w=200'), '');
+  assert.equal(webImage('https://example.test/tiff/cover.webp'), 'https://example.test/tiff/cover.webp');
+  assert.equal(webImage(null), '');
 });
 
 test('Kitsu JSON fixture resolves included media and stable library id', () => {

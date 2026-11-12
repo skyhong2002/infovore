@@ -7,6 +7,7 @@ import { activityMeta, eventStatusLabel } from '../src/output/activity-meta.js';
 import { platformSync } from '../src/output/overview.js';
 import { publicError, statusPage } from '../src/output/status.js';
 import { searchPage } from '../src/output/pages.js';
+import { SCROLL_REGION_SCRIPT } from '../src/output/scripts.js';
 import type { Activity } from '../src/data/types.js';
 
 const base: HomepageData = {
@@ -240,4 +241,65 @@ test('search cards mark their dates up as <time> in GMT+8', () => {
   assert.equal(times.eq(1).text(), 'Nov 10, 2026 GMT+8');
   // The tooltip keeps plain text.
   assert.doesNotMatch($('.entry-meta').first().attr('title') ?? '', /</);
+});
+
+test('API scroll regions keep a tab stop only while they actually overflow', async () => {
+  const $ = load(await (await app.request('/api')).text());
+  // Without JavaScript every region stays focusable and named; the script trims the rest.
+  const regions = $('[data-scroll-region]');
+  assert.equal(regions.length, 6);
+  regions.each((_, region) => assert.equal($(region).attr('data-scroll-region'), $(region).attr('aria-labelledby')));
+  assert.ok($('script').toArray().some((script) => $(script).text() === SCROLL_REGION_SCRIPT), 'the page runs the region script');
+
+  // The script itself, on a minimal stand-in DOM: one region that fits, one that overflows.
+  const element = (scrollWidth: number, clientWidth: number, id: string) => {
+    const attributes = new Map<string, string>([['tabindex', '0'], ['role', 'region'], ['aria-labelledby', id]]);
+    return {
+      scrollWidth, clientWidth, dataset: { scrollRegion: id }, attributes,
+      set tabIndex(value: number) { attributes.set('tabindex', String(value)); },
+      setAttribute: (name: string, value: string) => attributes.set(name, value),
+      removeAttribute: (name: string) => attributes.delete(name),
+    };
+  };
+  const fits = element(600, 600, 'api-time');
+  const overflows = element(900, 320, 'api-activities');
+  const focused = element(600, 600, 'api-cards');
+  const listeners: string[] = [];
+  const document = { querySelectorAll: () => [fits, overflows, focused], activeElement: focused };
+  new Function('document', 'addEventListener', SCROLL_REGION_SCRIPT)(document, (type: string) => listeners.push(type));
+  assert.deepEqual([...fits.attributes.keys()], []);
+  assert.deepEqual(Object.fromEntries(overflows.attributes), { tabindex: '0', role: 'region', 'aria-labelledby': 'api-activities' });
+  assert.equal(focused.attributes.get('tabindex'), '0', 'the focused region keeps its tab stop');
+  assert.deepEqual(listeners.sort(), ['load', 'resize']);
+  // A narrower window that makes the first one overflow gives its tab stop and name back.
+  fits.scrollWidth = 900;
+  new Function('document', 'addEventListener', SCROLL_REGION_SCRIPT)(document, () => {});
+  assert.deepEqual(Object.fromEntries(fits.attributes), { tabindex: '0', role: 'region', 'aria-labelledby': 'api-time' });
+});
+
+test('search platform filters separate the name from the count, visibly and for screen readers', async () => {
+  const $ = load(searchPage('Sample', { query: '', source: '', kind: '' }, { data: [], total: 0, limit: 48, offset: 0 }, { kitsu: 40, simkl: 1 }, []));
+  const chips = $('.search-filters[aria-label="Filter by platform"] a').slice(1);
+  assert.deepEqual(chips.map((_, chip) => $(chip).text().replace(/\s+/g, ' ').trim()).get(), ['Kitsu, 40 entries', 'Simkl, 1 entry']);
+  assert.equal(chips.first().find('small.chip-count').length, 1);
+  const css = await (await app.request('/styles.css')).text();
+  assert.match(css, /\.search-filters a\{[^}]*gap:6px/);
+  assert.match(css, /\.search-filters \.chip-count\{border-left:1px solid var\(--line\)/);
+});
+
+test('a search card clamps its description, never its date', async () => {
+  const activity: Activity = {
+    id: 'long', dedupeKey: 'long', source: 'kitsu', sourceItemId: 'long', type: 'library', mediaKind: 'anime', title: 'Synthetic long',
+    image: '', status: 'completed', occurredAt: '2026-11-12T15:30:00.000Z', occurredAtPrecision: 'exact', rating: null, visibility: 'public',
+    extra: { author: 'A very long synthetic author name '.repeat(6) }, firstSeenAt: '2026-11-12T15:30:00.000Z', lastSeenAt: '2026-11-12T15:30:00.000Z',
+  };
+  const $ = load(searchPage('Sample', { query: 'synthetic', source: '', kind: '' }, { data: [activity], total: 1, limit: 48, offset: 0 }, { kitsu: 1 }, []));
+  const meta = $('.entry-meta');
+  assert.ok(meta.hasClass('entry-meta-split'));
+  assert.match(meta.find('.entry-meta-main').text(), /^Kitsu/);
+  assert.equal(meta.find('.entry-date time').text(), 'Nov 12, 2026 · 23:30 GMT+8');
+  assert.equal(meta.find('.entry-meta-main time').length, 0);
+  const css = await (await app.request('/styles.css')).text();
+  assert.match(css, /\.entry-meta\.entry-meta-split\{display:block\}\.entry-meta-main\{display:-webkit-box;-webkit-line-clamp:2/);
+  assert.match(css, /\.entry-date\{display:block\}/);
 });

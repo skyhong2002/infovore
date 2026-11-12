@@ -1,5 +1,7 @@
 package tw.skyhong.infovore.health
 
+import androidx.annotation.VisibleForTesting
+
 /**
  * Which endpoints the app may talk to: HTTPS anywhere, plain HTTP only to the private Tailscale
  * host that network_security_config.xml also allows. Shared by the form validator and [InfovoreApi]
@@ -10,6 +12,14 @@ package tw.skyhong.infovore.health
 object EndpointPolicy {
     const val TAILSCALE_HTTP_HOST: String = BuildConfig.TAILSCALE_HTTP_HOST
 
+    /**
+     * Test only: one more host plain HTTP may reach, the loopback fake server of the JVM tests
+     * (FakeIngestServer). Always null in the app.
+     */
+    @VisibleForTesting
+    @Volatile
+    internal var testHttpHost: String? = null
+
     fun isAllowed(scheme: String, host: String): Boolean =
-        scheme == "https" || (scheme == "http" && host == TAILSCALE_HTTP_HOST)
+        scheme == "https" || (scheme == "http" && (host == TAILSCALE_HTTP_HOST || host == testHttpHost))
 }

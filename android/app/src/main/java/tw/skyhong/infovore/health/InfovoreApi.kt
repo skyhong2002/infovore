@@ -5,15 +5,36 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 import java.util.UUID
 
 /**
  * HTTP client for one fixed destination. [endpoint] is captured when the instance is created and
  * never re-read from settings, so every request of one sync or upload run goes to the same
  * server even if the saved endpoint changes meanwhile.
+ *
+ * [timing], [clock] and [newSyncId] are the app's defaults everywhere except in tests, which
+ * shorten the waits (InfovoreApiHttpTest) or fix the batch ids and time (the recorded sync of
+ * tests/fixtures/android-sync-golden.json).
  */
-class InfovoreApi(endpoint: String) {
+class InfovoreApi(
+    endpoint: String,
+    private val timing: Timing = Timing(),
+    private val clock: () -> Instant = Instant::now,
+    private val newSyncId: () -> String = { UUID.randomUUID().toString() },
+) {
     val endpoint: String = endpoint.trim().trimEnd('/')
+
+    /**
+     * Connection and read timeouts, and the waits between the attempts of one request
+     * ([retryDelaysMs]: one entry per retry, so a request is tried `retryDelaysMs.size + 1` times).
+     */
+    data class Timing(
+        val connectTimeoutMs: Int = 15_000,
+        val readTimeoutMs: Int = 30_000,
+        val retryDelaysMs: List<Long> = listOf(1_000L, 2_000L, 4_000L),
+        val sleep: (Long) -> Unit = Thread::sleep,
+    )
 
     /** [records] are encoded records ([HealthRecordJson.encode]); the body is built by [HealthBatchJson]. */
     fun upload(
@@ -27,9 +48,9 @@ class InfovoreApi(endpoint: String) {
         require(token.length >= 32) { "請先輸入至少 32 字元的 HEALTH_CONNECT_TOKEN" }
         validateEndpoint()
         val body = HealthBatchJson.body(
-            syncId = UUID.randomUUID().toString(),
+            syncId = newSyncId(),
             deviceId = deviceId,
-            observedAt = java.time.Instant.now(),
+            observedAt = clock(),
             recordJson = records,
             deletedRecordIds = deletedRecordIds,
             reconcile = reconcile,
@@ -46,7 +67,10 @@ class InfovoreApi(endpoint: String) {
 
     /**
      * POSTs [body] to [path] on the configured endpoint. Transient failures (IOException,
-     * HTTP 408/429/5xx) are retried with backoff; other non-2xx responses throw [HttpStatusException].
+     * HTTP 408/429/5xx) are retried with backoff and, once the attempts are used up, thrown as
+     * that IOException ([RetryableHttpException] for an HTTP status). Other non-2xx responses,
+     * and a 503 whose JSON body says `"retryable": false` (a server where the feature is not
+     * configured), throw [HttpStatusException] at once.
      */
     fun postJson(
         path: String,
@@ -72,7 +96,7 @@ class InfovoreApi(endpoint: String) {
             "Endpoint 必須以 http:// 或 https:// 開頭"
         }
         val endpointUrl = URL(endpoint)
-        require(endpointUrl.protocol == "https" || endpointUrl.host == EndpointPolicy.TAILSCALE_HTTP_HOST) {
+        require(EndpointPolicy.isAllowed(endpointUrl.protocol, endpointUrl.host)) {
             "自訂 endpoint 必須使用 HTTPS；HTTP 僅允許預設 Tailscale IP"
         }
     }
@@ -81,16 +105,17 @@ class InfovoreApi(endpoint: String) {
         onRetry: (attempt: Int, message: String) -> Unit,
         block: () -> JSONObject,
     ): JSONObject {
+        val attempts = timing.retryDelaysMs.size + 1
         var lastError: IOException? = null
-        for (attempt in 1..MAX_ATTEMPTS) {
+        for (attempt in 1..attempts) {
             try {
                 return block()
             } catch (error: IOException) {
                 lastError = error
-                if (attempt == MAX_ATTEMPTS) throw error
+                if (attempt == attempts) throw error
                 val nextAttempt = attempt + 1
                 onRetry(nextAttempt, error.message ?: error.javaClass.simpleName)
-                Thread.sleep(RETRY_DELAYS_MS[attempt - 1])
+                timing.sleep(timing.retryDelaysMs[attempt - 1])
             }
         }
         throw checkNotNull(lastError)
@@ -100,8 +125,8 @@ class InfovoreApi(endpoint: String) {
         val connection = URL("$endpoint$path").openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = method
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
+            connection.connectTimeout = timing.connectTimeoutMs
+            connection.readTimeout = timing.readTimeoutMs
             connection.setRequestProperty("Authorization", "Bearer $token")
             if (body != null) {
                 connection.doOutput = true
@@ -112,8 +137,11 @@ class InfovoreApi(endpoint: String) {
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val responseText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status == 503 && explicitlyNotRetryable(responseText)) {
+                throw HttpStatusException(status, "Infovore HTTP $status: ${responseText.take(300)}")
+            }
             if (status == 408 || status == 429 || status >= 500) {
-                throw IOException("Infovore HTTP $status: ${responseText.take(300)}")
+                throw RetryableHttpException(status, "Infovore HTTP $status: ${responseText.take(300)}")
             }
             if (status !in 200..299) {
                 throw HttpStatusException(status, "Infovore HTTP $status: ${responseText.take(300)}", refusalOf(status, responseText))
@@ -123,6 +151,9 @@ class InfovoreApi(endpoint: String) {
             connection.disconnect()
         }
     }
+
+    /** A transient HTTP failure (408, 429 or 5xx): retried, and thrown once the attempts are used up. */
+    class RetryableHttpException(val status: Int, message: String) : IOException(message)
 
     /** [reconciled]: the server confirmed the batch's reconcile window (false when none was sent). */
     data class UploadResult(val inserted: Int, val updated: Int, val deleted: Int, val reconciled: Boolean = false)
@@ -140,7 +171,8 @@ class InfovoreApi(endpoint: String) {
     private companion object {
         fun refusalOf(status: Int, responseText: String): ReconcileRefusal? = ReconcileRefusal.fromResponse(status, responseText)
 
-        const val MAX_ATTEMPTS = 4
-        val RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L, 4_000L)
+        /** The server marks a 503 that retrying cannot fix (the feature is not configured) with `"retryable": false`. */
+        fun explicitlyNotRetryable(responseText: String): Boolean =
+            runCatching { JSONObject(responseText).opt("retryable") == false }.getOrDefault(false)
     }
 }

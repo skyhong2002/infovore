@@ -53,6 +53,23 @@ export interface HardcoverUserBook {
   user_book_reads: HardcoverRead[];
 }
 
+// Formats browsers do not display (and the card renderer cannot decode). Some
+// Hardcover editions carry a TIFF scan as their cover (one is 23 MB): it would
+// fail on every page view and only ever show the placeholder, so such a cover
+// falls back to the book's own cover, or to none.
+const NON_WEB_IMAGE = /\.(tiff?|heic|heif|psd|jp2|jxr)$/i;
+
+export function webImage(url: string | null | undefined): string {
+  if (!url) return '';
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    path = url.split(/[?#]/)[0]!;
+  }
+  return NON_WEB_IMAGE.test(path) ? '' : url;
+}
+
 function firstDate(...values: (string | null | undefined)[]): string {
   return values.find((v) => v) ?? '';
 }
@@ -81,7 +98,7 @@ export function parseHardcoverBooks(books: HardcoverUserBook[]): MediaEntry[] {
       source: 'hardcover',
       kind: 'book',
       title: ub.edition?.title || ub.book.title,
-      image: ub.edition?.image?.url || ub.book.image?.url || '',
+      image: webImage(ub.edition?.image?.url) || webImage(ub.book.image?.url),
       status,
       activityAt,
       rating: ub.rating && ub.rating > 0 ? { value: ub.rating, scale: 5 } : null,

@@ -7,7 +7,7 @@ import { activityMeta } from './activity-meta.js';
 import { baseStyles } from './styles.js';
 import { createHash } from 'node:crypto';
 import { dateFormat } from '../data/time.js';
-import { ADAPTIVE_MEDIA_SCRIPT, INFO_SCRIPT, inlineScript, THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT } from './scripts.js';
+import { ADAPTIVE_MEDIA_SCRIPT, INFO_SCRIPT, inlineScript, SCROLL_REGION_SCRIPT, THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT } from './scripts.js';
 
 export function html(value: unknown): string {
   return String(value ?? '').replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&#39;', '"': '&quot;' }[char]!));
@@ -166,12 +166,14 @@ function activityCard(activity: Activity, context?: CardContext, now = new Date(
     : context === 'queued'
       ? [sourceLabel(activity.source), activity.extra.author ? `by ${activity.extra.author}` : '', age ? `added ${age}` : ''].filter(Boolean).map(html).join(' · ')
       : [html(sourceLabel(activity.source)), activityMeta(activity), html(date)].filter(Boolean).join(' · ');
+  const splitDate = context !== 'current' && context !== 'paused' && context !== 'queued';
   const visibleMeta = context === 'current' || context === 'paused'
     ? [sourceLabel(activity.source), progress, next].map(html).concat(age ? [html(`last progress ${age}`)] : [dateMarkup]).filter(Boolean).join(' · ')
     : context === 'queued'
       ? meta
-      : [html(sourceLabel(activity.source)), activityMeta(activity), dateMarkup].filter(Boolean).join(' · ');
-  return `<article class="card entry${context ? ` entry-${context}` : ''}" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted entry-meta" title="${meta}">${visibleMeta}</div></div></article>`;
+      // The date gets its own line, so a long description is what the two-line clamp cuts, never the date.
+      : `<span class="entry-meta-main">${[html(sourceLabel(activity.source)), activityMeta(activity)].filter(Boolean).join(' · ')}</span><span class="entry-date">${dateMarkup}</span>`;
+  return `<article class="card entry${context ? ` entry-${context}` : ''}" id="activity-${activity.id}">${activity.image ? `<img data-adaptive-media src="${html(activity.image)}" alt="">` : '<div></div>'}<div><span class="pill">${html(activity.mediaKind)}</span><h3>${html(activity.title)}</h3><div class="muted entry-meta${splitDate ? ' entry-meta-split' : ''}" title="${meta}">${visibleMeta}</div></div></article>`;
 }
 
 
@@ -198,7 +200,7 @@ export function searchPage(ownerName: string, filters: SearchFilters, page: Acti
   const form = `<form class="search-form" action="/search" role="search"><input type="search" name="q" value="${html(filters.query)}" placeholder="Try an artist, a game, a book, a channel…" aria-label="Search the archive" autofocus>${filters.source ? `<input type="hidden" name="source" value="${html(filters.source)}">` : ''}${filters.kind ? `<input type="hidden" name="kind" value="${html(filters.kind)}">` : ''}<button type="submit">Search</button></form>`;
   const sources = Object.entries(bySource).sort((a, b) => b[1] - a[1]);
   const sourceChips = `<div class="search-filters" aria-label="Filter by platform"><a href="${params({ source: '', offset: 0 })}"${filters.source ? '' : ' aria-current="true"'}>All platforms</a>${sources.map(([source, count]) =>
-    `<a href="${params({ source, offset: 0 })}"${filters.source === source ? ' aria-current="true"' : ''}>${html(sourceLabel(source))} <small>${count.toLocaleString('en')}</small></a>`).join('')}</div>`;
+    `<a href="${params({ source, offset: 0 })}"${filters.source === source ? ' aria-current="true"' : ''}>${html(sourceLabel(source))}<span class="visually-hidden">,</span> <small class="chip-count">${count.toLocaleString('en')}<span class="visually-hidden"> ${count === 1 ? 'entry' : 'entries'}</span></small></a>`).join('')}</div>`;
   const kindChips = kinds.length ? `<div class="search-filters" aria-label="Filter by kind"><a href="${params({ kind: '', offset: 0 })}"${filters.kind ? '' : ' aria-current="true"'}>All kinds</a>${kinds.map((kind) =>
     `<a href="${params({ kind, offset: 0 })}"${filters.kind === kind ? ' aria-current="true"' : ''}>${html(kind)}</a>`).join('')}</div>` : '';
   const results = page.data.length
@@ -220,8 +222,9 @@ export function apiPage(ownerName: string, docs: ApiDocs): string {
   const row = (path: string, description: string, params = '') => `<tr><td><code>${html(path)}</code></td><td>${description}${params ? `<br><span class="muted">${params}</span>` : ''}</td></tr>`;
   // Each endpoint table scrolls inside its own named, focusable region, so a long path or
   // value never widens the page on a narrow phone; cells also wrap long tokens (styles.ts).
+  // SCROLL_REGION_SCRIPT removes the tab stop and landmark from a region that does not overflow.
   const table = (id: string, title: string, note: string, rows: string) =>
-    `<h2 id="${id}">${title}</h2>${note}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="${id}"><table>
+    `<h2 id="${id}">${title}</h2>${note}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="${id}" data-scroll-region="${id}"><table>
     <thead><tr><th scope="col">Endpoint</th><th scope="col">Returns</th></tr></thead><tbody>
     ${rows}
     </tbody></table></div>`;
@@ -240,7 +243,7 @@ export function apiPage(ownerName: string, docs: ApiDocs): string {
     ${row('/status', 'The same freshness information as a readable HTML page for browsers; requests without <code>text/html</code> in <code>Accept</code> get the JSON above.')}
     ${row('/healthz', '<code>healthy</code>, <code>degraded</code> or <code>unhealthy</code> (HTTP 503) from source freshness.')}
     ${row('/mcp', '<code>POST</code>, not <code>GET</code>: Model Context Protocol endpoint (JSON-RPC) exposing the archive as tools for AI agents.')}`);
-  const examples = `<h2 id="api-examples">Examples</h2><pre tabindex="0" role="region" aria-labelledby="api-examples"><code># Everything with "Daft Punk" in it, last 90 days
+  const examples = `<h2 id="api-examples">Examples</h2><pre tabindex="0" role="region" aria-labelledby="api-examples" data-scroll-region="api-examples"><code># Everything with "Daft Punk" in it, last 90 days
 curl -s '${html(docs.baseUrl)}/api/activities.json?q=Daft%20Punk&since=2026-07-06T00:00:00Z' | jq '.data[] | {title, source, occurredAt}'
 
 # Hours per platform this month
@@ -248,7 +251,7 @@ curl -s '${html(docs.baseUrl)}/api/time-spent.json' | jq '.sources[] | {source, 
 
 # Embed a card
 &lt;img src="${html(docs.baseUrl)}/card/now.webp" width="520" alt="What ${html(ownerName)} is up to"&gt;</code></pre>`;
-  return shell(`${ownerName} · API`, `<div class="api-doc">${intro}${rules}${activities}${time}${mirrors}${cards}${service}${examples}</div>`, 'api', '', { path: '/api' });
+  return shell(`${ownerName} · API`, `<div class="api-doc">${intro}${rules}${activities}${time}${mirrors}${cards}${service}${examples}</div>${inlineScript(SCROLL_REGION_SCRIPT)}`, 'api', '', { path: '/api' });
 }
 
 export interface NowExtras {

@@ -36,6 +36,9 @@ test('deadlined async work retains bounded capacity and health never reports hea
   const busyHtml = await busyPage.text();
   assert.match(busyHtml, /busy for a moment/);
   assert.match(busyHtml, /<a href="">Try again<\/a>/);
+  // Ways out while waiting: the homepage (served from its last good copy) and the sync status.
+  assert.match(busyHtml, /<a href="\/">Home<\/a>/);
+  assert.match(busyHtml, /<a href="\/status">Sync status<\/a>/);
   assert.doesNotMatch(busyHtml, /<script/);
   const saturated = await fetch(`${base}/healthz`);
   assert.equal(saturated.status, 503);

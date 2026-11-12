@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.4.5) reads selected records from Android Health Connect and
+This private companion (current version 0.4.6) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -399,12 +399,46 @@ the minSdk; SDK 35+ would need JDK 21), still inside `testDebugUnitTest`:
 - `BackgroundWorkTest` uses WorkManager's test driver: both periodic works are
   scheduled at start-up with a network constraint, `SyncWorker` retries while a
   manual sync holds the lock, and only final attempts count toward the warning.
+- `SyncFlowUiTest` runs the two main flows end to end in the app: pressing
+  「立即同步」 on a first run (real `SyncRunner`, `HealthSyncEngine`,
+  `HealthConnectReader` and `InfovoreApi`, synthetic records in the fake Health
+  Connect) until the screen shows the finished sync and completed setup; and a
+  reconcile window the server refuses (HTTP 409 with counts, source apps and a
+  confirm token) shown as a reminder with its sources, deleted only after both
+  dialogs, with the token sent back, after which the reminder disappears.
+- `ScreenUploadHttpTest` sends queued screen observations through the real
+  `ScreenUploader`: endpoint, phone token, body, a rejected observation
+  quarantined while the rest uploads, and a refused token keeping the queue.
 
 Health Connect does not exist on Robolectric: the tests give
 `HealthConnectAccess` a `FakeHealthConnectClient`, and a stand-in
 `AndroidKeyStore` provider lets the unchanged `KeystoreCipher` save tokens.
-Nothing in them reaches a network (endpoints are `.example` names, and a fake
-with no permissions fails a sync before any request). They do not replace a
+The only network they reach is `FakeIngestServer`, a small HTTP server the
+tests start on 127.0.0.1 (plain HTTP to it is allowed through the test-only
+`EndpointPolicy.testHttpHost`, which the app never sets); everything else uses
+`.example` names. `InfovoreApiHttpTest` drives the real `InfovoreApi` against
+the same server on the plain JVM: method, path, `Authorization`, JSON body, 201
+and reconcile answers, no retry on 400/401/409, the 409 refusal (counts,
+`byOrigin`, `confirmToken`) taken from the shared contract fixture, retries
+with backoff on 408/429/5xx including the server's `"retryable": true` 503, an
+immediate stop on a 503 marked `"retryable": false` (feature not configured),
+and how a timeout or a refused connection is explained to the user.
+
+The first-sync flow is also half of a cross-language chain test. It writes
+every request the app sent, with the answer it was given, to
+`tests/fixtures/android-sync-golden.json` (canonical JSON: sorted keys) and
+fails when they differ from the committed file; `SyncEnvironment` fixes the
+clock and batch ids so the run is byte-for-byte repeatable. The server's
+`tests/android-chain.test.ts` replays the same requests into the real ingest
+service, checks its answers against the recorded ones, and checks the public
+pages (`/platforms/health`, `/`, `/status.json`, `/api/health.json`) for the
+public summary and for any raw field (record ids, source package, device id,
+notes, samples). After an intended change of what the app sends, regenerate
+the file and commit it with a passing server test:
+
+```sh
+INFOVORE_UPDATE_GOLDEN=1 ./gradlew testDebugUnitTest --tests '*SyncFlowUiTest*'
+``` They do not replace a
 check on a real phone: system notification rendering, OEM background limits,
 real Health Connect and TalkBack itself are not exercised.
 

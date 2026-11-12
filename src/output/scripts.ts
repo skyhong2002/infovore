@@ -157,9 +157,35 @@ export const TIME_TABLE_SCRIPT = `(() => {
   heads.forEach((h, i) => h.addEventListener('click', () => sortBy(i, h.getAttribute('aria-sort') === 'descending', true)));
 })()`;
 
+// Scroll regions (the /api tables and code sample): the server marks each one
+// focusable and named, so it stays keyboard scrollable without JavaScript. Here
+// a region whose content fits drops its tab stop and landmark (and gets them
+// back if a narrower window makes it overflow), so keyboard users only stop
+// where there is something to scroll. The focused region is never changed.
+export const SCROLL_REGION_SCRIPT = `(() => {
+  const regions = [...document.querySelectorAll('[data-scroll-region]')];
+  if (!regions.length) return;
+  const fit = () => {
+    for (const region of regions) {
+      if (region.scrollWidth > region.clientWidth + 1) {
+        region.tabIndex = 0;
+        region.setAttribute('role', 'region');
+        region.setAttribute('aria-labelledby', region.dataset.scrollRegion);
+      } else if (region !== document.activeElement) {
+        region.removeAttribute('tabindex');
+        region.removeAttribute('role');
+        region.removeAttribute('aria-labelledby');
+      }
+    }
+  };
+  fit();
+  addEventListener('resize', fit, { passive: true });
+  addEventListener('load', fit);
+})()`;
+
 // Every inline script body, in the order pages may include them.
 export const INLINE_SCRIPTS: readonly string[] = [
-  THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT, ADAPTIVE_MEDIA_SCRIPT, INFO_SCRIPT, TIME_TABLE_SCRIPT,
+  THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT, ADAPTIVE_MEDIA_SCRIPT, INFO_SCRIPT, TIME_TABLE_SCRIPT, SCROLL_REGION_SCRIPT,
 ];
 
 export function inlineScript(body: string): string {
