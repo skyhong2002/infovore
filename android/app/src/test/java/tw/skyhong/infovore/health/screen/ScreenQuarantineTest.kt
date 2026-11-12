@@ -156,6 +156,20 @@ class ScreenQuarantineTest {
     }
 
     @Test
+    fun aFullQuarantineSaysThePendingQueueIsStillPruned() {
+        val base = tw.skyhong.infovore.health.ui.ScreenInputs(
+            recordingEnabled = true, pausedUntilMs = 0, serviceEnabled = true, tokenConfigured = true, pending = 5,
+            lastCaptureAtMs = 0, lastUploadStatus = "尚未上傳", nowMs = 0, zone = java.time.ZoneOffset.UTC,
+        )
+        val ui = tw.skyhong.infovore.health.ui.ScreenStatus.map(base.copy(rejected = 500, maxRejected = 500))
+        assertTrue(ui.quarantineFull)
+        for (text in listOf(ui.rejectedNote!!, ui.nextStep!!)) {
+            assertTrue(text, text.contains("超過 7 天") && text.contains("40 MB"))
+            assertTrue(text, !text.contains("不會自動刪除任何紀錄"))
+        }
+    }
+
+    @Test
     fun rejectedRecordsCanBePutBackIntoTheirOwnDestinationOnly() {
         capture(4, invalid = setOf(1, 2))
         val receiver = Receiver()

@@ -54,13 +54,13 @@ data class ScreenUi(
 /** Maps phone screen-recording settings to UI text. Never changes any setting itself. */
 object ScreenStatus {
     const val QUARANTINE_FULL_STEP =
-        "被拒收的畫面紀錄已達上限 %d 筆，已停止上傳（不會自動刪除任何紀錄）。請放回佇列重送或刪除被拒收的紀錄後，上傳才會繼續。"
+        "被拒收的畫面紀錄已達上限 %d 筆，已停止上傳。被拒收的紀錄不會自動刪除，但停止上傳期間，待傳佇列仍會照常刪除超過 7 天或超出 40 MB 容量的最舊紀錄。請放回佇列重送或刪除被拒收的紀錄，讓上傳繼續。"
 
     private fun rejectedNote(input: ScreenInputs, full: Boolean): String = buildString {
         append(input.rejected).append(" 筆畫面紀錄被伺服器拒收（HTTP 400，格式不被接受）。它們已移出上傳佇列，不會自動再送出，")
         append("也不會自動刪除。")
         if (full) {
-            append("已達上限 ").append(input.maxRejected).append(" 筆：上傳已停止，處理後才會繼續。")
+            append("已達上限 ").append(input.maxRejected).append(" 筆：上傳已停止，處理後才會繼續。停止期間，待傳佇列仍會刪除超過 7 天或超出 40 MB 的最舊紀錄。")
         } else {
             append("其他紀錄照常上傳；達 ").append(input.maxRejected).append(" 筆時會停止上傳。")
         }
