@@ -51,8 +51,19 @@ class SecureSettings(context: Context) {
         get() = preferences.getBoolean(KEY_LAST_SYNC_FAILED, false)
         set(value) { preferences.edit { putBoolean(KEY_LAST_SYNC_FAILED, value) } }
 
-    /** True once the initial historical import has finished and incremental sync has a cursor. */
-    val initialImportDone: Boolean get() = changesToken != null
+    /**
+     * True once a full sync (initial history plus the follow-up incremental pass) finished
+     * successfully. A saved cursor alone is not enough: it is stored after the history scan,
+     * before the incremental pass that can still fail. Installs from before this flag existed
+     * fall back to "has a cursor and the last sync did not fail".
+     */
+    var initialImportDone: Boolean
+        get() = if (preferences.contains(KEY_FIRST_SYNC_DONE)) preferences.getBoolean(KEY_FIRST_SYNC_DONE, false)
+            else changesToken != null && !lastSyncFailed
+        set(value) { preferences.edit { putBoolean(KEY_FIRST_SYNC_DONE, value) } }
+
+    /** History is uploaded and a cursor exists, but the first full sync has not finished yet. */
+    val initialImportPartial: Boolean get() = !initialImportDone && changesToken != null
 
     var lastSleepStatus: String
         get() = preferences.getString("last_sleep_status", "睡眠尚未檢查") ?: "睡眠尚未檢查"
@@ -69,6 +80,7 @@ class SecureSettings(context: Context) {
         private const val KEY_CHANGES_TOKEN = "changes_token"
         private const val KEY_LAST_STATUS = "last_status"
         private const val KEY_LAST_SYNC_FAILED = "last_sync_failed"
+        private const val KEY_FIRST_SYNC_DONE = "first_full_sync_done"
         private const val KEY_ALIAS = "infovore-health-ingest-token"
     }
 }

@@ -66,6 +66,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (kind == SyncKind.FULL) {
                     settings.lastStatus = "${Instant.now()}：同步完成，新增 ${summary.inserted}、更新 ${summary.updated}、刪除 ${summary.deleted}"
                     settings.lastSyncFailed = false
+                    settings.initialImportDone = true
                 }
                 _sync.value = SyncState()
             } catch (cancelled: CancellationException) {

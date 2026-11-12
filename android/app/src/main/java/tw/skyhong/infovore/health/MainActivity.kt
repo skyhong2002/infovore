@@ -54,6 +54,7 @@ import tw.skyhong.infovore.health.ui.HealthUi
 import tw.skyhong.infovore.health.ui.InputValidation
 import tw.skyhong.infovore.health.ui.ScreenInputs
 import tw.skyhong.infovore.health.ui.ScreenStatus
+import tw.skyhong.infovore.health.ui.BackgroundSync
 import tw.skyhong.infovore.health.ui.SetupProgress
 import tw.skyhong.infovore.health.ui.SetupStep
 import tw.skyhong.infovore.health.ui.StepState
@@ -126,6 +127,7 @@ class MainActivity : AppCompatActivity() {
 
     private var availability: HealthConnectAvailability? = null
     private var granted: Set<String>? = null
+    private var backgroundSupported: Boolean? = null
     private var permissionError: String? = null
     private var permissionRequestHadNoEffect = false
     private var grantedBeforeRequest: Set<String> = emptySet()
@@ -560,7 +562,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
         try {
-            granted = HealthConnectClient.getOrCreate(this).permissionController.getGrantedPermissions()
+            val client = HealthConnectClient.getOrCreate(this)
+            granted = client.permissionController.getGrantedPermissions()
+            backgroundSupported = client.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) ==
+                HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
             permissionError = null
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -700,6 +705,8 @@ class MainActivity : AppCompatActivity() {
             connectionSaved = savedConnectionReady(),
             permissionsGranted = granted?.containsAll(HealthConnectSync.readPermissions) == true,
             firstSyncDone = settings.initialImportDone,
+            background = backgroundSyncState(),
+            partialImport = settings.initialImportPartial,
         )
         setupSummary.text = SetupProgress.summary(steps)
         steps.forEachIndexed { index, step ->
@@ -729,6 +736,13 @@ class MainActivity : AppCompatActivity() {
             SetupStep.FIRST_SYNC -> healthUi?.syncEnabled == true
             else -> model.sync.value.running == null
         }
+    }
+
+    private fun backgroundSyncState(): BackgroundSync = when {
+        backgroundSupported == false -> BackgroundSync.UNSUPPORTED
+        granted == null || backgroundSupported == null -> BackgroundSync.UNKNOWN
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in granted.orEmpty() -> BackgroundSync.GRANTED
+        else -> BackgroundSync.NOT_GRANTED
     }
 
     private fun goToNextStep() {

@@ -14,6 +14,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
             val result = HealthConnectSync(applicationContext).run { settings.lastStatus = it }
             settings.lastStatus = "${Instant.now()}：背景同步完成，新增 ${result.inserted}、更新 ${result.updated}、刪除 ${result.deleted}"
             settings.lastSyncFailed = false
+            settings.initialImportDone = true
             Result.success()
         } catch (error: Exception) {
             settings.lastStatus = "${Instant.now()}：背景同步失敗：${ErrorText.describe(error)}"

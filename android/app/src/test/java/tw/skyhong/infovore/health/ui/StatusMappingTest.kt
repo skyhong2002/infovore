@@ -159,6 +159,21 @@ class StatusMappingTest {
     }
 
     @Test
+    fun firstSyncTextReflectsBackgroundAccessAndPartialImports() {
+        fun done(background: BackgroundSync) = SetupProgress.compute(true, true, true, background)[2].text
+        assertTrue(done(BackgroundSync.GRANTED).contains("約每 6 小時在背景嘗試"))
+        assertTrue(done(BackgroundSync.NOT_GRANTED).contains("尚未允許背景讀取"))
+        assertTrue(done(BackgroundSync.UNSUPPORTED).contains("不支援背景讀取"))
+        listOf(BackgroundSync.NOT_GRANTED, BackgroundSync.UNSUPPORTED, BackgroundSync.UNKNOWN).forEach {
+            assertFalse(done(it).contains("約每 6 小時在背景"))
+        }
+        val partial = SetupProgress.compute(true, true, firstSyncDone = false, partialImport = true)
+        assertEquals(StepState.CURRENT, partial[2].state)
+        assertTrue(partial[2].text.contains("還沒完整完成"))
+        assertEquals("設定完成", SetupProgress.summary(SetupProgress.compute(true, true, true, BackgroundSync.GRANTED, partialImport = true)))
+    }
+
+    @Test
     fun setupMarksEarliestMissingStepEvenIfLaterOnesAreDone() {
         // Token removed after a completed import: step 1 is the next step, step 3 stays done.
         val steps = SetupProgress.compute(connectionSaved = false, permissionsGranted = true, firstSyncDone = true)

@@ -51,6 +51,7 @@ body{background:var(--bg);color:var(--text);font:15px/1.55 var(--font);margin:0;
 a{color:var(--accent)}a:hover{color:var(--accent-strong)}a:focus-visible{border-radius:5px;outline:2px solid var(--accent);outline-offset:3px}
 h1,h2,h3,p{overflow-wrap:anywhere}h1,h2,h3{font-weight:700;letter-spacing:-.01em}
 img{max-width:100%}
+img.img-failed{background:var(--surface-raised);color:transparent;object-position:-9999px 0}
 .muted{color:var(--muted)}
 .skip-link{background:var(--text);border-radius:0 0 10px 0;color:var(--bg);font-weight:700;left:0;padding:10px 16px;position:absolute;top:-60px;z-index:50}.skip-link:focus{top:0;color:var(--bg)}
 .site-main:focus{outline:none}
@@ -233,10 +234,10 @@ const responsive = `
 
 const widgets = `
 .spark{display:block;overflow:visible}
-.info{align-items:center;background:var(--surface-raised);border:1px solid var(--line-strong);border-radius:50%;color:var(--muted);cursor:help;display:inline-flex;flex:0 0 auto;font:italic 12px/1 var(--display);height:18px;justify-content:center;margin:0 0 0 6px;padding:0;position:relative;vertical-align:2px;width:18px}
-.info::before{content:"i"}
-.info::after{content:"";inset:-12px;position:absolute}
-.info:hover,.info[aria-expanded=true]{border-color:var(--accent);color:var(--text)}
+.info{align-items:center;background:none;border:0;border-radius:50%;color:var(--muted);cursor:help;display:inline-flex;flex:0 0 auto;font:italic 12px/1 var(--display);height:28px;justify-content:center;margin:-5px -5px -5px 1px;padding:0;position:relative;vertical-align:middle;width:28px}
+.info::before{align-items:center;background:var(--surface-raised);border:1px solid var(--line-strong);border-radius:50%;content:"i";display:inline-flex;height:18px;justify-content:center;width:18px}
+.info::after{content:"";inset:-8px;position:absolute}
+.info:hover::before,.info[aria-expanded=true]::before{border-color:var(--accent);color:var(--text)}
 .info:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .info-tip{background:var(--text);border-radius:8px;box-shadow:var(--shadow);color:var(--bg);display:none;font:400 13px/1.5 var(--font);letter-spacing:0;max-width:min(300px,calc(100vw - 24px));padding:9px 11px;position:fixed;text-align:left;text-transform:none;white-space:normal;width:max-content;z-index:60}
 .info-tip.open{display:block}

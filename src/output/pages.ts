@@ -137,6 +137,11 @@ const adaptiveMediaScript = `<script>
       const displayedRatio = Math.min(2, Math.max(0.5, naturalRatio));
       image.style.setProperty('--media-ratio', String(displayedRatio));
     };
+    // A cover that fails to load becomes a neutral placeholder instead of a broken-image icon.
+    const placeholder = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const fail = (image) => { if (image.dataset.failed) return; image.dataset.failed = '1'; image.classList.add('img-failed'); image.alt = ''; image.src = placeholder; };
+    document.addEventListener('error', (event) => { if (event.target instanceof HTMLImageElement) fail(event.target); }, true);
+    document.querySelectorAll('img').forEach((image) => { if (image.complete && image.naturalWidth === 0 && image.getAttribute('src')) fail(image); });
     document.querySelectorAll('img[data-adaptive-media]').forEach((image) => {
       if (image.complete) applyRatio(image);
       else image.addEventListener('load', () => applyRatio(image), { once: true });
