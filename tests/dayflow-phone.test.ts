@@ -152,3 +152,27 @@ test('phone HTTP ingestion uses its own token and validates privacy rules', asyn
     assert.equal(mac.status, 401);
   } finally { repo.close(); }
 });
+
+test('a storage failure after validation answers 503 so the phone keeps its batch', async () => {
+  const repo = new Repository(':memory:');
+  const quiet = console.error;
+  try {
+    const { createIngestApp } = await import('../src/ingest.js');
+    const ingest = createIngestApp(repo);
+    const send = (value: unknown) => ingest.request('/api/ingest/dayflow-phone/observations', {
+      method: 'POST', headers: { authorization: `Bearer ${PHONE_TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify(value),
+    });
+    console.error = () => {};
+    repo.dayflow.phone.ingest = () => { throw new Error('synthetic storage outage'); };
+    const failed = await send(batchAt(Date.now() - 60_000, [0]));
+    assert.equal(failed.status, 503);
+    const body = await failed.json() as { retryable: boolean; error: string };
+    assert.equal(body.retryable, true);
+    assert.doesNotMatch(body.error, /synthetic/);
+    // Malformed input is still a permanent 400.
+    assert.equal((await send({ nope: true })).status, 400);
+  } finally {
+    console.error = quiet;
+    repo.close();
+  }
+});

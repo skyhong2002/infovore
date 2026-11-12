@@ -12,6 +12,22 @@ import { Repository } from './data/database.js';
 import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
 import { HealthReconcileRejected, healthConnectBatchSchema } from './health/types.js';
 
+// A failure after validation (database busy, disk full, lock timeout) is not
+// the client's fault: answer 503 so devices keep their batch and retry, and
+// keep 400 for requests that will never be accepted. Logs never include the
+// submitted content.
+class StorageFailure extends Error {}
+function store<T>(write: () => T): T {
+  try {
+    return write();
+  } catch (error) {
+    if (error instanceof HealthReconcileRejected) throw error;
+    console.error(`ingest storage failure: ${error instanceof Error ? error.name : 'unknown'}`);
+    throw new StorageFailure('storage unavailable');
+  }
+}
+const storageUnavailable = { error: 'Storage is temporarily unavailable; keep the batch and retry later', retryable: true };
+
 function authorized(auth: string | undefined, expectedToken = config.ingestToken): boolean {
   if (!expectedToken || !auth?.startsWith('Bearer ')) return false;
   const provided = Buffer.from(auth.slice(7));
@@ -32,11 +48,16 @@ export function createIngestApp(repository: Repository): Hono {
   });
   app.get('/api/ingest/dayflow/status', (c) => c.json({ status: 'ready', ...repository.dayflow.status() }));
   app.post('/api/ingest/dayflow/days', bodyLimit({ maxSize: 2 * 1024 * 1024 }), async (c) => {
+    let batch;
     try {
-      const batch = dayflowBatchSchema.parse(await c.req.json());
-      return c.json({ ok: true, ...repository.dayflow.ingest(batch) });
+      batch = dayflowBatchSchema.parse(await c.req.json());
     } catch {
       return c.json({ error: 'Invalid Dayflow day batch' }, 400);
+    }
+    try {
+      return c.json({ ok: true, ...store(() => repository.dayflow.ingest(batch)) });
+    } catch {
+      return c.json(storageUnavailable, 503);
     }
   });
   // Android screen observations use their own token: a leaked phone token
@@ -53,15 +74,20 @@ export function createIngestApp(repository: Repository): Hono {
   app.post('/api/ingest/dayflow-phone/observations', async (c) => {
     const body = await c.req.text();
     if (Buffer.byteLength(body) > 8 * 1024 * 1024) return c.json({ error: 'Phone observation payload exceeds 8 MiB' }, 413);
+    let batch;
     try {
-      const batch = phoneObservationBatchSchema.parse(JSON.parse(body));
-      return c.json({ ok: true, ...repository.dayflow.phone.ingest(batch) });
+      batch = phoneObservationBatchSchema.parse(JSON.parse(body));
     } catch (error) {
       // Report what failed validation, never the submitted screen content.
       const message = error instanceof Error && 'issues' in error
         ? (error as { issues: Array<{ path: unknown[]; message: string }> }).issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
         : 'Invalid JSON';
       return c.json({ error: `Invalid phone observation batch: ${message}` }, 400);
+    }
+    try {
+      return c.json({ ok: true, ...store(() => repository.dayflow.phone.ingest(batch)) });
+    } catch {
+      return c.json(storageUnavailable, 503);
     }
   });
   app.use('/api/ingest/computai/*', async (c, next) => {
@@ -71,19 +97,29 @@ export function createIngestApp(repository: Repository): Hono {
   });
   app.get('/api/ingest/computai/status', (c) => c.json({ status: 'ready', ...repository.computai.status() }));
   app.post('/api/ingest/computai/reports', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    let report;
     try {
-      const report = computaiReportSchema.parse(await c.req.json());
-      return c.json({ ok: true, ...repository.computai.ingest(report) });
+      report = computaiReportSchema.parse(await c.req.json());
     } catch {
       return c.json({ error: 'Invalid ComputAI report' }, 400);
     }
+    try {
+      return c.json({ ok: true, ...store(() => repository.computai.ingest(report)) });
+    } catch {
+      return c.json(storageUnavailable, 503);
+    }
   });
   app.post('/api/ingest/computai/segments', bodyLimit({ maxSize: 4 * 1024 * 1024 }), async (c) => {
+    let batch;
     try {
-      const batch = computaiSegmentsSchema.parse(await c.req.json());
-      return c.json({ ok: true, ...repository.computai.ingestSegments(batch) });
+      batch = computaiSegmentsSchema.parse(await c.req.json());
     } catch {
       return c.json({ error: 'Invalid ComputAI segments' }, 400);
+    }
+    try {
+      return c.json({ ok: true, ...store(() => repository.computai.ingestSegments(batch)) });
+    } catch {
+      return c.json(storageUnavailable, 503);
     }
   });
   app.post('/api/ingest/events', async (c) => {
@@ -93,7 +129,7 @@ export function createIngestApp(repository: Repository): Hono {
       const body = await c.req.json<{ events?: EventInput[] } | EventInput>();
       const inputs: EventInput[] | undefined = 'events' in body ? body.events : [body as EventInput];
       if (!inputs?.length || inputs.length > 50) return c.json({ error: 'Provide between 1 and 50 events' }, 400);
-      const entries = [];
+      const entries: Array<ReturnType<typeof normalizeEvent>> = [];
       for (const input of inputs) {
         // Arbitrary public URLs are retained as references, but only the
         // allowlisted event platforms are fetched for metadata enrichment.
@@ -105,9 +141,10 @@ export function createIngestApp(repository: Repository): Hono {
         ) as EventInput;
         entries.push(normalizeEvent(merged));
       }
-      const result = repository.ingestEntries(entries);
+      const result = store(() => repository.ingestEntries(entries));
       return c.json({ ok: true, ...result, events: entries.map(({ sourceItemId, title, activityAt, status, visibility }) => ({ id: sourceItemId, title, startAt: activityAt, status, visibility })) }, 201);
     } catch (error) {
+      if (error instanceof StorageFailure) return c.json(storageUnavailable, 503);
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
   });
@@ -125,7 +162,7 @@ export function createIngestApp(repository: Repository): Hono {
         return c.json({ error: 'Health Connect payload exceeds 1 MiB' }, 413);
       }
       const batch = healthConnectBatchSchema.parse(JSON.parse(body));
-      const result = repository.ingestHealthConnect(batch);
+      const result = store(() => repository.ingestHealthConnect(batch));
       return c.json({ ok: true, ...result }, result.inserted > 0 ? 201 : 200);
     } catch (error) {
       if (error instanceof HealthReconcileRejected) {
@@ -134,6 +171,7 @@ export function createIngestApp(repository: Repository): Hono {
           reconcile: { status: 'rejected', wouldDelete: error.wouldDelete, checked: error.checked },
         }, 409);
       }
+      if (error instanceof StorageFailure) return c.json(storageUnavailable, 503);
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
   });
