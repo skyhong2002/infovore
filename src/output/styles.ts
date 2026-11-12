@@ -127,7 +127,7 @@ a.metric-card:hover{border-color:var(--line-strong);color:inherit;transform:tran
 .activity-tag{border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);display:inline-block;font-size:12px;line-height:1.4;padding:1px 7px}
 .rating{color:var(--gold)}.feed-note{color:var(--quiet);font-size:12.5px;margin-top:18px}
 .health-activity{min-width:0}.health-activity>div{min-width:0}.entry.health-activity img{background:#fff;padding:6px;object-fit:contain;width:48px;height:48px}
-.health-activity h3 a{color:inherit;display:inline-block;padding:3px 0;text-decoration:none}.health-activity .health-activity-summary{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.5}
+.health-activity h3 a{color:inherit;display:inline-block;padding:4px 0;text-decoration:none}.health-activity .health-activity-summary{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.5}
 .health-activity time{display:block;color:var(--quiet);font-size:12px;margin-top:4px}
 `;
 
