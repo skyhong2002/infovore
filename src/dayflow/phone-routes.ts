@@ -18,6 +18,6 @@ export function phoneActivityRoute(app: Hono, path: string, store: DayflowPhoneS
     const device = c.req.query('deviceId');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(day)) || new Date(day).toISOString().slice(0, 10) !== day
       || (device !== undefined && !/^[a-zA-Z0-9._-]{1,64}$/.test(device))) return c.json({ error: 'Invalid day or device' }, 400);
-    return c.json(store.activity(day, device));
+    return c.json({ ...store.activity(day, device), ...(c.req.query('overview') === '1' ? { overview: store.overview(device) } : {}) });
   });
 }

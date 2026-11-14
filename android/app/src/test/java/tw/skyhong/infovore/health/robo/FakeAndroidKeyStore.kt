@@ -28,7 +28,12 @@ object FakeAndroidKeyStore {
     private val keys = ConcurrentHashMap<String, Key>()
 
     fun install() {
-        if (Security.getProvider(NAME) != null) return
+        val existing = Security.getProvider(NAME)
+        if (existing is Stand) return
+        // Security's providers are JVM-global, whereas native/legacy graphics use separate
+        // Robolectric classloaders. A previous sandbox's generator cannot accept this one's
+        // KeyGenParameterSpec. Replace that provider with the current sandbox's stand-in.
+        if (existing != null) Security.removeProvider(NAME)
         Security.addProvider(Stand())
     }
 

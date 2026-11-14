@@ -51,3 +51,37 @@ test('owner timeline authenticates, scopes devices, clips at 4am, and never serv
     assert.doesNotMatch(phoneScript, /innerHTML|localStorage|sessionStorage/);
   } finally { repo.close(); }
 });
+
+test('phone dashboard shares Dayflow aggregates, separates devices, clips days and excludes future time', async () => {
+  const repo = new Repository(':memory:');
+  try {
+    const start = Date.parse('2026-11-12T03:55:00+08:00');
+    for (const deviceId of ['pixel', 'other']) {
+      repo.dayflow.phone.saveCards({deviceId, start, end:start+10*60000, observations:[]}, [
+        {start,end:start+10*60000,title:'YouTube 口琴教學',summary:'學習口琴',category:'Learning',apps:['YouTube']},
+        {start:start+20*60000,end:start+30*60000,title:'Idle',summary:'',category:'Idle',apps:[]},
+      ], 'test-model');
+    }
+    const now = new Date('2026-11-12T04:20:00+08:00');
+    const overview = repo.dayflow.phone.overview('pixel', now);
+    assert.equal(overview.stats.recordedDays, 2);
+    assert.equal(overview.stats.todayMinutes, 10, '5 min learning + 5 min idle before now');
+    assert.equal(overview.extra.daily.find(d=>d.day==='2026-11-12')?.activeMinutes, 5);
+    assert.equal(overview.extra.daily.find(d=>d.day==='2026-11-11')?.trackedMinutes, 5);
+    assert.equal(overview.extra.categories.find(c=>c.name==='Learning')?.minutes, 10);
+    assert.equal(overview.extra.keywordMode, 'local');
+    assert.equal(overview.extra.keywordPools.status, 'insufficient_history');
+    assert.equal(repo.dayflow.phone.overview('missing', now).stats.recordedDays, 0);
+    repo.dayflow.phone.saveCards({deviceId:'future',start:+now+60000,end:+now+120000,observations:[]},[
+      {start:+now+60000,end:+now+120000,title:'Future activity',summary:'',category:'Work',apps:[]},
+    ],null);
+    assert.equal(repo.dayflow.phone.overview('future',now).stats.recordedDays,0);
+    assert.doesNotMatch(JSON.stringify(overview), /deviceId|test-model|observations|image/);
+    const app = new Hono();
+    phoneActivityRoute(app, '/activity', repo.dayflow.phone, token);
+    assert.equal((await app.request('/activity?overview=1')).status,401);
+    const response = await app.request('/activity?overview=1&deviceId=pixel', {headers:{authorization:'Bearer '+token}});
+    assert.equal(response.status,200);
+    assert.ok('overview' in (await response.json() as object));
+  } finally {repo.close();}
+});

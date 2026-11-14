@@ -37,6 +37,7 @@ import org.json.JSONObject
 import tw.skyhong.infovore.health.screen.ObservationQueue
 import tw.skyhong.infovore.health.screen.ScreenActivityService
 import tw.skyhong.infovore.health.screen.ScreenSettings
+import tw.skyhong.infovore.health.ui.ActivityDashboard
 import tw.skyhong.infovore.health.ui.ViewKit
 import tw.skyhong.infovore.health.ui.ViewKit.Style
 import java.time.Instant
@@ -57,6 +58,7 @@ class HomeActivity : AppCompatActivity() {
     private var web: WebView? = null
     private var generation = 0
     private var loadedTarget: String? = null
+    private var dashboardSource = "phone"
     private var browseFilter = ""
     private var browsePath: String? = null
     private val zone = ZoneId.of("Asia/Taipei")
@@ -68,6 +70,7 @@ class HomeActivity : AppCompatActivity() {
         settings = SecureSettings(this)
         recording = ScreenSettings(this)
         tab = savedInstanceState?.getString("tab") ?: "home"
+        dashboardSource = savedInstanceState?.getString("dashboardSource") ?: "phone"
         browsePath = savedInstanceState?.getString("browsePath")
         browseFilter = savedInstanceState?.getString("browseFilter") ?: ""
         day = savedInstanceState?.getString("day")?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: today()
@@ -83,7 +86,7 @@ class HomeActivity : AppCompatActivity() {
             setPadding(kit.dp(12), kit.dp(4), kit.dp(12), kit.dp(4))
             setBackgroundColor(kit.color(R.color.card_background))
         }
-        for ((key, label) in listOf("home" to "首頁", "browse" to "瀏覽", "phone" to "手機足跡", "settings" to "設定")) {
+        for ((key, label) in listOf("home" to "總覽", "browse" to "瀏覽", "phone" to "時間軸", "settings" to "設定")) {
             val icon = when (key) { "home" -> R.drawable.nav_home; "browse" -> R.drawable.nav_browse; "phone" -> R.drawable.nav_phone; else -> R.drawable.nav_settings }
             val button = kit.textButton(label).apply {
                 textSize = 12f
@@ -142,6 +145,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("dashboardSource", dashboardSource)
         outState.putString("tab", tab)
         outState.putString("day", day.toString())
         outState.putString("browsePath", browsePath)
@@ -183,27 +187,60 @@ class HomeActivity : AppCompatActivity() {
 
     private fun home() {
         val content = page()
-        content.addView(kit.text(Style.CAPTION, LocalDate.now(zone).format(DateTimeFormatter.ofPattern("M 月 d 日 · EEEE", java.util.Locale.TAIWAN))))
-        content.addView(kit.heading(Style.TITLE, "今天的 Infovore"), ViewKit.matchWrap(kit.dp(8)))
-        content.addView(kit.text(Style.BODY, "內容、活動，和你的生活紀錄。"), ViewKit.matchWrap(kit.dp(8)))
-        content.addView(sectionTitle("探索內容", "全部內容") { browsePath = null; select("browse") }, ViewKit.matchWrap(kit.dp(24)))
-        val shortcuts = row()
-        for ((label, path) in listOf("正在進行" to "/now", "時間統計" to "/stats")) {
-            shortcuts.addView(kit.primaryButton(label).apply { setOnClickListener { openPage(path) } }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = kit.dp(6) })
+        content.addView(kit.heading(Style.SECTION, "活動總覽"))
+        val sources = row()
+        for ((key, label) in listOf("phone" to "手機足跡", "computer" to "電腦 Dayflow")) {
+            sources.addView(kit.textButton(label).apply {
+                isSelected = dashboardSource == key
+                if (isSelected) background = rounded(kit.color(R.color.tone_neutral_background), 24)
+                setOnClickListener { dashboardSource = key; select("home") }
+                ViewCompat.setStateDescription(this, if (isSelected) "目前來源" else null)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        content.addView(shortcuts, ViewKit.matchWrap(kit.dp(8)))
-        content.addView(sectionTitle("手機足跡", "時間軸") { day = today(); select("phone") }, ViewKit.matchWrap(kit.dp(24)))
-        content.addView(localStatus(), ViewKit.matchWrap(kit.dp(8)))
-        val recent = kit.column()
-        content.addView(recent, ViewKit.matchWrap(kit.dp(8)))
-        content.addView(kit.textButton("查看今天的時間軸  →").apply { setOnClickListener { day = today(); select("phone") } }, ViewKit.matchWrap(kit.dp(8)))
-        load(recent, today().toString(), preview = true)
-        val health = kit.card()
-        health.addView(kit.heading(Style.SUBHEAD, "健康同步"), ViewKit.matchWrap(kit.dp(12)))
-        health.addView(kit.text(Style.BODY, settings.lastStatus), ViewKit.matchWrap(kit.dp(8)))
-        health.addView(kit.textButton("健康資料與同步設定  →").apply { setOnClickListener { openSettings(health = true) } })
-        content.addView(health, ViewKit.matchWrap(kit.dp(24)))
-        content.addView(kit.text(Style.CAPTION, "Infovore ${BuildConfig.VERSION_NAME} · 你的私人生活紀錄"), ViewKit.matchWrap(kit.dp(24)))
+        content.addView(sources, ViewKit.matchWrap(kit.dp(12)))
+        val dashboard = kit.column()
+        content.addView(dashboard, ViewKit.matchWrap(kit.dp(16)))
+        loadDashboard(dashboard)
+        if (dashboardSource == "phone") {
+            content.addView(sectionTitle("記錄與同步", "管理") { openSettings(screen = true) }, ViewKit.matchWrap(kit.dp(24)))
+            content.addView(localStatus())
+        }
+    }
+
+    private fun loadDashboard(container: LinearLayout) {
+        val phone = dashboardSource == "phone"
+        val destination = DestinationChange.normalize(settings.endpoint)
+        val token = if (phone) recording.token else ""
+        if (phone && (token.length < 32 || recording.tokenDestination != destination)) {
+            container.addView(kit.text(Style.BODY, "連接手機足跡後，這裡會顯示近期主題、本週分類、每日分布與時數總覽。"))
+            container.addView(kit.textButton("連接手機足跡  →").apply { setOnClickListener { openSettings(screen = true) } })
+            return
+        }
+        val status = kit.liveText(Style.CAPTION).apply { text = "正在讀取活動總覽…" }
+        container.addView(status)
+        val version = generation
+        val device = settings.deviceId
+        job = lifecycleScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    val api = InfovoreApi(if (phone) destination else testPublicEndpoint ?: SITE, InfovoreApi.Timing(retryDelaysMs = emptyList()))
+                    api.getJson(if (phone) "/api/ingest/dayflow-phone/activity?overview=1&deviceId=$device" else "/api/dayflow.json", token)
+                }
+                if (version != generation || (phone && (destination != DestinationChange.normalize(settings.endpoint) || recording.token != token))) return@launch
+                val overview = response.optJSONObject(if (phone) "overview" else "data")
+                    ?: throw IllegalStateException("overview unavailable")
+                container.removeAllViews()
+                container.addView(ActivityDashboard(this@HomeActivity, kit).render(overview, phone) { selectedDay ->
+                    day = LocalDate.parse(selectedDay)
+                    select("phone")
+                })
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                if (version != generation) return@launch
+                status.text = "暫時無法讀取活動總覽，請確認連線與伺服器已更新後重試。"
+                container.addView(kit.textButton("重試").apply { setOnClickListener { select("home") } })
+            }
+        }
     }
 
     private fun localStatus(): View {

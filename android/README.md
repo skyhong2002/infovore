@@ -1,40 +1,41 @@
 # Infovore Health for Android
 
-This private companion (current version 0.5.0) reads selected records from Android Health Connect and
+This private companion (current version 0.5.1) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
 Google account credentials.
 
-## Daily app (0.5.0)
+## Activity overview (0.5.1)
 
-Layout references NYCU LIFE Super App's native grouped content, icon navigation,
-20dp insets, 24dp card corners, and unfilled section headings with trailing
-named actions. Infovore keeps its own brand palette and assets.
+The launch screen follows `/platforms/dayflow`: a tinted source header, four
+outlined stat tiles, distinctive recent keywords, all recent keywords, weekly
+category chips and stacked bars for recent recorded days. Light/dark surfaces,
+compact outlined chips and 16dp/11dp corners match the website. **手機足跡** and
+**電腦 Dayflow** switch the dashboard source. Computer mode reads the same public
+`/api/dayflow.json` as the site; phone mode uses the destination-bound phone token
+and device-scoped private `activity?overview=1` response. No token enters the WebView.
 
-The launcher opens a reading home with four bottom destinations: **首頁**, **瀏覽**,
-**手機足跡**, and **設定**. Browse shows a native list of recent public
-activities, with music/video/reading/event filters and links to platform details
-inside the app; links
-outside its HTTPS origin open in the browser. No ingest tokens enter the WebView.
-Settings remain in a separate screen, reachable from the bottom navigation and status cards;
-notification and Health Connect permission intents still open the relevant settings.
+Phone aggregates share the computer's interval partitioning, 04:00 Taipei day
+boundary, Monday-based week and keyword comparison windows (recent 7 days versus
+preceding 90 days). Phone keywords are explicitly labelled local text extraction;
+computer AI topic labels are not claimed for phone data. A comparison needs 14
+baseline recorded days and 50 activities; insufficient history has its own note.
+The phone dashboard shows 30 recent days, and tapping a date opens its private
+timeline. No data is replaced by demonstration content.
 
-手機足跡 is an owner-only activity timeline: select a date to see activity titles,
-summaries, app names, category totals and pending/retrying server observations.
-It uses the saved phone token bound to the current ingest destination and filters
-to this installation's device id. Reading never enables recording. Cards live only
-in memory and are cleared when the app stops; refresh or returning to the app
-reloads them. The home shows the latest two cards for the current 4am-based day.
+Bottom navigation has **總覽**, **瀏覽**, **時間軸**, **設定**. Browse keeps the native
+recent public content list with category filters; details open the public site
+inside the app, and external links open in the browser. Recorder controls and
+Health Connect setup remain in the separate settings screen.
 
-The web equivalent is `/phone`, linked in the site's navigation and Dayflow page.
-Unlock it with `DAYFLOW_PHONE_TOKEN` to browse all of the owner's phone devices;
-the token and cards stay in tab memory, never local/session storage or URLs.
-The authenticated read endpoints are `/api/phone/activity` (web service) and
-`/api/ingest/dayflow-phone/activity` (ingest service), with optional `day=YYYY-MM-DD`
-and `deviceId`. Responses are `no-store`, `noindex` and vary on Authorization.
-Days run from 04:00 Asia/Taipei; cross-boundary cards are clipped, newest first,
-with an explicit truncation flag above 1,000 cards. Raw captures are never returned.
+The web private timeline is `/phone`, unlocked with `DAYFLOW_PHONE_TOKEN` kept
+only in tab memory. Read endpoints `/api/phone/activity` and
+`/api/ingest/dayflow-phone/activity` accept `day=YYYY-MM-DD`, `deviceId`, and
+optional `overview=1`. Both are authenticated, `no-store`, `noindex`, and vary on
+Authorization. Raw captures are never returned. Daily cards are newest-first,
+clipped at day boundaries, with a truncation flag above 1,000 cards. Dashboard
+aggregates use all intersecting cards rather than the truncated timeline.
 
 ## Data and privacy
 

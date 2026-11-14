@@ -1,3 +1,5 @@
+import { summarizeDay } from './day-summary.js';
+import { keywordPools } from './pools.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { dayflowDay, type DayflowBatch } from './types.js';
 import { PHONE_CATEGORIES, type PhoneObservationBatch } from './phone-types.js';
@@ -66,6 +68,28 @@ export function buildSegments(deviceId: string, rows: PhoneObservationRow[], now
 // Raw screen text and thumbnails live only until their segment is summarized.
 export class DayflowPhoneStore {
   constructor(private db: DatabaseSync) {}
+
+  /** Same aggregate structure as the computer dashboard, scoped to the authenticated phone. */
+  overview(deviceId?: string, now = new Date()) {
+    const today = dayflowDay(now);
+    const shift = (n: number) => new Date(Date.parse(today) + n * 86400_000).toISOString().slice(0, 10);
+    const batches = this.batchesSince(shift(-96), now, deviceId).filter((b) => b.day <= today);
+    const daily = batches.filter((b) => b.day >= shift(-29)).map((b) => summarizeDay(b.day, [b], now))
+      .filter((d) => d.trackedMinutes + d.errorMinutes > 0).sort((a, b) => b.day.localeCompare(a.day));
+    const monday = new Date(today);
+    monday.setUTCDate(monday.getUTCDate() - (monday.getUTCDay() + 6) % 7);
+    const week = daily.filter((d) => d.day >= monday.toISOString().slice(0, 10));
+    const categories = PHONE_CATEGORIES.map((c) => ({ name: c.name, color: c.color_hex, idle: c.is_idle,
+      minutes: week.reduce((sum, d) => sum + (d.categories.find((v) => v.name === c.name)?.minutes ?? 0), 0) }))
+      .filter((c) => c.minutes > 0).sort((a, b) => b.minutes - a.minutes);
+    const obs = this.db.prepare(`SELECT MAX(captured_at) last FROM dayflow_phone_observations WHERE 1=1${deviceId ? ' AND device_id = ?' : ''}`)
+      .get(...(deviceId ? [deviceId] : []))!;
+    return { stats: { recordedDays: daily.length, todayMinutes: daily.find((d) => d.day === today)?.trackedMinutes ?? 0,
+      weeklyHours: Math.round(week.reduce((sum, d) => sum + d.trackedMinutes, 0) / 6) / 10,
+      weeklyActiveHours: Math.round(week.reduce((sum, d) => sum + d.activeMinutes, 0) / 6) / 10 },
+      extra: { daily, categories, keywordPools: keywordPools(batches, now), keywordMode: 'local',
+        lastSyncedAt: obs.last == null ? null : new Date(Number(obs.last)).toISOString(), timeZone: 'Asia/Taipei', dayBoundaryHour: 4 } };
+  }
 
   /** Owner-only view; never include observations, screen text, images or device identifiers. */
   activity(day: string, deviceId?: string) {
@@ -179,10 +203,10 @@ export class DayflowPhoneStore {
 
   // Cards as Dayflow day batches so the computer summaries can be reused.
   // A card that crosses the 4am boundary appears in both days and is clipped.
-  batchesSince(day: string, now = new Date()): DayflowBatch[] {
+  batchesSince(day: string, now = new Date(), deviceId?: string): DayflowBatch[] {
     const from = Date.parse(`${day}T04:00:00+08:00`);
     const rows = this.db.prepare(`SELECT id, device_id, start_at, end_at, title, summary, category FROM dayflow_phone_cards
-      WHERE end_at > ? ORDER BY start_at`).all(from) as Array<Record<string, unknown>>;
+      WHERE end_at > ?${deviceId ? ' AND device_id = ?' : ''} ORDER BY start_at`).all(from, ...(deviceId ? [deviceId] : [])) as Array<Record<string, unknown>>;
     const byDay = new Map<string, DayflowBatch>();
     for (const r of rows) {
       const start = Number(r.start_at), end = Number(r.end_at);

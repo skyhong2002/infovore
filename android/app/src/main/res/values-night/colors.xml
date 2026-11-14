@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="brand_primary">#A9BCD8</color>
-    <color name="screen_background">#121418</color>
-    <color name="card_background">#1C1F25</color>
-    <color name="card_stroke">#323844</color>
-    <color name="text_secondary">#B8BFCA</color>
+    <color name="screen_background">#0E0F12</color>
+    <color name="card_background">#16181D</color>
+    <color name="card_stroke">#262A31</color>
+    <color name="text_secondary">#AAB1BB</color>
     <color name="on_primary">#10161F</color>
     <color name="disabled_fill">#2A2F38</color>
     <color name="disabled_text">#9AA1AD</color>
@@ -15,4 +15,6 @@
     <color name="tone_warning_background">#3A2C14</color>
     <color name="tone_error_background">#3E1F1D</color>
     <color name="tone_neutral_background">#262A31</color>
+    <color name="dashboard_hero">#292838</color>
+    <color name="dashboard_accent">#B5ADFF</color>
 </resources>
