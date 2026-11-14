@@ -1,11 +1,11 @@
 <resources>
     <string name="app_name">Infovore</string>
-    <string name="screen_service_label">Infovore 手機 Dayflow</string>
+    <string name="screen_service_label">Infovore 手機足跡</string>
     <string name="screen_service_description">在螢幕開啟且已解鎖時，約每分鐘及切換 App 時記錄前景 App 名稱、畫面上可見的文字，並視需要附上一張小縮圖，上傳到你自己的 infovore 伺服器，由伺服器以 AI 摘要成時間軸後刪除原始資料。密碼欄位、禁止截圖的安全畫面與你排除的 App 不會擷取文字或畫面。可在 Infovore App 內暫停或關閉記錄。</string>
 
     <!-- Header and first-run steps -->
     <string name="header_version">版本 %1$s</string>
-    <string name="header_intro">將 Android Health Connect（包括 Garmin Connect 寫入的資料）私密同步到你自己的 Infovore。</string>
+    <string name="header_intro">管理連線、健康同步與手機足跡。</string>
     <string name="setup_title">開始使用</string>
     <string name="setup_step_row">%1$s  %2$d. %3$s\n%4$s</string>
     <string name="field_error">⚠ %1$s</string>
@@ -16,7 +16,7 @@
     <!-- Collapsible sections -->
     <string name="section_connection">連線設定</string>
     <string name="section_health">健康資料同步</string>
-    <string name="section_screen">手機畫面記錄（進階・敏感）</string>
+    <string name="section_screen">手機足跡設定</string>
     <string name="state_expanded">已展開</string>
     <string name="state_collapsed">已收合</string>
     <string name="action_expand">展開</string>
@@ -109,8 +109,8 @@
     <string name="action_save_screen">儲存畫面記錄設定</string>
     <string name="screen_saved">已安全儲存；排除 %1$d 個自訂套件（另有 %2$d 個預設）。</string>
     <string name="screen_step_service">2. 開啟無障礙服務</string>
-    <string name="accessibility_on">無障礙服務「Infovore 手機 Dayflow」：已開啟</string>
-    <string name="accessibility_off">無障礙服務「Infovore 手機 Dayflow」：未開啟</string>
+    <string name="accessibility_on">無障礙服務「Infovore 手機足跡」：已開啟</string>
+    <string name="accessibility_off">無障礙服務「Infovore 手機足跡」：未開啟</string>
     <string name="screen_restricted_help">側載安裝的 App 需先到「應用程式資訊 → ⋮ → 允許受限制的設定」，才能開啟無障礙服務。</string>
     <string name="action_open_app_info">開啟 App 資訊（允許受限制的設定）</string>
     <string name="action_open_accessibility">開啟無障礙設定</string>
@@ -135,4 +135,6 @@
     <string name="unsaved_discard">捨棄</string>
     <string name="unsaved_keep_editing">繼續編輯</string>
     <string name="error_no_activity">此裝置找不到可開啟的設定畫面。</string>
+    <string name="home_server_pending">伺服器待整理 %1$d 筆 · %2$d 筆重試中</string>
+    <string name="home_content_unavailable">暫時無法讀取內容，請重新整理。</string>
 </resources>

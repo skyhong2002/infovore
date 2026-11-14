@@ -5,6 +5,8 @@ import { buildCloudTerms, buildWordCloudCard, type CloudEntry, type CloudTerm } 
 import { platformOverview, platformSync } from './output/overview.js';
 import { notFoundPage, publicError, statusPage, type StatusSource } from './output/status.js';
 import { securityHeaders } from './security-headers.js';
+import { phoneActivityRoute } from './dayflow/phone-routes.js';
+import { phonePage, phoneScript } from './output/phone.js';
 import { buildDayflowCard, buildDayflowKeywordsCard, buildDayflowCategoriesCard } from './output/dayflow.js';
 import { buildAiAgentsCard, buildAiAgentsLightCard } from './output/computai.js';
 import type { ComputaiSnapshot } from './computai/types.js';
@@ -200,6 +202,13 @@ app.use('*', async (c, next) => {
   for (const [name, value] of Object.entries(securityHeaders)) c.header(name, value);
 });
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
+phoneActivityRoute(app, '/api/phone/activity', repository.dayflow.phone, config.dayflow.phoneToken);
+app.get('/phone', (c) => {
+  c.header('Cache-Control', 'no-store');
+  c.header('X-Robots-Tag', 'noindex, nofollow');
+  return c.html(phonePage());
+});
+app.get('/phone.js', (c) => c.body(phoneScript, 200, { 'Content-Type': 'text/javascript; charset=utf-8' }));
 const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
 
 // Health inspects sync metadata only. Register it before snapshot/card

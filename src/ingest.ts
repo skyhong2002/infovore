@@ -1,4 +1,5 @@
 import { startDayflowQualityWorker } from './dayflow/quality-worker.js';
+import { phoneActivityRoute } from './dayflow/phone-routes.js';
 import { startDayflowPhoneWorker } from './dayflow/phone-worker.js';
 import { phoneObservationBatchSchema } from './dayflow/phone-types.js';
 import { bodyLimit } from 'hono/body-limit';
@@ -40,6 +41,7 @@ function authorized(auth: string | undefined, expectedToken = config.ingestToken
 
 export function createIngestApp(repository: Repository): Hono {
   const app = new Hono();
+  phoneActivityRoute(app, '/api/ingest/dayflow-phone/activity', repository.dayflow.phone, config.dayflow.phoneToken);
   app.get('/healthz', (c) => c.json(
     { status: config.ingestToken ? 'healthy' : 'unhealthy', service: 'infovore-ingest' },
     config.ingestToken ? 200 : 503

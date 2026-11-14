@@ -67,6 +67,40 @@ export function buildSegments(deviceId: string, rows: PhoneObservationRow[], now
 export class DayflowPhoneStore {
   constructor(private db: DatabaseSync) {}
 
+  /** Owner-only view; never include observations, screen text, images or device identifiers. */
+  activity(day: string, deviceId?: string) {
+    const from = Date.parse(`${day}T04:00:00+08:00`), to = from + 86400_000;
+    const filter = deviceId ? ' AND device_id = ?' : '';
+    const args = deviceId ? [deviceId] : [];
+    const rows = this.db.prepare(`SELECT id, start_at, end_at, title, summary, category, apps_json, model
+      FROM dayflow_phone_cards WHERE end_at > ? AND start_at < ?${filter}
+      ORDER BY start_at DESC, id DESC LIMIT 1001`).all(from, to, ...args);
+    const cards = rows.slice(0, 1000).map((r) => ({
+      id: Number(r.id), startAt: new Date(Math.max(from, Number(r.start_at))).toISOString(),
+      endAt: new Date(Math.min(to, Number(r.end_at))).toISOString(),
+      title: String(r.title), summary: String(r.summary), category: String(r.category),
+      apps: JSON.parse(String(r.apps_json)) as string[], summarized: r.model !== null,
+    }));
+    const obs = this.db.prepare(`SELECT MAX(captured_at) last, COUNT(*) pending,
+      SUM(attempts > 0) retrying FROM dayflow_phone_observations WHERE processed = 0${filter}`).get(...args)!;
+    const last = this.db.prepare(`SELECT MAX(captured_at) last FROM dayflow_phone_observations WHERE 1=1${filter}`).get(...args)!;
+    return { day, timezone: 'Asia/Taipei', dayStartsAt: '04:00', cards, truncated: rows.length > 1000,
+      status: { pending: Number(obs.pending), retrying: Number(obs.retrying ?? 0),
+        lastObservationAt: last.last == null ? null : new Date(Number(last.last)).toISOString(),
+        oldestPendingAt: this.oldestPending(deviceId) },
+      categories: PHONE_CATEGORIES.map((c) => ({ name: c.name, color: c.color_hex,
+        minutes: Math.round(cards.filter((r) => r.category === c.name)
+          .reduce((sum, r) => sum + Date.parse(r.endAt) - Date.parse(r.startAt), 0) / 60000) })),
+    };
+  }
+
+  private oldestPending(deviceId?: string): string | null {
+    const row = deviceId
+      ? this.db.prepare('SELECT MIN(captured_at) first FROM dayflow_phone_observations WHERE processed = 0 AND device_id = ?').get(deviceId)!
+      : this.db.prepare('SELECT MIN(captured_at) first FROM dayflow_phone_observations WHERE processed = 0').get()!;
+    return row.first == null ? null : new Date(Number(row.first)).toISOString();
+  }
+
   ingest(batch: PhoneObservationBatch, receivedAt = Date.now()) {
     const insert = this.db.prepare(`INSERT OR IGNORE INTO dayflow_phone_observations
       (device_id, id, captured_at, package, app_label, text, blocked, image, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);

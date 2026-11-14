@@ -29,10 +29,11 @@ export function dayflowDetails(extra: DayflowExtra): string {
 
 function phoneDetails(extra: DayflowExtra): string {
   const phone = extra.phone;
-  if (!phone) return '';
+  const entry = '<section><div class="platform-section-heading"><h2>手機足跡</h2></div><p>回看手機活動、app 使用時段與整理狀態。</p><a class="platform-link" href="/phone">開啟私人時間軸 →</a><p class="platform-note">需要手機活動金鑰解鎖。活動摘要不會出現在公開頁面。</p></section>';
+  if (!phone) return entry;
   const daily = phone.daily.filter((d) => d.trackedMinutes > 0).slice(0, 30);
   const max = Math.max(1, ...daily.map((d) => d.trackedMinutes));
-  return `<section><div class="platform-section-heading"><h2>Phone activity</h2><span>${html(duration(phone.todayMinutes))} today · ${phone.weeklyHours}h this week · ${phone.weeklyActiveHours}h active</span></div>
+  return `${entry}<section><div class="platform-section-heading"><h2>Phone activity</h2><span>${html(duration(phone.todayMinutes))} today · ${phone.weeklyHours}h this week · ${phone.weeklyActiveHours}h active</span></div>
     <div class="platform-tags">${phone.categories.map((c) => `<span><i style="display:inline-block;width:8px;height:8px;background:${html(c.color)};margin-right:6px"></i>${html(c.name)} · ${html(duration(c.minutes))}</span>`).join('') || '<span>No phone activity this week</span>'}</div>
     <div class="health-days">${daily.map((d) => `<article class="health-day"><time datetime="${d.day}">${d.day}</time><div class="health-step-track" style="display:flex;height:10px">${d.categories.map((c) => `<span title="${html(c.name)}: ${html(duration(c.minutes))}" style="width:${c.minutes / max * 100}%;background:${html(c.color)};border-radius:0"></span>`).join('')}</div><strong>${html(duration(d.trackedMinutes))}</strong><p>${html(duration(d.activeMinutes))} active · ${html(duration(d.idleMinutes))} idle</p></article>`).join('') || '<div class="empty">Waiting for the first summarized phone activity.</div>'}</div>
     <div class="platform-note">Summarized from on-screen activity on Android while the screen is unlocked. Kept separate from computer time and may overlap it. Activity descriptions, screen text and screenshots stay private; screen captures are deleted once summarized.</div></section>`;

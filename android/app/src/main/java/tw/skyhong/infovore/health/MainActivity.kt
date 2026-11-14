@@ -118,6 +118,12 @@ class MainActivity : AppCompatActivity() {
             setPadding(kit.dp(16), kit.dp(16), kit.dp(16), kit.dp(24))
         }
         content.addView(buildHeader())
+        content.addView(kit.textButton("← 回到 Infovore").apply {
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, HomeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                finish()
+            }
+        })
         content.addView(setup.build(), ViewKit.matchWrap(kit.dp(16)))
         content.addView(connection.build(saved?.getBoolean(STATE_CONNECTION_OPEN)).root, ViewKit.matchWrap(kit.dp(16)))
         content.addView(health.build(saved?.getBoolean(STATE_HEALTH_OPEN) ?: true).root, ViewKit.matchWrap(kit.dp(16)))

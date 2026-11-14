@@ -1,10 +1,40 @@
 # Infovore Health for Android
 
-This private companion (current version 0.4.7) reads selected records from Android Health Connect and
+This private companion (current version 0.5.0) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
 Google account credentials.
+
+## Daily app (0.5.0)
+
+Layout references NYCU LIFE Super App's native grouped content, icon navigation,
+20dp insets, 24dp card corners, and unfilled section headings with trailing
+named actions. Infovore keeps its own brand palette and assets.
+
+The launcher opens a reading home with four bottom destinations: **首頁**, **瀏覽**,
+**手機足跡**, and **設定**. Browse shows a native list of recent public
+activities, with music/video/reading/event filters and links to platform details
+inside the app; links
+outside its HTTPS origin open in the browser. No ingest tokens enter the WebView.
+Settings remain in a separate screen, reachable from the bottom navigation and status cards;
+notification and Health Connect permission intents still open the relevant settings.
+
+手機足跡 is an owner-only activity timeline: select a date to see activity titles,
+summaries, app names, category totals and pending/retrying server observations.
+It uses the saved phone token bound to the current ingest destination and filters
+to this installation's device id. Reading never enables recording. Cards live only
+in memory and are cleared when the app stops; refresh or returning to the app
+reloads them. The home shows the latest two cards for the current 4am-based day.
+
+The web equivalent is `/phone`, linked in the site's navigation and Dayflow page.
+Unlock it with `DAYFLOW_PHONE_TOKEN` to browse all of the owner's phone devices;
+the token and cards stay in tab memory, never local/session storage or URLs.
+The authenticated read endpoints are `/api/phone/activity` (web service) and
+`/api/ingest/dayflow-phone/activity` (ingest service), with optional `day=YYYY-MM-DD`
+and `deviceId`. Responses are `no-store`, `noindex` and vary on Authorization.
+Days run from 04:00 Asia/Taipei; cross-boundary cards are clipped, newest first,
+with an explicit truncation flag above 1,000 cards. Raw captures are never returned.
 
 ## Data and privacy
 
