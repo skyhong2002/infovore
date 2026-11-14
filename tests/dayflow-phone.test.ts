@@ -112,7 +112,7 @@ test('phone observations stay private, summarize into a separate Phone section a
     assert.ok(Math.abs(phoneMinutes - 4) < 0.01, `expected 4 phone minutes, got ${phoneMinutes}`);
     assert.equal(phone.categories[0].name, 'Learning');
     const page = platformPage('Sky', { source: 'dayflow', title: 'Dayflow', description: 'Computer activity', accent: '#abcdef' }, snapshot, now.toISOString());
-    assert.match(page, /Phone activity/);
+    assert.match(page, /href="\/platforms\/phone"/);
     assert.doesNotMatch(JSON.stringify(snapshot), /SECRET|YouTube|pixel-test|看口琴/);
     assert.doesNotMatch(page, /SECRET|pixel-test|看口琴|com\.google/);
   } finally { repo.close(); }

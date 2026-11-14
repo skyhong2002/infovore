@@ -23,7 +23,7 @@ export function platformOverview(source: string, image: string, snapshot: Source
   const top = (key: string) => (extra[key] as Array<{ name: string; image?: string; thumbnailUrl?: string }> | undefined)?.[0];
   const current = snapshot.entries.filter(entry => entry.visibility !== 'private' && entry.visibility !== 'summary'
     && ['current', 'reading', 'watching', 'playing'].includes(entry.status ?? ''));
-  if (source === 'dayflow') {
+  if (source === 'dayflow' || source === 'phone') {
     const pools = (snapshot as DayflowSnapshot).extra.keywordPools;
     const topics = pools?.distinctive.slice(0, 3).map(k => k.name).join(' · ');
     return result(`${count('weeklyActiveHours')}h active this week`, topics ? `Distinctive lately: ${topics}` : `${count('recordedDays')} recorded days`);

@@ -201,6 +201,7 @@ app.use('*', async (c, next) => {
   await next();
   for (const [name, value] of Object.entries(securityHeaders)) c.header(name, value);
 });
+const phoneEnabled = Boolean(config.dayflow.phoneToken) && config.sourceEnabled('dayflow');
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
 phoneActivityRoute(app, '/api/phone/activity', repository.dayflow.phone, config.dayflow.phoneToken);
 app.get('/phone', (c) => {
@@ -256,7 +257,7 @@ let sitemapCache: { hour: number; body: string } | null = null;
 app.get('/sitemap.xml', (c) => {
   const hour = Math.floor(Date.now() / (60 * 60_000));
   if (sitemapCache?.hour !== hour) {
-    const platforms = sections.filter((s) => s.source === 'health' || getCache(`data:${s.source}`)?.data).map((s) => s.source);
+    const platforms = sections.filter((s) => s.source === 'health' || s.source === 'phone' || getCache(`data:${s.source}`)?.data).map((s) => s.source);
     if (repository.countBySource().events) platforms.push('events');
     sitemapCache = { hour, body: sitemapXml(config.publicBaseUrl, [
       '/', '/now', '/stats', '/platforms', ...platforms.map((source) => `/platforms/${source}`),
@@ -539,6 +540,7 @@ app.get('/og.png', (c) => {
 // URLs derive from config so a self-hosted instance links to its own profiles;
 // only sections whose source is enabled are shown.
 const allSections: PlatformDefinition[] = [
+  { source: 'phone', title: '手機足跡', description: '手機活動總覽：每日使用時數、本週分類、近期關鍵字與私人時間軸。', accent: '#8dd3bd', jsonUrl: '/api/phone.json', logo: '/logos/phone.svg' },
   { source: 'dayflow', title: 'Dayflow', description: 'Daily computer activity, category breakdowns and active time from Dayflow.', accent: '#b5adff', cards: ['dayflow', 'dayflow-keywords', 'dayflow-categories'], jsonUrl: '/api/dayflow.json', logo: '/logos/dayflow.png' },
   { source: 'backloggd', title: 'Backloggd', description: 'Games played, backlog totals, platforms and recent sessions.', accent: '#8dd3a8', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'] },
   { source: 'kitsu', title: 'Kitsu', description: 'Anime and manga progress, ratings and library status.', accent: '#f779a1', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
@@ -561,7 +563,7 @@ const allSections: PlatformDefinition[] = [
 ];
 
 const sections = allSections.filter((s) =>
-  config.sourceEnabled(s.source) && (s.source !== 'dayflow' || dayflowEnabled) && (s.source !== 'computai' || computaiEnabled) && (s.source !== 'health' || Boolean(config.healthConnect.token))
+  (s.source === 'phone' ? phoneEnabled : config.sourceEnabled(s.source)) && (s.source !== 'dayflow' || dayflowEnabled) && (s.source !== 'computai' || computaiEnabled) && (s.source !== 'health' || Boolean(config.healthConnect.token))
 );
 const manualPlatform: PlatformDefinition = {
   source: 'events', title: 'Manual events', description: 'Concerts, performances and real-world activities recorded by hand.',
@@ -604,6 +606,7 @@ function formatGmt8(ts: number): string {
 // When a source last synced successfully (cache time for fetched platforms,
 // the push timestamp for Health, Dayflow and ComputAI).
 function sourceSyncedAt(source: string): number | string | null {
+  if (source === 'phone') return phoneEnabled ? repository.dayflow.phone.status().lastObservationAt : null;
   if (source === 'health') return config.healthConnect.token ? repository.healthConnectStatus().lastSyncedAt : null;
   if (source === 'dayflow') return dayflowEnabled ? repository.dayflow.status().lastSyncedAt : null;
   if (source === 'computai') return computaiEnabled ? repository.computai.status().lastSyncedAt : null;
@@ -655,7 +658,7 @@ app.get('/', (c) => measureRead('homepage', () => {
     recentActivities: recent,
     platformOverviews: [
       ...sections.map(section => ({ ...platformOverview(section.source, section.logo ?? `/logos/${section.source}.png`,
-        section.source === 'health' ? healthSnapshot : getCache<SourceSnapshot<unknown>>(`data:${section.source}`)?.data, now),
+        section.source === 'health' ? healthSnapshot : section.source === 'phone' ? repository.dayflow.phone.publicSnapshot(config.ownerName, now) : getCache<SourceSnapshot<unknown>>(`data:${section.source}`)?.data, now),
         sync: platformSync(sourceSyncedAt(section.source), config.delayAfterHours(section.source), now) })),
       ...(sourceCounts.events ? [platformOverview('events', '', manualEventsSnapshot(), now)] : []),
     ],
@@ -705,6 +708,10 @@ function manualEventsSnapshot(): SourceSnapshot {
 
 app.get('/platforms', (c) => {
   const connected: PlatformSummary[] = sections.map((definition) => {
+    if (definition.source === 'phone') {
+      const snapshot = repository.dayflow.phone.publicSnapshot(config.ownerName);
+      return { definition, snapshot, fetchedAt: snapshot.extra.lastSyncedAt };
+    }
     if (definition.source === 'health') {
       const status = repository.healthConnectStatus();
       return {
@@ -731,6 +738,11 @@ app.get('/platforms/:source', (c) => {
   const source = c.req.param('source');
   const definition = source === 'events' ? manualPlatform : sections.find((section) => section.source === source);
   if (!definition) return c.text('Platform not found', 404);
+  if (source === 'phone') {
+    c.header('Cache-Control', 'no-cache');
+    const snapshot = repository.dayflow.phone.publicSnapshot(config.ownerName);
+    return c.html(platformPage(config.ownerName, definition, snapshot, snapshot.extra.lastSyncedAt));
+  }
   if (source === 'events') {
     c.header('Cache-Control', 'no-cache');
     const eventsTime = repository.timeSpent().sources.find((entry) => entry.source === 'events') ?? null;
@@ -764,7 +776,7 @@ app.get('/cards', (c) => {
   const nowCard = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/now">Right now</a></h2><span>In progress, up next, and the latest item from each platform</span></div><div class="card-gallery-row"><a href="/card/now.svg?v=${version('now')}"><img src="/card/now.webp?v=${version('now')}" alt="Right now · in-progress media, upcoming events and latest activity" width="520" loading="lazy"></a></div><p><a href="/card/now.svg">SVG</a> · <a href="/card/now.png">PNG</a> · <a href="/card/now.webp">WebP</a></p></section>`;
   const wordCloud = `<section class="card-gallery-section" id="word-cloud"><div class="card-gallery-title"><h2><a href="/profile">Word cloud</a></h2><span>Artists, games, channels, films and more from the last ${WORD_CLOUD_DAYS} days, sized by attention</span></div><div class="card-gallery-row"><a href="/card/word-cloud.svg?v=${version('word-cloud')}"><img src="/card/word-cloud.webp?v=${version('word-cloud')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud.svg">SVG</a> · <a href="/card/word-cloud.png">PNG</a> · <a href="/card/word-cloud.webp">WebP</a></p></section>`
     + `<section class="card-gallery-section" id="word-cloud-plain"><div class="card-gallery-title"><h2><a href="/profile">Word cloud, words only</a></h2><span>The same ${WORD_CLOUD_DAYS} days without the frame, for embedding</span></div><div class="card-gallery-row"><a href="/card/word-cloud-plain.svg?v=${version('word-cloud-plain')}"><img src="/card/word-cloud-plain.webp?v=${version('word-cloud-plain')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days, words only" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud-plain.svg">SVG</a> · <a href="/card/word-cloud-plain.png">PNG</a> · <a href="/card/word-cloud-plain.webp">WebP</a></p></section>`;
-  const body = nowCard + wordCloud + rhythm + sections
+  const body = nowCard + wordCloud + rhythm + sections.filter((s) => s.cards?.length)
     .map((s) => {
       const externalUrl = s.url ?? '#';
       // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,
@@ -1048,6 +1060,12 @@ app.get('/stats', (c) => {
 app.get('/api/time-spent.json', (c) => {
   const { summary, daily } = timeSpentWithAgents();
   return c.json({ ...summary, daily });
+});
+
+app.get('/api/phone.json', (c) => {
+  if (!phoneEnabled) return c.text('Phone platform is disabled', 404);
+  c.header('Cache-Control', 'no-cache');
+  return c.json(repository.dayflow.phone.publicSnapshot(config.ownerName));
 });
 
 app.get('/api/dayflow.json', (c) => {

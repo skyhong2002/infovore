@@ -4,7 +4,8 @@ import { h, logo, renderCard, textFont, truncate } from './render.js';
 import { html, timeAmount } from './pages.js';
 
 const duration = (minutes: number) => timeAmount(Math.round(minutes * 60));
-export function dayflowDetails(extra: DayflowExtra): string {
+export function dayflowDetails(extra: DayflowExtra, source: 'dayflow' | 'phone' = 'dayflow'): string {
+  const phone = source === 'phone';
   const daily = extra.daily.filter((d) => d.trackedMinutes + d.errorMinutes > 0).slice(0, 30);
   const max = Math.max(1, ...daily.map((d) => d.trackedMinutes));
   const pools = extra.keywordPools;
@@ -17,26 +18,14 @@ export function dayflowDetails(extra: DayflowExtra): string {
   return `<section><div class="platform-section-heading"><h2>Distinctive lately</h2><span>Recent 7 days vs preceding 90 days</span></div>
     <div class="platform-tags">${special.map((k) => `<span title="${k.historicalMentions} activities in the comparison period; ${k.lift}× the previous mention rate">${html(k.name)} · ${k.mentions} activities</span>`).join('') || `<span>${pools?.status === 'insufficient_history' ? 'More historical activity is needed for comparison' : 'No distinctly rising keywords in this period'}</span>`}</div>
     <div class="platform-note">Less habitual topics whose activity mention rate has risen. ${pools ? `Recent: ${pools.recentFrom}–${pools.recentTo} (${pools.recentDays} recorded days). Comparison: ${pools.baselineFrom}–${pools.baselineTo} (${pools.baselineDays} recorded days).` : ''}</div></section>
-    <section><div class="platform-section-heading"><h2>All recent keywords</h2><span>Last 7 Dayflow days · ${ai ? 'topics recurring across days' : 'recurring words included'}</span></div>
+    <section><div class="platform-section-heading"><h2>All recent keywords</h2><span>Last 7 recorded days · ${ai ? 'topics recurring across days' : phone ? 'recognized labels' : 'recurring words included'}</span></div>
     <div class="platform-tags">${keywords.map((k) => `<span>${html(k.name)} · ${k.mentions} activities</span>`).join('') || '<span>No keywords in this period</span>'}</div>
-    <div class="platform-note">${ai ? 'Related activities are grouped into projects, topics and works. Tools and generic narration are excluded; recent topics must recur on at least two days. Topics may overlap.' : 'Tools, projects and topics found in activity descriptions. Repeated new words can appear alongside recognized tool names.'} Each activity counts once per keyword; counts are mentions, not time spent.</div></section><section><div class="platform-section-heading"><h2>Categories this week</h2><span>Monday–Sunday · 4am boundary</span></div>
+    <div class="platform-note">${ai ? 'Related activities are grouped into projects, topics and works. Tools and generic narration are excluded; recent topics must recur on at least two days. Topics may overlap.' : phone ? 'Only recognized labels from a fixed vocabulary are published.' : 'Tools, projects and topics found in activity descriptions. Repeated new words can appear alongside recognized tool names.'} Each activity counts once per keyword; counts are mentions, not time spent.</div></section><section><div class="platform-section-heading"><h2>Categories this week</h2><span>Monday–Sunday · 4am boundary</span></div>
     <div class="platform-tags">${extra.categories.map((c) => `<span><i style="display:inline-block;width:8px;height:8px;background:${html(c.color)};margin-right:6px"></i>${html(c.name)} · ${html(duration(c.minutes))}</span>`).join('') || '<span>No activity this week</span>'}</div></section>
     <section><div class="platform-section-heading"><h2>Recent recorded days</h2><span>Asia/Taipei · 4am–4am</span></div>
     ${reviewing}
-    <div class="health-days">${daily.map((d) => `<article class="health-day"><time datetime="${d.day}">${d.day}</time><div class="health-step-track" style="display:flex;height:10px">${d.categories.map((c) => `<span title="${html(c.name)}: ${html(duration(c.minutes))}" style="width:${c.minutes / max * 100}%;background:${html(c.color)};border-radius:0"></span>`).join('')}</div><strong>${html(duration(d.trackedMinutes))}</strong><p>${html(duration(d.activeMinutes))} active · ${html(duration(d.idleMinutes))} idle${d.errorMinutes ? ` · ${html(duration(d.errorMinutes))} analysis unavailable` : ''}${d.keywords?.length ? `<br>${d.keywords.map((k) => html(k.name)).join(' · ')}` : ''}</p></article>`).join('') || '<div class="empty">Waiting for the first Dayflow sync.</div>'}</div>
-    <div class="platform-note">Computer time includes idle time and excludes analysis errors. Active means non-idle, not a focus score. It may overlap music and video time, so it is shown separately from cross-platform totals. Full activity titles, summaries and app lists remain private; recognized keyword labels are public. Missing days are not treated as zero.</div></section>${phoneDetails(extra)}`;
-}
-
-function phoneDetails(extra: DayflowExtra): string {
-  const phone = extra.phone;
-  const entry = '<section><div class="platform-section-heading"><h2>手機足跡</h2></div><p>回看手機活動、app 使用時段與整理狀態。</p><a class="platform-link" href="/phone">開啟私人時間軸 →</a><p class="platform-note">需要手機活動金鑰解鎖。活動摘要不會出現在公開頁面。</p></section>';
-  if (!phone) return entry;
-  const daily = phone.daily.filter((d) => d.trackedMinutes > 0).slice(0, 30);
-  const max = Math.max(1, ...daily.map((d) => d.trackedMinutes));
-  return `${entry}<section><div class="platform-section-heading"><h2>Phone activity</h2><span>${html(duration(phone.todayMinutes))} today · ${phone.weeklyHours}h this week · ${phone.weeklyActiveHours}h active</span></div>
-    <div class="platform-tags">${phone.categories.map((c) => `<span><i style="display:inline-block;width:8px;height:8px;background:${html(c.color)};margin-right:6px"></i>${html(c.name)} · ${html(duration(c.minutes))}</span>`).join('') || '<span>No phone activity this week</span>'}</div>
-    <div class="health-days">${daily.map((d) => `<article class="health-day"><time datetime="${d.day}">${d.day}</time><div class="health-step-track" style="display:flex;height:10px">${d.categories.map((c) => `<span title="${html(c.name)}: ${html(duration(c.minutes))}" style="width:${c.minutes / max * 100}%;background:${html(c.color)};border-radius:0"></span>`).join('')}</div><strong>${html(duration(d.trackedMinutes))}</strong><p>${html(duration(d.activeMinutes))} active · ${html(duration(d.idleMinutes))} idle</p></article>`).join('') || '<div class="empty">Waiting for the first summarized phone activity.</div>'}</div>
-    <div class="platform-note">Summarized from on-screen activity on Android while the screen is unlocked. Kept separate from computer time and may overlap it. Activity descriptions, screen text and screenshots stay private; screen captures are deleted once summarized.</div></section>`;
+    <div class="health-days">${daily.map((d) => `<article class="health-day"><time datetime="${d.day}">${d.day}</time><div class="health-step-track" style="display:flex;height:10px">${d.categories.map((c) => `<span title="${html(c.name)}: ${html(duration(c.minutes))}" style="width:${c.minutes / max * 100}%;background:${html(c.color)};border-radius:0"></span>`).join('')}</div><strong>${html(duration(d.trackedMinutes))}</strong><p>${html(duration(d.activeMinutes))} active · ${html(duration(d.idleMinutes))} idle${d.errorMinutes ? ` · ${html(duration(d.errorMinutes))} analysis unavailable` : ''}${d.keywords?.length ? `<br>${d.keywords.map((k) => html(k.name)).join(' · ')}` : ''}</p></article>`).join('') || `<div class="empty">${phone ? 'Waiting for the first summarized phone activity.' : 'Waiting for the first Dayflow sync.'}</div>`}</div>
+    <div class="platform-note">${phone ? 'Phone' : 'Computer'} time includes idle time and excludes analysis errors. Active means non-idle, not a focus score. It may overlap music and video time, so it is shown separately from cross-platform totals. Full activity titles, summaries and app lists remain private; recognized keyword labels are public. Missing days are not treated as zero.</div></section>${phone ? '<section><div class="platform-section-heading"><h2>私人時間軸</h2></div><p>回看完整活動摘要、app 使用時段與整理狀態。</p><a class="platform-link" href="/phone">解鎖私人時間軸 →</a><p class="platform-note">需要手機活動金鑰。</p></section>' : '<section><div class="platform-section-heading"><h2>手機足跡</h2></div><p>手機統計與時間軸已整合至專屬平台。</p><a class="platform-link" href="/platforms/phone">查看手機足跡 →</a></section>'}`;
 }
 
 // Dayflow's native typography and warm surface palette. Extra fonts are scoped
@@ -111,7 +100,7 @@ export function buildDayflowKeywordsCard(data: DayflowSnapshot): Promise<string>
   return dayflowShell(data, [
     row([
       text('Recent keywords', { ...serif, fontSize: 34, lineHeight: 1.1 }),
-      text(pools ? `${pools.recentFrom} – ${pools.recentTo} · Last 7 days` : 'Last 7 Dayflow days', { color: C.muted, fontSize: 12, marginTop: 8 }),
+      text(pools ? `${pools.recentFrom} – ${pools.recentTo} · Last 7 days` : 'Last 7 recorded days', { color: C.muted, fontSize: 12, marginTop: 8 }),
     ], { flexDirection: 'column' }),
     row([
       text('Distinctive lately', { ...serif, fontSize: 24, marginBottom: 10 }),

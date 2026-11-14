@@ -86,7 +86,6 @@ const navigation: Array<{ key: PageKey; label: string; href: string }> = [
   { key: 'platforms', label: 'Platforms', href: '/platforms' },
   { key: 'profile', label: 'Archive', href: '/profile' },
   { key: 'cards', label: 'Cards', href: '/cards' },
-  { key: 'phone', label: '手機足跡', href: '/phone' },
 ];
 
 const themeToggle = `<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle colour theme" title="Toggle theme"><svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>`;
@@ -112,14 +111,14 @@ export function shell(title: string, body: string, active: PageKey, extraStyles 
   <header class="site-header"><div class="site-header-inner"><a class="site-brand" href="/"><img class="brand-mark" src="/logos/infovore.png?v=muted" alt="" width="36" height="36"><span><strong>infovore</strong><small>Sky's personal infoboard</small></span></a><nav class="site-nav" aria-label="Primary">${nav}</nav><div class="site-tools"><form class="site-search" action="/search" role="search"><input type="search" name="q" placeholder="Search the archive" aria-label="Search the archive" autocomplete="off"><button type="submit" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button></form><a class="site-search-link" href="/search" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></a>${themeToggle}</div></div></header>
   <main class="site-main" id="main" tabindex="-1">${body}</main>
   <footer class="site-footer"><div class="footer-about"><a class="site-brand" href="/"><img class="brand-mark" src="/logos/infovore.png?v=muted" alt="" width="36" height="36"><strong>infovore</strong></a><p>Sky's media, activities, and plans gathered into one personal home.</p></div>
-  <div class="footer-group"><span>Explore</span><a href="/">Home</a><a href="/now">Now</a><a href="/platforms">Platforms</a><a href="/phone">手機足跡 · Private</a></div>
+  <div class="footer-group"><span>Explore</span><a href="/">Home</a><a href="/now">Now</a><a href="/platforms">Platforms</a><a href="/platforms/phone">手機足跡</a></div>
   <div class="footer-group"><span>Reflect</span><a href="/profile">Archive</a><a href="/stats">Time</a><a href="/wrapped">Wrapped</a><a href="/cards">Cards</a></div>
   <div class="footer-group"><span>Data</span><a href="/search">Search</a><a href="/api">API</a><a href="/feed.xml">RSS</a><a href="/status">Sync status</a><a href="https://github.com/skyhong2002/infovore">Source</a></div></footer>
   ${inlineScript(THEME_TOGGLE_SCRIPT)}${inlineScript(ADAPTIVE_MEDIA_SCRIPT)}${inlineScript(INFO_SCRIPT)}</body></html>`;
 }
 
 export function sourceLabel(source: string): string {
-  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', hardcover: 'Hardcover', youtube: 'YouTube', health: 'Health', dayflow: 'Dayflow', computai: 'ComputAI', events: 'Manual' } as Record<string, string>)[source] ?? source;
+  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', hardcover: 'Hardcover', youtube: 'YouTube', health: 'Health', dayflow: 'Dayflow', phone: '手機足跡', computai: 'ComputAI', events: 'Manual' } as Record<string, string>)[source] ?? source;
 }
 
 // Coarse relative age for the present view: "today", "12 days ago", "4 months ago".

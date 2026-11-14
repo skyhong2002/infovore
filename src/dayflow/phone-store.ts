@@ -1,4 +1,7 @@
 import { summarizeDay } from './day-summary.js';
+import { narrativeKeywords } from './keywords.js';
+import type { QualityLabels } from './quality.js';
+import type { DayflowSnapshot } from './types.js';
 import { keywordPools } from './pools.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { dayflowDay, type DayflowBatch } from './types.js';
@@ -70,7 +73,10 @@ export class DayflowPhoneStore {
   constructor(private db: DatabaseSync) {}
 
   /** Same aggregate structure as the computer dashboard, scoped to the authenticated phone. */
-  overview(deviceId?: string, now = new Date()) {
+  overview(deviceId?: string, now = new Date(), publicTopics = false) {
+    // Public topics are restricted to the fixed vocabulary, never free-text tokens.
+    const labels: QualityLabels | undefined = publicTopics
+      ? (title) => narrativeKeywords(title).map((name) => ({ name, kind: 'topic', confidence: 1 })) : undefined;
     const today = dayflowDay(now);
     const shift = (n: number) => new Date(Date.parse(today) + n * 86400_000).toISOString().slice(0, 10);
     const batches = this.batchesSince(shift(-96), now, deviceId).filter((b) => b.day <= today);
@@ -87,8 +93,18 @@ export class DayflowPhoneStore {
     return { stats: { recordedDays: daily.length, todayMinutes: daily.find((d) => d.day === today)?.trackedMinutes ?? 0,
       weeklyHours: Math.round(week.reduce((sum, d) => sum + d.trackedMinutes, 0) / 6) / 10,
       weeklyActiveHours: Math.round(week.reduce((sum, d) => sum + d.activeMinutes, 0) / 6) / 10 },
-      extra: { daily, categories, keywordPools: keywordPools(batches, now), keywordMode: 'local',
+      extra: { daily, categories, keywordPools: keywordPools(batches, now, labels), keywordMode: 'local',
         lastSyncedAt: obs.last == null ? null : new Date(Number(obs.last)).toISOString(), timeZone: 'Asia/Taipei', dayBoundaryHour: 4 } };
+  }
+
+  /** Safe public platform projection; full activity prose stays in the authenticated API. */
+  publicSnapshot(ownerName: string, now = new Date()): DayflowSnapshot {
+    const { stats, extra } = this.overview(undefined, now, true);
+    return { source: 'phone', profile: { id: 'phone', name: ownerName, avatar: '', url: '' },
+      stats, entries: [], extra: { daily: extra.daily, categories: extra.categories,
+        keywordPools: extra.keywordPools, lastSyncedAt: extra.lastSyncedAt,
+        timeZone: 'Asia/Taipei', dayBoundaryHour: 4,
+        firstDay: extra.daily.at(-1)?.day ?? null, lastDay: extra.daily[0]?.day ?? null } };
   }
 
   /** Owner-only view; never include observations, screen text, images or device identifiers. */
