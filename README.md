@@ -478,7 +478,23 @@ ticket wallet.
 
 Connect a Streamable HTTP MCP client to `https://infovore.example/mcp`.
 Available tools are `get_recent_activities`, `search_lifelog`,
-`get_current_media`, `get_upcoming_events`, and `get_annual_summary`.
+`get_current_media`, `get_upcoming_events`, `get_annual_summary`,
+`get_health_summary`, `get_dayflow_summary`, and the wallpaper tools below.
+
+#### Wallpaper tools
+
+The owner's wallpaper collection ([afterimage](https://afterimage.skyhong.tw))
+is a separate project. These tools only read its public catalog
+(`WALLPAPER_CATALOG_URL`, default `https://afterimage.skyhong.tw/api/wallpapers.json`),
+cached for 10 minutes and served stale if it is unreachable. Wallpapers never
+enter the activity store, timeline, feed or cards.
+
+- `search_wallpapers` — by text, work, emotion (Inside Out set) or device
+- `get_wallpapers_for_work` — everything for one work, with an emotion breakdown
+- `get_wallpaper_gaps` — recent games, anime, shows, movies and books split into
+  those that already have wallpapers and those that do not. Music is matched by
+  artist. Titles match a work as a whole-word phrase (so "Persona 5 Royal" finds
+  "Persona 5"); titles shorter than 5 characters only match exactly.
 
 ## Delivered roadmap
 

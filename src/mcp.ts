@@ -4,6 +4,12 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import * as z from 'zod/v4';
 import type { Repository } from './data/database.js';
 import { config } from './config.js';
+import {
+  createWallpaperSource, findWork, searchWallpapers, view, wallpaperGaps, type WallpaperSource,
+} from './wallpapers.js';
+
+const defaultWallpapers = createWallpaperSource(config.wallpapers.catalogUrl);
+const EMOTIONS = ['joy', 'sadness', 'anger', 'fear', 'disgust', 'anxiety', 'envy', 'ennui', 'embarrassment'] as const;
 
 function result(value: unknown) {
   const structuredContent = Array.isArray(value)
@@ -22,7 +28,7 @@ function unique(items: ReturnType<Repository['listActivities']>) {
   });
 }
 
-export function createMcpServer(repository: Repository): McpServer {
+export function createMcpServer(repository: Repository, wallpapers: WallpaperSource = defaultWallpapers): McpServer {
   const server = new McpServer({ name: 'infovore', version: '1.0.0' });
 
   server.registerTool('get_recent_activities', {
@@ -69,12 +75,50 @@ export function createMcpServer(repository: Repository): McpServer {
     const snapshot = repository.dayflow.snapshot(config.ownerName);
     return result({ ...snapshot, extra: { ...snapshot.extra, daily: snapshot.extra.daily.slice(0, days) } });
   });
+
+  // Wallpapers live in the separate afterimage collection; these tools only read its public catalog.
+  const wallpaperTool = async (run: (catalog: Awaited<ReturnType<WallpaperSource['get']>>) => unknown) => {
+    try { return result(run(await wallpapers.get())); }
+    catch { return result({ error: 'The wallpaper collection is temporarily unavailable' }); }
+  };
+
+  server.registerTool('search_wallpapers', {
+    title: 'Search wallpapers',
+    description: 'Search the owner\'s wallpaper collection (afterimage) by caption or work title, and filter by work, emotion (Inside Out set) or device. Returns image URLs.',
+    inputSchema: {
+      query: z.string().optional(), work: z.string().optional(),
+      emotion: z.enum(EMOTIONS).optional(), device: z.enum(['desktop', 'phone']).optional(),
+      limit: z.number().int().min(1).max(100).default(20),
+    },
+  }, async (args) => wallpaperTool((catalog) => searchWallpapers(catalog, args)));
+
+  server.registerTool('get_wallpapers_for_work', {
+    title: 'Wallpapers for a work',
+    description: 'List the wallpapers the owner has for one game, show, anime, movie or other work (matched by title, e.g. "Persona 5"), with a count and per-emotion breakdown.',
+    inputSchema: { work: z.string().min(1), limit: z.number().int().min(1).max(100).default(30) },
+  }, async ({ work, limit }) => wallpaperTool((catalog) => {
+    const found = findWork(catalog, work);
+    if (!found) return { work: null, total: 0, items: [], note: `No wallpapers for "${work}".` };
+    const own = catalog.wallpapers.filter((w) => w.works.includes(found.id));
+    const emotions: Record<string, number> = {};
+    for (const w of own) if (w.emotion) emotions[w.emotion] = (emotions[w.emotion] ?? 0) + 1;
+    return { work: found.title, kind: found.kind, total: own.length, emotions, items: own.slice(0, limit).map((w) => view(catalog, w)) };
+  }));
+
+  server.registerTool('get_wallpaper_gaps', {
+    title: 'Wallpaper gaps',
+    description: 'Compare recent games, anime, shows, movies and books from the lifelog with the wallpaper collection: which recent works already have wallpapers (with samples) and which have none yet. Use it to decide what wallpapers to look for.',
+    inputSchema: { days: z.number().int().min(1).max(365).default(60), limit: z.number().int().min(1).max(100).default(30) },
+  }, async ({ days, limit }) => wallpaperTool((catalog) => {
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    return wallpaperGaps(catalog, repository.activitiesSince(since), days, limit);
+  }));
   return server;
 }
 
-export async function handleMcpRequest(repository: Repository, request: Request): Promise<Response> {
+export async function handleMcpRequest(repository: Repository, request: Request, wallpapers?: WallpaperSource): Promise<Response> {
   const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
-  const server = createMcpServer(repository);
+  const server = createMcpServer(repository, wallpapers);
   await server.connect(transport);
   return transport.handleRequest(request);
 }

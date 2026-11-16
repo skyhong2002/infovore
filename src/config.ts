@@ -101,6 +101,10 @@ export const config = {
     userId: process.env.KITSU_USER_ID ?? '1366093',
   },
   statsfm: { username: process.env.STATSFM_USERNAME ?? 'skyhong2002' },
+  // The owner's wallpaper collection (afterimage). Only the MCP wallpaper tools read it.
+  wallpapers: {
+    catalogUrl: process.env.WALLPAPER_CATALOG_URL ?? 'https://afterimage.skyhong.tw/api/wallpapers.json',
+  },
   simkl: {
     userId: process.env.SIMKL_USER_ID ?? '8074923',
     clientId: process.env.SIMKL_CLIENT_ID ?? '',
