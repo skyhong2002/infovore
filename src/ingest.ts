@@ -1,7 +1,4 @@
 import { startDayflowQualityWorker } from './dayflow/quality-worker.js';
-import { phoneActivityRoute } from './dayflow/phone-routes.js';
-import { startDayflowPhoneWorker } from './dayflow/phone-worker.js';
-import { phoneObservationBatchSchema } from './dayflow/phone-types.js';
 import { bodyLimit } from 'hono/body-limit';
 import { dayflowBatchSchema } from './dayflow/types.js';
 import { computaiReportSchema, computaiSegmentsSchema } from './computai/types.js';
@@ -41,7 +38,6 @@ function authorized(auth: string | undefined, expectedToken = config.ingestToken
 
 export function createIngestApp(repository: Repository): Hono {
   const app = new Hono();
-  phoneActivityRoute(app, '/api/ingest/dayflow-phone/activity', repository.dayflow.phone, config.dayflow.phoneToken);
   app.get('/healthz', (c) => c.json(
     { status: config.ingestToken ? 'healthy' : 'unhealthy', service: 'infovore-ingest' },
     config.ingestToken ? 200 : 503
@@ -61,36 +57,6 @@ export function createIngestApp(repository: Repository): Hono {
     }
     try {
       return c.json({ ok: true, ...store(() => repository.dayflow.ingest(batch)) });
-    } catch {
-      return c.json(storageUnavailable, 503);
-    }
-  });
-  // Android screen observations use their own token: a leaked phone token
-  // cannot rewrite macOS days, and the Mac token cannot write phone data.
-  app.use('/api/ingest/dayflow-phone/*', async (c, next) => {
-    if (!config.dayflow.phoneToken) return c.json({ error: 'Phone Dayflow ingestion is not configured', retryable: false }, 503);
-    if (!authorized(c.req.header('authorization'), config.dayflow.phoneToken)) return c.json({ error: 'Unauthorized' }, 401);
-    await next();
-  });
-  app.get('/api/ingest/dayflow-phone/status', (c) => {
-    const { lastObservationAt, pending } = repository.dayflow.phone.status();
-    return c.json({ status: 'ready', lastObservationAt, pending });
-  });
-  app.post('/api/ingest/dayflow-phone/observations', async (c) => {
-    const body = await c.req.text();
-    if (Buffer.byteLength(body) > 8 * 1024 * 1024) return c.json({ error: 'Phone observation payload exceeds 8 MiB' }, 413);
-    let batch;
-    try {
-      batch = phoneObservationBatchSchema.parse(JSON.parse(body));
-    } catch (error) {
-      // Report what failed validation, never the submitted screen content.
-      const message = error instanceof Error && 'issues' in error
-        ? (error as { issues: Array<{ path: unknown[]; message: string }> }).issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
-        : 'Invalid JSON';
-      return c.json({ error: `Invalid phone observation batch: ${message}` }, 400);
-    }
-    try {
-      return c.json({ ok: true, ...store(() => repository.dayflow.phone.ingest(batch)) });
     } catch {
       return c.json(storageUnavailable, 503);
     }
@@ -196,6 +162,5 @@ if (process.env.NODE_ENV !== 'test') {
   const repository = new Repository(config.databasePath, { dayflowQuality: Boolean(config.dayflow.quality) });
   const app = createIngestApp(repository);
   if (config.dayflow.quality && config.dayflow.token && config.sourceEnabled('dayflow')) startDayflowQualityWorker(repository.dayflow, config.dayflow.quality);
-  if (config.dayflow.phoneToken && config.sourceEnabled('dayflow')) startDayflowPhoneWorker(repository.dayflow.phone, config.dayflow.quality);
   serve({ fetch: app.fetch, port: config.port }, (info) => console.log(`infovore ingest listening on :${info.port}`));
 }

@@ -7,7 +7,7 @@ package tw.skyhong.infovore.health.ui
  * or to logs; [toString] does not reveal the values.
  */
 class SecretDrafts {
-    enum class Key { HEALTH_TOKEN, PHONE_TOKEN }
+    enum class Key { HEALTH_TOKEN }
 
     private val drafts = mutableMapOf<Key, String>()
 

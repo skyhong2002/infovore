@@ -12,7 +12,6 @@ import tw.skyhong.infovore.health.DestinationChange
 import tw.skyhong.infovore.health.MainViewModel
 import tw.skyhong.infovore.health.R
 import tw.skyhong.infovore.health.SecureSettings
-import tw.skyhong.infovore.health.screen.ScreenSettings
 import tw.skyhong.infovore.health.ui.DialogText
 import tw.skyhong.infovore.health.ui.Field
 import tw.skyhong.infovore.health.ui.ViewKit
@@ -25,7 +24,6 @@ class UiHost(
     val activity: AppCompatActivity,
     val kit: ViewKit,
     val settings: SecureSettings,
-    val screenSettings: ScreenSettings,
     val model: MainViewModel,
 ) {
     /** Set once the content is built. */
@@ -33,7 +31,7 @@ class UiHost(
 
     val use24Hour: Boolean get() = DateFormat.is24HourFormat(activity)
 
-    /** The normalised saved endpoint: where syncs and screen uploads go. */
+    /** The normalised saved endpoint: where syncs go. */
     fun currentDestination(): String = DestinationChange.normalize(settings.endpoint)
 
     fun string(id: Int, vararg args: Any): String = activity.getString(id, *args)

@@ -17,11 +17,8 @@ class FormStateTest {
     }
 
     @Test
-    fun screenSaveStateAndLeavingConfirmation() {
-        assertEquals(SaveState.UNSAVED, FormState.screen(dirty = true, justSaved = true))
-        assertEquals(SaveState.JUST_SAVED, FormState.screen(dirty = false, justSaved = true))
-        assertEquals(SaveState.CLEAN, FormState.screen(dirty = false, justSaved = false))
-        assertTrue(FormState.confirmBeforeLeaving(connectionDirty = false, screenDirty = true))
-        assertFalse(FormState.confirmBeforeLeaving(connectionDirty = false, screenDirty = false))
+    fun leavingAsksOnlyWithUnsavedEdits() {
+        assertTrue(FormState.confirmBeforeLeaving(connectionDirty = true))
+        assertFalse(FormState.confirmBeforeLeaving(connectionDirty = false))
     }
 }

@@ -28,10 +28,6 @@ import tw.skyhong.infovore.health.SyncEnvironment
 import tw.skyhong.infovore.health.SyncFailureAlerts
 import tw.skyhong.infovore.health.SyncScheduler
 import tw.skyhong.infovore.health.SyncWorker
-import tw.skyhong.infovore.health.screen.ObservationQueue
-import tw.skyhong.infovore.health.screen.ScreenSettings
-import tw.skyhong.infovore.health.screen.ScreenUploadWorker
-import tw.skyhong.infovore.health.screen.ScreenUploader
 import tw.skyhong.infovore.health.DestinationChange
 import java.time.Instant
 import java.time.ZoneOffset
@@ -40,8 +36,8 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * The real background workers (SyncWorker, ScreenUploadWorker) under WorkManager's test driver,
- * with the real HealthConnectSync / ScreenUploader and InfovoreApi talking HTTP to a local
+ * The real background worker (SyncWorker) under WorkManager's test driver,
+ * with the real HealthConnectSync and InfovoreApi talking HTTP to a local
  * [FakeIngestServer]: which failures stop at once, which retry within WorkManager's backoff, and
  * how the server's Retry-After sets the next attempt. Client waits are recorded, not slept.
  * Synthetic data only; nothing but 127.0.0.1 is contacted.
@@ -256,51 +252,5 @@ class BackgroundRetryTest {
         answer(201, """{"ok":true,"inserted":1,"updated":0,"deleted":0}""")
         assertEquals(Result.success(), syncWorker().doWork())
         assertEquals(WorkInfo.State.CANCELLED, followUps().single().state)
-    }
-
-    // ---- The screen-record upload worker ----
-
-    private fun enqueueObservation() {
-        val destination = DestinationChange.normalize(server.endpoint)
-        ScreenSettings(Robo.app).saveToken(Robo.PHONE_TOKEN, destination)
-        ObservationQueue.get(Robo.app).enqueueJson(destination, System.currentTimeMillis(), "obs-1", """{"id":"obs-1","capturedAt":"2026-11-13T04:00:00Z","blocked":true}""")
-    }
-
-    private fun uploadWorker(attempt: Int = 0) = TestListenableWorkerBuilder<ScreenUploadWorker>(Robo.app).setRunAttemptCount(attempt).build()
-
-    @Test
-    fun screenUploadsStopOnA401AndRetryATransientFailure() = runBlocking {
-        enqueueObservation()
-        answer(401, """{"error":"Unauthorized"}""")
-        assertEquals(Result.failure(), uploadWorker().doWork())
-        assertEquals(1, server.requests.size)
-        assertEquals(1, ObservationQueue.get(Robo.app).count(DestinationChange.normalize(server.endpoint)))
-
-        answer(503, busy)
-        assertEquals(Result.retry(), uploadWorker().doWork())
-        assertEquals(Result.failure(), uploadWorker(attempt = SyncFailureAlerts.MAX_RETRIES).doWork())
-        assertEquals(0L, ScreenSettings(Robo.app).retryNotBefore)
-    }
-
-    @Test
-    fun screenUploadsWaitForALongRetryAfterExceptWhenTheUserAsks() = runBlocking {
-        enqueueObservation()
-        answer(503, busy, retryAfter = "600")
-        val before = System.currentTimeMillis()
-        assertEquals(Result.failure(), uploadWorker().doWork())
-        assertEquals(1, server.requests.size)
-        val notBefore = ScreenSettings(Robo.app).retryNotBefore
-        assertTrue("$notBefore", notBefore in (before + 600_000L)..(System.currentTimeMillis() + 600_000L))
-        assertTrue(ScreenSettings(Robo.app).lastUploadStatus, ScreenSettings(Robo.app).lastUploadStatus.contains("伺服器要求約 10 分鐘後再試"))
-
-        // The next periodic run (and the recording service) sends nothing before then.
-        assertEquals(Result.success(), uploadWorker().doWork())
-        assertEquals(notBefore, ScreenUploader.uploadPending(Robo.app, automatic = true).deferredUntilMs)
-        assertEquals(1, server.requests.size)
-        // A manual upload is the user's choice: it tries, and success clears the wait.
-        answer(200, """{"accepted":1,"duplicates":0}""")
-        assertEquals(1, ScreenUploader.uploadPending(Robo.app).sent)
-        assertEquals(2, server.requests.size)
-        assertEquals(0L, ScreenSettings(Robo.app).retryNotBefore)
     }
 }

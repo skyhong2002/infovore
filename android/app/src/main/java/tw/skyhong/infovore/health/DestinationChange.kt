@@ -7,21 +7,19 @@ import java.net.URISyntaxException
 /**
  * Decides what saving a new endpoint must reset. The Health Connect change token only covers
  * changes since the last sync, so a new (possibly empty) server would otherwise never receive the
- * history the old server already has. Phone screen records and the phone token belong to the
- * destination they were captured or saved for: queued records stay with the old destination and
- * the phone token is cleared. Only a different destination resets: changing just the token, or
+ * history the old server already has. Only a different destination resets: changing just the token, or
  * retyping the same URL with a trailing slash or different letter case in the scheme and host,
  * keeps everything.
  */
 object DestinationChange {
     enum class Action {
-        /** Same destination: keep the change token, import state, screen queue and phone token. */
+        /** Same destination: keep the change token and import state. */
         KEEP,
 
         /** New destination with nothing tied to the old one: reset quietly. */
         RESET,
 
-        /** New destination after a sync, or with phone screen records or a phone token: confirm first. */
+        /** New destination after a sync: confirm first. */
         CONFIRM_RESET,
     }
 
@@ -29,12 +27,8 @@ object DestinationChange {
     data class Ties(
         /** A change token exists or a full sync has finished. */
         val hasSyncProgress: Boolean,
-        /** Phone screen records queued for the saved destination. */
-        val screenPending: Int = 0,
-        /** A DAYFLOW_PHONE_TOKEN is saved. */
-        val phoneTokenSaved: Boolean = false,
     ) {
-        val any: Boolean get() = hasSyncProgress || screenPending > 0 || phoneTokenSaved
+        val any: Boolean get() = hasSyncProgress
     }
 
     /** Lower-cases scheme and host, drops default ports and trailing slashes. */
@@ -80,15 +74,6 @@ object DestinationChange {
                     "並重新完成「第一次同步」。",
             )
         }
-        if (ties.screenPending > 0) {
-            add(
-                "手機畫面記錄：有 ${ties.screenPending} 筆待傳紀錄屬於舊目的地，不會送到新目的地；" +
-                    "它們會留在手機上（最多 7 天），可在「手機畫面記錄」區刪除。",
-            )
-        }
-        if (ties.phoneTokenSaved) {
-            add("DAYFLOW_PHONE_TOKEN 會被清除，請為新目的地重新輸入。畫面記錄的開關與排除清單不變。")
-        }
         add("只更換 token 不會這樣做。")
     }.joinToString("\n\n")
 
@@ -104,8 +89,7 @@ object DestinationChange {
 
     fun fieldNote(savedEndpoint: String, newEndpoint: String, ties: Ties): String? = when {
         decide(savedEndpoint, newEndpoint, ties) != Action.CONFIRM_RESET -> null
-        ties.hasSyncProgress -> "這是新的同步目的地：儲存後，下次同步會重新匯入歷史資料"
-        else -> "這是新的同步目的地：手機畫面記錄的待傳紀錄與 token 不會帶到新目的地"
+        else -> "這是新的同步目的地：儲存後，下次同步會重新匯入歷史資料"
     }
 
     /** The full-sync status saved after a reset, shown as the last result until the next sync. */

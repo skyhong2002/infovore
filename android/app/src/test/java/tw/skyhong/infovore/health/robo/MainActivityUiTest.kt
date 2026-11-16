@@ -27,7 +27,6 @@ import tw.skyhong.infovore.health.ReconcileGaps
 import tw.skyhong.infovore.health.robo.Robo.descendants
 import tw.skyhong.infovore.health.robo.Robo.hasVisibleText
 import tw.skyhong.infovore.health.robo.Robo.textView
-import tw.skyhong.infovore.health.screen.ObservationQueue
 
 /**
  * The real MainActivity on Robolectric: what each section shows, TalkBack semantics, touch
@@ -52,45 +51,39 @@ class MainActivityUiTest {
     fun firstRunShowsEverySectionWithHeadingsAndState() {
         val activity = launch().get()
         val root = activity.root
-        // First-run steps, then the three sections and the privacy footer.
+        // First-run steps, then the two sections and the privacy footer.
         assertTrue(hasVisibleText(root, activity.getString(R.string.setup_title)))
         assertTrue(ViewCompat.isAccessibilityHeading(textView(root, activity.getString(R.string.setup_title))))
         assertTrue(hasVisibleText(root, "Infovore"))
         assertTrue(hasVisibleText(root, activity.getString(R.string.footer_privacy)))
 
-        // Nothing saved yet: the connection section starts open, health open, screen recording closed.
+        // Nothing saved yet: the connection and health sections start open.
         val connection = sectionHeader(activity, activity.getString(R.string.section_connection))
         val health = sectionHeader(activity, activity.getString(R.string.section_health))
-        val screen = sectionHeader(activity, activity.getString(R.string.section_screen))
-        for (header in listOf(connection, health, screen)) {
+        for (header in listOf(connection, health)) {
             assertTrue("section header is a heading", ViewCompat.isAccessibilityHeading(header))
             assertTrue(header.isClickable)
         }
         assertEquals(activity.getString(R.string.state_expanded), ViewCompat.getStateDescription(connection))
-        assertEquals(activity.getString(R.string.state_collapsed), ViewCompat.getStateDescription(screen))
         assertTrue(hasVisibleText(root, activity.getString(R.string.label_endpoint)))
-        assertFalse("the sensitive section starts collapsed", hasVisibleText(root, activity.getString(R.string.screen_step_settings)))
-        // The collapsed header names its state for TalkBack.
-        assertTrue(screen.contentDescription.toString().startsWith(activity.getString(R.string.section_screen)))
+        // The retired phone screen recorder has no section any more.
+        assertFalse(hasVisibleText(root, "手機畫面記錄"))
 
         // Health Connect (a fake with nothing granted): the status asks for the permission.
         assertTrue(hasVisibleText(root, activity.getString(R.string.health_sync_heading)))
         // Nothing saved: no sync can start yet.
         assertFalse(Robo.button(root, activity.getString(R.string.action_sync_all)).isEnabled)
 
-        // Expanding the screen section by tapping its header shows its steps.
-        screen.performClick()
+        // Collapsing a section by tapping its header updates its state.
+        health.performClick()
         Robo.idle()
-        assertEquals(activity.getString(R.string.state_expanded), ViewCompat.getStateDescription(screen))
-        assertTrue(hasVisibleText(root, activity.getString(R.string.screen_step_settings)))
-        assertTrue(hasVisibleText(root, activity.getString(R.string.screen_warning)))
+        assertEquals(activity.getString(R.string.state_collapsed), ViewCompat.getStateDescription(health))
+        assertTrue(health.contentDescription.toString().startsWith(activity.getString(R.string.section_health)))
     }
 
     @Test
     fun everyVisibleControlIsAtLeast48dp() {
         val activity = launch().get()
-        sectionHeader(activity, activity.getString(R.string.section_screen)).performClick()
-        Robo.idle()
         assertTouchTargets(activity)
     }
 
@@ -124,9 +117,6 @@ class MainActivityUiTest {
         // 16sp at xhdpi (2.0) is 32px unscaled.
         val intro = textView(activity.root, activity.getString(R.string.header_intro))
         assertTrue("16sp body text is ${intro.textSize}px", intro.textSize > 16f * 2f * 1.2f)
-        sectionHeader(activity, activity.getString(R.string.section_screen)).performClick()
-        Robo.idle()
-        assertTrue(hasVisibleText(activity.root, activity.getString(R.string.screen_step_recording)))
         assertTouchTargets(activity)
         assertTrue(hasVisibleText(activity.root, activity.getString(R.string.footer_privacy)))
     }
@@ -230,51 +220,5 @@ class MainActivityUiTest {
         assertTrue(hasVisibleText(activity.root, "步數"))
         val health = sectionHeader(activity, activity.getString(R.string.section_health))
         assertTrue(health.contentDescription.toString().contains(activity.getString(R.string.health_summary_unverified)))
-    }
-
-    @Test
-    fun theQuarantineWarningIntentOpensTheScreenSection() {
-        val intent = Intent(Robo.app, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN_SCREEN, true)
-        val activity = launch(intent).get()
-        assertEquals(activity.getString(R.string.state_expanded), ViewCompat.getStateDescription(sectionHeader(activity, activity.getString(R.string.section_screen))))
-        assertTrue(hasVisibleText(activity.root, activity.getString(R.string.screen_step_settings)))
-        // Consumed: a recreation does not open it again.
-        assertFalse(activity.intent.hasExtra(MainActivity.EXTRA_OPEN_SCREEN))
-    }
-
-    @Test
-    fun droppedRecordsAreCountedOnScreenAndResetOnlyAfterConfirming() {
-        val queue = ObservationQueue.get(Robo.app)
-        val day = 86_400_000L
-        val now = System.currentTimeMillis()
-        val destination = tw.skyhong.infovore.health.DestinationChange.normalize(Robo.settings().endpoint)
-        for (i in 0 until 2) queue.enqueueJson(destination, now - 9 * day + i, "old$i", "{}")
-        Robo.idle()
-        assertEquals(2L, queue.dropLog().expired)
-
-        val activity = launch().get()
-        val screen = sectionHeader(activity, activity.getString(R.string.section_screen))
-        // Visible on the collapsed header too.
-        assertTrue(screen.contentDescription.toString().contains("已淘汰 2 筆"))
-        screen.performClick()
-        Robo.idle()
-        val box = activity.findViewById<android.widget.TextView>(R.id.screen_dropped)
-        assertEquals(View.VISIBLE, box.visibility)
-        assertTrue(box.text.toString().startsWith("已因過期淘汰 2 筆、因容量淘汰 0 筆（最近："))
-        assertFalse("counts only, never content", box.text.contains("old0"))
-
-        Robo.button(activity.root, activity.getString(R.string.action_reset_dropped)).performClick()
-        Robo.idle()
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        // Cancel keeps the counts.
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
-        Robo.idle()
-        assertEquals(2L, queue.dropLog().expired)
-        Robo.button(activity.root, activity.getString(R.string.action_reset_dropped)).performClick()
-        Robo.idle()
-        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        Robo.idle()
-        assertTrue(queue.dropLog().isEmpty)
-        assertEquals(View.GONE, box.visibility)
     }
 }

@@ -1,41 +1,35 @@
 # Infovore Health for Android
 
-This private companion (current version 0.5.1) reads selected records from Android Health Connect and
+This private companion (current version 0.6.0) reads selected records from Android Health Connect and
 uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
 Google account credentials.
 
-## Activity overview (0.5.1)
+## Phone activity moved to PocketLog (0.6.0)
+
+The phone screen recorder (**手機足跡** / 手機 Dayflow: accessibility capture,
+upload queue, quarantine, private timeline) was removed in 0.6.0; phone activity
+is now recorded by [PocketLog](https://github.com/skyhong2002/PocketLog). The
+server no longer accepts `/api/ingest/dayflow-phone/*`. On first start after the
+upgrade, the app cancels the old periodic upload work, deletes queued screen
+captures (`noBackupFilesDir/screen-queue`), the recorder's settings, its
+Keystore key and any quarantine notification (`RetiredScreenRecorder`). If the
+accessibility service was enabled, Android drops it with the service itself.
+
+## Activity overview
 
 The launch screen follows `/platforms/dayflow`: a tinted source header, four
 outlined stat tiles, distinctive recent keywords, all recent keywords, weekly
-category chips and stacked bars for recent recorded days. Light/dark surfaces,
-compact outlined chips and 16dp/11dp corners match the website. **手機足跡** and
-**電腦 Dayflow** switch the dashboard source. Computer mode reads the same public
-`/api/dayflow.json` as the site; phone mode uses the destination-bound phone token
-and device-scoped private `activity?overview=1` response. No token enters the WebView.
+category chips and stacked bars for recent recorded days, read from the same
+public `/api/dayflow.json` as the site (no credentials are sent). Light/dark
+surfaces, compact outlined chips and 16dp/11dp corners match the website. No
+data is replaced by demonstration content.
 
-Phone aggregates share the computer's interval partitioning, 04:00 Taipei day
-boundary, Monday-based week and keyword comparison windows (recent 7 days versus
-preceding 90 days). Phone keywords are explicitly labelled local text extraction;
-computer AI topic labels are not claimed for phone data. A comparison needs 14
-baseline recorded days and 50 activities; insufficient history has its own note.
-The phone dashboard shows 30 recent days, and tapping a date opens its private
-timeline. No data is replaced by demonstration content.
-
-Bottom navigation has **總覽**, **瀏覽**, **時間軸**, **設定**. Browse keeps the native
-recent public content list with category filters; details open the public site
-inside the app, and external links open in the browser. Recorder controls and
-Health Connect setup remain in the separate settings screen.
-
-The web private timeline is `/phone`, unlocked with `DAYFLOW_PHONE_TOKEN` kept
-only in tab memory. Read endpoints `/api/phone/activity` and
-`/api/ingest/dayflow-phone/activity` accept `day=YYYY-MM-DD`, `deviceId`, and
-optional `overview=1`. Both are authenticated, `no-store`, `noindex`, and vary on
-Authorization. Raw captures are never returned. Daily cards are newest-first,
-clipped at day boundaries, with a truncation flag above 1,000 cards. Dashboard
-aggregates use all intersecting cards rather than the truncated timeline.
+Bottom navigation has **總覽**, **瀏覽**, **設定**. Browse keeps the native recent
+public content list with category filters; details open the public site inside
+the app, and external links open in the browser. Health Connect setup remains in
+the separate settings screen.
 
 ## Data and privacy
 
@@ -49,9 +43,9 @@ safe aggregates and recent workout summaries.
 ## App layout (0.4.1)
 
 The screen is split into a **開始使用** checklist (connection → Health Connect
-permission → first sync, with a button for the next step) and three collapsible
-sections: **連線設定**, **健康資料同步**, and **手機畫面記錄（進階・敏感）**, which
-always starts collapsed. Each section header shows its current state.
+permission → first sync, with a button for the next step) and two collapsible
+sections: **連線設定** and **健康資料同步**. Each section header shows its current
+state.
 
 - Fields are validated before saving, with the reason shown under the field:
   the endpoint must be `https://` (the private Tailscale address allowed in
@@ -66,13 +60,10 @@ always starts collapsed. Each section header shows its current state.
 - Changing the sync destination (the endpoint after normalising case, default
   ports and trailing slashes) clears the Health Connect change token and the
   first-sync flag, so the next **立即同步** re-imports the recent history
-  window into the new server. It asks for confirmation first whenever anything
-  is tied to the old destination: a previous sync, queued phone screen records
-  (the dialog gives their count), or a saved `DAYFLOW_PHONE_TOKEN`, which is
-  cleared and must be re-entered for the new destination. Changing only the
-  token keeps everything. The destination cannot change while a sync or a
-  phone screen upload is running: the change takes both locks or is refused
-  with an explanation.
+  window into the new server. It asks for confirmation first when a previous
+  sync is tied to the old destination. Changing only the token keeps
+  everything. The destination cannot change while a sync is running: the
+  change takes the sync lock or is refused with an explanation.
 - Health Connect status follows `HealthConnectClient.getSdkStatus`: when an
   install or update is required the app offers to open the Play Store; when it
   is unsupported it says so and disables syncing. **只同步睡眠（優先）** needs
@@ -101,10 +92,7 @@ always starts collapsed. Each section header shows its current state.
   retry when that is at least as long, or schedules one follow-up run for when
   the server asked (at most six hours; the status reads **背景同步延後：…約 N
   分鐘後自動重試**). Without a hint the client backs off 1, 2, 4 s and the
-  worker retries with WorkManager's backoff, at most four times a period. The
-  screen-record upload follows the same rules; after a long `Retry-After` the
-  worker and the recording service send nothing until that time, while
-  **立即上傳** always tries.
+  worker retries with WorkManager's backoff, at most four times a period.
 - Times are shown as relative time plus the local date and time, following the
   phone's 12/24-hour setting.
 - **同步失敗時通知我** (off by default): when turned on, the app asks for the
@@ -115,11 +103,10 @@ always starts collapsed. Each section header shows its current state.
   health section. Retries within one six-hour period do not count; a failure
   that needs the user counts at once. The text has
   only the failure count, never health values, error details or tokens. Any
-  successful full sync resets the count and removes the notification. The same
-  switch also covers the screen recorder's quarantine (see 手機 Dayflow).
+  successful full sync resets the count and removes the notification.
   Since 0.4.4 a warning that already applies when notifications are turned on
   (the switch, or the permission granted) is shown at once, once: three or more
-  failed background syncs, or a quarantine at 80% or full. A warning counts as
+  failed background syncs. A warning counts as
   shown only when both the switch and the permission allowed it.
   Since 0.4.5 it also counts as shown only when the system would display it:
   the permission, Infovore's notifications and the **同步問題** channel must
@@ -297,115 +284,6 @@ type interrupted halfway is read again from its start (uploads are
 idempotent). Changing the destination or an expired token discards the saved
 progress.
 
-## 手機 Dayflow
-
-Version 0.2.0 adds a passive phone activity recorder, the Android counterpart of
-Dayflow on macOS. An accessibility service (**Infovore 手機 Dayflow**) records
-what is on screen and queues "observations" that infovore summarizes into
-timeline cards with a vision model on the server. The phone makes no AI calls
-and holds no model keys.
-
-### Setup
-
-1. Set a random `DAYFLOW_PHONE_TOKEN` of at least 32 characters on the infovore
-   ingest service. It is separate from `HEALTH_CONNECT_TOKEN`; without it the
-   server answers 503.
-2. In the app's **手機畫面記錄（進階・敏感）** section, enter the token, tap
-   **儲存畫面記錄設定**, and use **測試連線** (calls `GET /api/ingest/dayflow-phone/status`).
-   The endpoint and device id are shared with the Health Connect section.
-3. Sideloaded APKs must first allow restricted settings: Android Settings →
-   Apps → Infovore → ⋮ → **允許受限制的設定** (Allow restricted settings).
-4. Tap **開啟無障礙設定**, enable **Infovore 手機 Dayflow**, then turn on
-   **啟用記錄** in the app and confirm the dialog. The app never enables
-   recording or the accessibility service by itself.
-
-### What is captured
-
-Each observation holds the capture time, the foreground app's package and
-label, up to 4,000 characters of visible UI text (text and content
-descriptions; password fields are skipped), and optionally a JPEG thumbnail
-(long edge ≤ 720 px, quality 60). A thumbnail is attached only when the
-visible text changed since that app's last thumbnail or five minutes have
-passed. Secure windows (`FLAG_SECURE`), mostly black frames, built-in sensitive
-apps (password managers, authenticators), and packages listed under
-**排除的 App 套件** are recorded as `blocked` with only the package and label.
-The app's own screen and the lock screen are never captured.
-
-### Cadence
-
-Capture runs only while recording is enabled and not paused (**暫停 1 小時**),
-and only while the screen is on and unlocked: once a minute, plus on a
-foreground-app change (at most one capture per five seconds). Observations are
-queued as JSON files in the app's no-backup storage (capped at about 40 MB;
-items older than seven days are dropped, except while a full quarantine stops
-uploads, see below) and uploaded in batches of at most 40
-items and 6 MB to `POST /api/ingest/dayflow-phone/observations`: every five
-minutes from the service while online, every 15 minutes via WorkManager as a
-fallback, and on **立即上傳**. Files are deleted only after the server
-acknowledges them; observation ids make retries idempotent. Network failures
-and HTTP 5xx (including the server's retryable 503 for storage failures) keep
-every record for the next run. When the server rejects a batch as invalid
-(HTTP 400), the app splits it in halves and resends each half until it has
-found the individual records the server rejects; only those are moved to a
-local quarantine (`screen-queue/rejected/`), every valid record still uploads.
-Quarantined records are never sent automatically and never deleted
-automatically: the section shows **N 筆畫面紀錄被伺服器拒收** with
-**刪除被拒收的紀錄**, which asks before deleting them. Since 0.4.1 each record
-is quarantined under its destination (`rejected/d-<hash>/`), and
-**放回佇列重送（N 筆）** puts, after confirmation, the records of the current
-destination back into its upload queue, for when a server-side problem
-rejected valid records. Records of another destination, records quarantined
-before 0.4.1 (destination unknown) and records older than the queue's
-seven-day limit cannot go back and can only be deleted. The quarantine holds
-at most 500 records: at that size every upload stops and the section says so
-(also on its collapsed header, **上傳已停止**) until the user puts records back
-or deletes them. Quarantined records are never deleted automatically. Since
-0.4.3 the time uploads stay stopped does not count toward the current
-destination's seven-day limit (the queue persists the stop period in
-`screen-queue/age-hold`), so records waiting only because of the stop are not
-dropped for their age, and after the user deals with the quarantine they get
-the rest of their seven days to upload. The 40 MB cap still applies throughout
-and drops the oldest records first, so a stop lasting long enough still loses
-records; records of other destinations keep the plain seven-day rule.
-Since 0.4.5 the queue keeps a lasting count of what it dropped before upload,
-in `screen-queue/drop-log` (counts and times only, never content, app names or
-destinations): how many records were dropped for being older than seven days,
-how many by the 40 MB cap, and when each last happened. The section shows
-**已因過期淘汰 N 筆、因容量淘汰 M 筆（最近：…）** (and **已淘汰 N 筆** on the
-collapsed header) until the user presses **重設淘汰計數** and confirms; a
-successful upload, an app restart or the user's own deletions never clear or
-add to it. If more records are dropped between showing the counts and the
-confirmation, nothing is reset and the new counts are shown first. The
-quarantine warns once at 80% (400 records, **被拒收 N 筆** on the collapsed
-header) and once when full: with **同步失敗時通知我** on and the permission
-granted, a notification on the **同步問題** channel (counts only: rejected and
-pending records, never screen content or app names) opens this section, and is
-removed once the user brings the quarantine back down. With notifications off,
-the section shows the state and suggests turning them on; turning them on then
-delivers the current warning once (0.4.4). If the opt-in is on but Infovore's
-notifications or the channel are off in system settings, the section says so
-instead, and the warning is delivered once they are back on (0.4.5). If every record of a
-batch is rejected, the run stops after quarantining that batch so a
-server-side problem cannot drain the queue.
-
-Each observation is filed under the sync destination saved when it was
-captured. An upload run reads the endpoint, phone token and device id once at
-its start and sends every batch of that run there, and it only sends records
-filed under that destination. The phone token is stored with the destination
-it was saved for and is never sent anywhere else. Records left from an earlier
-destination (or queued by a version before 0.3.2, whose destination is
-unknown) are never uploaded automatically and never migrated: the section
-shows **N 筆待傳紀錄屬於舊目的地** with a **刪除這些紀錄** button that asks
-before deleting them. Switching back to the earlier destination uploads them
-there. Changing the destination never turns recording on, never changes the
-exclusion list, and never triggers a capture.
-
-### Privacy
-
-Screen text and thumbnails go only to your own infovore server, which deletes
-the raw observations after summarizing them. The token is encrypted with a
-dedicated Android Keystore key, and the queue is excluded from backup.
-
 ## Build
 
 Install JDK 17 and Android SDK platform 36, then run:
@@ -435,28 +313,27 @@ The tests in `src/test/.../robo/` run the real app on Robolectric 4.16.1 (SDK 34
 the minSdk; SDK 35+ would need JDK 21), still inside `testDebugUnitTest`:
 
 - `MainActivityUiTest` starts `MainActivity` and checks each section (first-run
-  steps, connection, health, the reconcile reminder, the screen recorder):
+  steps, connection, health, the reconcile reminder):
   visible texts, which sections start collapsed, TalkBack headings, state
   descriptions and field errors, that every visible control is at least 48 dp,
   field validation, the unsaved-changes dialog on back, the stale-sync warning,
-  the notification tap's section, the drop-log box and its reset; and that the
-  screen renders at font scale 1.3 in dark mode.
+  and the notification tap's section; and that the screen renders at font scale 1.3 in dark mode.
 - `NotificationsTest` checks what reaches Android's NotificationManager:
   channel, text without secrets, the tap's target and extra, private
   visibility, and that a warning blocked by the permission, Infovore's
   notifications or the channel is not counted and is delivered once allowed.
-- `BackgroundWorkTest` uses WorkManager's test driver: both periodic works are
-  scheduled at start-up with a network constraint, `SyncWorker` retries while a
+- `BackgroundWorkTest` uses WorkManager's test driver: the periodic sync is
+  scheduled at start-up with a network constraint, an upgrade from 0.5.x removes
+  the retired screen recorder's work, files and settings, `SyncWorker` retries while a
   manual sync holds the lock, and a failure that needs the user counts toward
   the warning at once.
-- `BackgroundRetryTest` runs the real `SyncWorker` and `ScreenUploadWorker`
+- `BackgroundRetryTest` runs the real `SyncWorker`
   against `FakeIngestServer`: 400/401/403, a 503 marked not retryable, a refused
   endpoint and missing permissions end the run without a retry; a retryable 503
   retries with backoff and counts only the last attempt; `Retry-After` in
   seconds or as an HTTP date is waited out inside the run, left to WorkManager's
   backoff, or turned into a follow-up run at the server's time (capped at six
-  hours, never chained, cancelled by a later success); screen uploads wait for
-  it except on 「立即上傳」. `RetryPolicyTest` covers the parsing (injected
+  hours, never chained, cancelled by a later success). `RetryPolicyTest` covers the parsing (injected
   clock, invalid values) and every plan.
 - `SyncFlowUiTest` runs the two main flows end to end in the app: pressing
   「立即同步」 on a first run (real `SyncRunner`, `HealthSyncEngine`,
@@ -465,9 +342,6 @@ the minSdk; SDK 35+ would need JDK 21), still inside `testDebugUnitTest`:
   reconcile window the server refuses (HTTP 409 with counts, source apps and a
   confirm token) shown as a reminder with its sources, deleted only after both
   dialogs, with the token sent back, after which the reminder disappears.
-- `ScreenUploadHttpTest` sends queued screen observations through the real
-  `ScreenUploader`: endpoint, phone token, body, a rejected observation
-  quarantined while the rest uploads, and a refused token keeping the queue.
 
 Health Connect does not exist on Robolectric: the tests give
 `HealthConnectAccess` a `FakeHealthConnectClient`, and a stand-in
@@ -524,10 +398,10 @@ without the other. Every other endpoint must use HTTPS.
 
 `MainActivity` only assembles the screen and handles the lifecycle. Each
 section has its own controller in `main/` (`ConnectionController`,
-`HealthController`, `ReconcileController`, `ScreenController`,
+`HealthController`, `ReconcileController`,
 `SetupController`, sharing a `UiHost`), and every state → view decision lives
 in the pure, unit-tested mappers in `ui/` (`HealthStatus`, `ReconcileStatus`,
-`ScreenStatus`, `SetupProgress`, `FormState`, `MainPanels`).
+`SetupProgress`, `FormState`, `MainPanels`).
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions
 also publishes it as the `infovore-health-debug` workflow artifact.

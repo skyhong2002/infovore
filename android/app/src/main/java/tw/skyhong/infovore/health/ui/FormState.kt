@@ -21,12 +21,6 @@ object FormState {
         else -> SaveState.INCOMPLETE
     }
 
-    fun screen(dirty: Boolean, justSaved: Boolean): SaveState = when {
-        dirty -> SaveState.UNSAVED
-        justSaved -> SaveState.JUST_SAVED
-        else -> SaveState.CLEAN
-    }
-
     /** Leaving the screen asks first only when a form has unsaved edits. */
-    fun confirmBeforeLeaving(connectionDirty: Boolean, screenDirty: Boolean): Boolean = connectionDirty || screenDirty
+    fun confirmBeforeLeaving(connectionDirty: Boolean): Boolean = connectionDirty
 }

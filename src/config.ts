@@ -36,9 +36,6 @@ export function parsePushedDelayHours(text: string, fallbackHours: number): Reco
 const ingestToken = process.env.INGEST_TOKEN ?? '';
 const dayflowToken = process.env.DAYFLOW_TOKEN ?? '';
 if (dayflowToken && dayflowToken.length < 32) throw new Error('DAYFLOW_TOKEN must contain at least 32 characters');
-const dayflowPhoneToken = process.env.DAYFLOW_PHONE_TOKEN ?? '';
-if (dayflowPhoneToken && dayflowPhoneToken.length < 32) throw new Error('DAYFLOW_PHONE_TOKEN must contain at least 32 characters');
-if (dayflowPhoneToken && dayflowPhoneToken === dayflowToken) throw new Error('DAYFLOW_PHONE_TOKEN must differ from DAYFLOW_TOKEN');
 const computaiToken = process.env.COMPUTAI_TOKEN ?? '';
 if (computaiToken && computaiToken.length < 32) throw new Error('COMPUTAI_TOKEN must contain at least 32 characters');
 const healthConnectToken = process.env.HEALTH_CONNECT_TOKEN ?? ingestToken;
@@ -69,7 +66,7 @@ export const config = {
   publicBaseUrl,
   ingestToken,
   healthConnect: { token: healthConnectToken },
-  dayflow: { token: dayflowToken, phoneToken: dayflowPhoneToken, quality: dayflowQuality },
+  dayflow: { token: dayflowToken, quality: dayflowQuality },
   computai: { token: computaiToken },
   maxSourceAgeHours,
   // After how many hours without a successful sync a source is shown as

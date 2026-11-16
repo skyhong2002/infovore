@@ -10,8 +10,6 @@ import tw.skyhong.infovore.health.InfovoreApi
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
-import java.time.Instant
-import java.time.ZoneId
 
 class StatusMappingTest {
     private val sleep = "perm.SLEEP"
@@ -195,78 +193,6 @@ class StatusMappingTest {
         // Token removed after a completed import: step 1 is the next step, step 3 stays done.
         val steps = SetupProgress.compute(connectionSaved = false, permissionsGranted = true, firstSyncDone = true)
         assertEquals(listOf(StepState.CURRENT, StepState.DONE, StepState.DONE), steps.map { it.state })
-    }
-
-    private val zone = ZoneId.of("Asia/Taipei")
-    private val nowMs = Instant.parse("2026-11-12T06:00:00Z").toEpochMilli()
-
-    private fun screen(
-        enabled: Boolean = false,
-        pausedUntil: Long = 0,
-        service: Boolean = false,
-        token: Boolean = true,
-        pending: Int = 0,
-        otherDestinationPending: Int = 0,
-    ) = ScreenStatus.map(
-        ScreenInputs(
-            recordingEnabled = enabled,
-            pausedUntilMs = pausedUntil,
-            serviceEnabled = service,
-            tokenConfigured = token,
-            pending = pending,
-            lastCaptureAtMs = 0,
-            lastUploadStatus = "尚未上傳",
-            nowMs = nowMs,
-            zone = zone,
-            otherDestinationPending = otherDestinationPending,
-        ),
-    )
-
-    @Test
-    fun recordsFromAnEarlierDestinationAreReportedButNotUploadable() {
-        assertNull(screen(pending = 3).otherDestinationNote)
-        val ui = screen(token = true, pending = 0, otherDestinationPending = 5)
-        assertTrue(ui.otherDestinationNote!!.startsWith("5 筆待傳紀錄屬於舊目的地"))
-        assertTrue(ui.details.contains("舊目的地：5 筆（不會上傳）"))
-        // Only the current destination's queue enables uploading.
-        assertFalse(ui.uploadEnabled)
-        assertEquals("佇列中沒有待上傳的紀錄", ui.uploadHint)
-    }
-
-    @Test
-    fun screenRecordingStates() {
-        assertEquals(ScreenState.OFF, screen().state)
-        assertEquals(ScreenState.NEEDS_SERVICE, screen(enabled = true).state)
-        assertEquals(ScreenState.RECORDING, screen(enabled = true, service = true).state)
-        val paused = screen(enabled = true, service = true, pausedUntil = nowMs + 42 * 60_000)
-        assertEquals(ScreenState.PAUSED, paused.state)
-        assertEquals("已暫停至 14:42（42 分鐘後恢復）", paused.headline)
-        assertEquals("恢復記錄", paused.pauseLabel)
-    }
-
-    @Test
-    fun screenOffNeverSuggestsItIsRecordingAndPauseIsDisabled() {
-        val ui = screen()
-        assertEquals("關閉", ui.summary)
-        assertFalse(ui.pauseEnabled)
-        assertTrue(ui.nextStep!!.startsWith("如要使用"))
-    }
-
-    @Test
-    fun screenWarnsWhenRecordingWithoutToken() {
-        val ui = screen(enabled = true, service = true, token = false, pending = 3)
-        assertEquals(Tone.WARNING, ui.tone)
-        assertTrue(ui.nextStep!!.contains("DAYFLOW_PHONE_TOKEN"))
-        assertFalse(ui.uploadEnabled)
-        assertEquals("記錄中 · 佇列 3 筆", ui.summary)
-        assertTrue(ui.details.contains("最後擷取：尚未擷取"))
-    }
-
-    @Test
-    fun uploadNeedsTokenAndPendingItems() {
-        assertTrue(screen(pending = 2).uploadEnabled)
-        assertFalse(screen(pending = 0).uploadEnabled)
-        assertEquals("佇列中沒有待上傳的紀錄", screen(pending = 0).uploadHint)
     }
 
     @Test

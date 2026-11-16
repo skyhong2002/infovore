@@ -12,7 +12,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import tw.skyhong.infovore.health.SyncFailureAlerts.Delivery
-import tw.skyhong.infovore.health.screen.ScreenUploader
 
 /**
  * Applies [SyncFailureAlerts] decisions: keeps the consecutive-failure count in [SecureSettings]
@@ -20,8 +19,7 @@ import tw.skyhong.infovore.health.screen.ScreenUploader
  * section. Notifications are posted only when the user turned them on in the app and the system
  * would show them ([delivery]: POST_NOTIFICATIONS, Infovore's notifications and the channel all
  * on); the text never contains health values, error details or tokens. A warning that could not
- * be shown is not counted as delivered, and is delivered by [catchUp] once it can be. The same
- * channel and opt-in carry the screen-record quarantine warning ([QuarantineNotifier]).
+ * be shown is not counted as delivered, and is delivered by [catchUp] once it can be.
  */
 object SyncFailureNotifier {
     const val CHANNEL_ID = "sync_problems"
@@ -31,7 +29,6 @@ object SyncFailureNotifier {
         val shown = delivery(context).shown
         val decision = SyncFailureAlerts.next(settings.backgroundFailures, outcome, settings.notifyOnSyncFailure && shown)
         if (decision.failures != settings.backgroundFailures) settings.backgroundFailures = decision.failures
-        // A successful sync removes only its own warning; the screen quarantine's stays.
         if (decision.clear) {
             NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
             settings.syncFailureNotified = false
@@ -47,7 +44,7 @@ object SyncFailureNotifier {
      * Called when notifications were just turned on (the switch, or the permission granted) and
      * whenever the app comes back to the foreground, where the user may have turned Infovore's
      * notifications or the "同步問題" channel back on in system settings: shows the warnings that
-     * already apply (background syncs failing, the screen quarantine filling or full) and were
+     * already apply (background syncs failing) and were
      * not delivered yet, instead of waiting for the next change. Each still shows once.
      */
     fun catchUp(context: Context, settings: SecureSettings) {
@@ -57,7 +54,6 @@ object SyncFailureNotifier {
         if (SyncFailureAlerts.catchUp(settings.backgroundFailures, enabled, settings.syncFailureNotified)) {
             settings.syncFailureNotified = show(context, settings.backgroundFailures)
         }
-        ScreenUploader.recheckQuarantine(context)
     }
 
     fun permissionGranted(context: Context): Boolean =
@@ -87,14 +83,12 @@ object SyncFailureNotifier {
         }
 
     /**
-     * When the user turns notifications off: removes this notification and the screen-record
-     * quarantine warning, and forgets that they were shown, so turning them on again delivers
-     * the warnings that still apply ([catchUp]).
+     * When the user turns notifications off: removes this notification and forgets that it was
+     * shown, so turning them on again delivers the warning if it still applies ([catchUp]).
      */
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
         SecureSettings(context).syncFailureNotified = false
-        QuarantineNotifier.withdraw(context)
     }
 
     private fun show(context: Context, failures: Int): Boolean {

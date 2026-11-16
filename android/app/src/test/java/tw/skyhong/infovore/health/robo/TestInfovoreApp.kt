@@ -16,12 +16,11 @@ import tw.skyhong.infovore.health.SyncEnvironment
 import tw.skyhong.infovore.health.SyncRunner
 import tw.skyhong.infovore.health.SyncState
 import tw.skyhong.infovore.health.InfovoreHealthApp
-import tw.skyhong.infovore.health.screen.ObservationQueue
 
 /**
  * The Robolectric application (robolectric.properties): Robolectric does not run the androidx
  * start-up provider that initialises WorkManager, so this initialises a test WorkManager first,
- * then runs the app's real start-up ([InfovoreHealthApp.start], which schedules both workers).
+ * then runs the app's real start-up ([InfovoreHealthApp.start], which schedules the periodic sync).
  *
  * Robolectric creates a fresh application, with fresh files and preferences, for every test but
  * keeps the classes (and so process-wide singletons) loaded; per-test state is reset here.
@@ -30,8 +29,6 @@ class TestInfovoreApp : Application() {
     override fun onCreate() {
         super.onCreate()
         FakeAndroidKeyStore.install()
-        // The queue singleton would otherwise keep the previous test's files directory.
-        ObservationQueue::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, null)
         // Process-wide test seams and the shared sync state would otherwise leak from the previous test.
         EndpointPolicy.testHttpHost = null
         SyncEnvironment.testClock = null

@@ -107,7 +107,7 @@ test('device-pushed sources explain where their errors are reported', () => {
       { source: 'dayflow', lastFetched: '2026-11-08T07:00:00Z', error: null, json: '/api/dayflow.json' }] }));
   assert.match(page('tbody tr').first().text(), /pushed from a device/);
   assert.match(page('tbody tr').last().text(), /Delayed[\s\S]*check that the device app is running/);
-  assert.match(page('.feed-note').text(), /Phone screen activity is not listed/);
+  assert.doesNotMatch(page('.feed-note').text(), /Phone screen activity/);
 });
 
 test('responses carry baseline security headers and search states its coverage', async () => {

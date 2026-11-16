@@ -22,7 +22,6 @@ import java.util.concurrent.TimeUnit
 object Robo {
     const val ENDPOINT = "https://infovore.example"
     const val HEALTH_TOKEN = "robolectric-health-token-0123456789abcdef"
-    const val PHONE_TOKEN = "robolectric-phone-token-0123456789abcdef"
 
     val app: Application get() = ApplicationProvider.getApplicationContext()
 
@@ -50,15 +49,6 @@ object Robo {
                 grantPermissions(HealthConnectSync.readPermissions)
             },
         )
-    }
-
-    /** Puts [count] records into the current destination's quarantine, as rejected uploads would. */
-    fun fillQuarantine(count: Int) {
-        val destination = tw.skyhong.infovore.health.DestinationChange.normalize(settings().endpoint)
-        val dir = java.io.File(app.noBackupFilesDir, "screen-queue/rejected/" + tw.skyhong.infovore.health.screen.ObservationQueue.bucketName(destination))
-        dir.mkdirs()
-        val now = System.currentTimeMillis()
-        repeat(count) { i -> java.io.File(dir, "${(now - i).toString().padStart(15, '0')}-r$i.json").writeText("{}") }
     }
 
     fun idle() = shadowOf(Looper.getMainLooper()).idle()

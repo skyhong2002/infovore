@@ -70,14 +70,4 @@ class InputValidationTest {
         assertNull((InputValidation.historyDays("30") as FieldResult.Valid).note)
     }
 
-    @Test
-    fun exclusionsReportInvalidEntriesInsteadOfDroppingThem() {
-        val ok = InputValidation.exclusions("com.bank.app, tw.example.pay\n") as FieldResult.Valid
-        assertEquals("com.bank.app, tw.example.pay", ok.value)
-        assertEquals("將排除 2 個自訂套件", ok.note)
-        assertNull((InputValidation.exclusions("  ") as FieldResult.Valid).note)
-
-        val bad = InputValidation.exclusions("com.bank.app, banking, 1bad.pkg")
-        assertTrue(bad.errorOrNull!!.contains("banking、1bad.pkg"))
-    }
 }

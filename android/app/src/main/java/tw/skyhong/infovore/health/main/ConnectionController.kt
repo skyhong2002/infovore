@@ -8,8 +8,6 @@ import tw.skyhong.infovore.health.DestinationChange
 import tw.skyhong.infovore.health.R
 import tw.skyhong.infovore.health.SecureSettings
 import tw.skyhong.infovore.health.SyncRunner
-import tw.skyhong.infovore.health.screen.ObservationQueue
-import tw.skyhong.infovore.health.screen.ScreenUploader
 import tw.skyhong.infovore.health.ui.CollapsibleSection
 import tw.skyhong.infovore.health.ui.ConnectionSummary
 import tw.skyhong.infovore.health.ui.Field
@@ -31,7 +29,6 @@ import java.time.Instant
  */
 class ConnectionController(
     private val host: UiHost,
-    private val screen: ScreenController,
     /** Whether the Health Connect history permission is granted (for the re-import window). */
     private val historyPermissionGranted: () -> Boolean,
     /** A field changed: the health section re-checks whether syncing may start. */
@@ -172,7 +169,7 @@ class ConnectionController(
             DestinationChange.Action.KEEP -> commit(endpointValue, tokenValue, daysValue, reset = null, showSuccess)
             DestinationChange.Action.RESET -> commit(endpointValue, tokenValue, daysValue, reset = ResetKind.QUIET, showSuccess)
             DestinationChange.Action.CONFIRM_RESET -> {
-                if (model.sync.value.busy || ScreenUploader.isUploading) {
+                if (model.sync.value.busy) {
                     showDestinationBusy()
                     return SaveResult.BLOCKED
                 }
@@ -202,23 +199,16 @@ class ConnectionController(
         } else {
             val reimportDays = DestinationChange.reimportDays(daysValue, historyPermissionGranted())
             val status = if (reset == ResetKind.REIMPORT) "${Instant.now()}：${DestinationChange.resetStatus(reimportDays)}" else null
-            // Under both the screen-upload and the sync lock, so neither an upload run nor a sync can
-            // straddle the change or write the old destination's state afterwards. The phone token
-            // belongs to the old destination and is cleared; queued screen records stay filed
-            // under the old destination and are never sent to the new one.
-            var done = false
-            ScreenUploader.tryExclusive {
-                done = SyncRunner.coordinator.tryExclusive {
-                    settings.changeEndpointAndResetSync(endpointValue, status)
-                    host.screenSettings.clearToken()
-                }
+            // Under the sync lock, so no sync can straddle the change or write the old
+            // destination's state afterwards.
+            val done = SyncRunner.coordinator.tryExclusive {
+                settings.changeEndpointAndResetSync(endpointValue, status)
             }
             if (!done) {
                 showDestinationBusy()
                 return SaveResult.BLOCKED
             }
             reimportDaysAfterSave = if (reset == ResetKind.REIMPORT) reimportDays else null
-            screen.forgetTokenForNewDestination()
         }
         settings.token = tokenValue
         savedHealthToken = tokenValue
@@ -241,12 +231,8 @@ class ConnectionController(
         kit.setTone(saveState, Tone.ERROR, tintBackground = false)
     }
 
-    /** What is tied to the saved destination: sync progress, queued screen records, a phone token. */
-    private fun destinationTies() = DestinationChange.Ties(
-        hasSyncProgress = settings.hasSyncProgress,
-        screenPending = ObservationQueue.get(host.activity).count(host.currentDestination()),
-        phoneTokenSaved = screen.phoneTokenSaved,
-    )
+    /** What is tied to the saved destination: sync progress. */
+    private fun destinationTies() = DestinationChange.Ties(hasSyncProgress = settings.hasSyncProgress)
 
     fun render() {
         if (!::saveState.isInitialized) return

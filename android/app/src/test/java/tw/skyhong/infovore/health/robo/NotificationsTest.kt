@@ -17,13 +17,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import tw.skyhong.infovore.health.MainActivity
-import tw.skyhong.infovore.health.QuarantineNotifier
 import tw.skyhong.infovore.health.R
 import tw.skyhong.infovore.health.SyncFailureAlerts
 import tw.skyhong.infovore.health.SyncFailureAlerts.Outcome
 import tw.skyhong.infovore.health.SyncFailureNotifier
-import tw.skyhong.infovore.health.screen.QuarantineAlerts.Level
-import tw.skyhong.infovore.health.screen.ScreenSettings
 
 /**
  * The "同步問題" notifications as the system receives them (Robolectric's NotificationManager):
@@ -55,7 +52,7 @@ class NotificationsTest {
             .joinToString("\n") { extras.getCharSequence(it)?.toString().orEmpty() }
 
     private fun assertNoSecrets(text: String) {
-        for (secret in listOf(Robo.ENDPOINT, "infovore.example", Robo.HEALTH_TOKEN, Robo.PHONE_TOKEN, "http", "Exception", "com.")) {
+        for (secret in listOf(Robo.ENDPOINT, "infovore.example", Robo.HEALTH_TOKEN, "http", "Exception", "com.")) {
             assertFalse("notification mentions \"$secret\": $text", text.contains(secret))
         }
     }
@@ -65,51 +62,35 @@ class NotificationsTest {
         assertTrue(notification.contentIntent.isActivity)
         assertEquals(MainActivity::class.java.name, intent.component?.className)
         assertTrue(intent.getBooleanExtra(extra, false))
-        val other = if (extra == MainActivity.EXTRA_OPEN_HEALTH) MainActivity.EXTRA_OPEN_SCREEN else MainActivity.EXTRA_OPEN_HEALTH
-        assertFalse(intent.hasExtra(other))
     }
 
     @Test
-    fun aFullQuarantinePostsOnePrivateWarningThatOpensTheScreenSection() {
+    fun repeatedBackgroundFailuresPostOnePrivateWarningThatOpensTheHealthSection() {
         Robo.saveConnection()
         optIn()
-        QuarantineNotifier.record(Robo.app, rejected = 500, pending = 7)
-        val notification = requireNotNull(posted(QuarantineNotifier.NOTIFICATION_ID))
+        repeat(SyncFailureAlerts.THRESHOLD) { SyncFailureNotifier.record(Robo.app, Robo.settings(), Outcome.FINAL_FAILURE) }
+        val notification = requireNotNull(posted(SyncFailureNotifier.NOTIFICATION_ID))
         assertEquals(channelId, notification.channelId)
         assertEquals(Robo.app.getString(R.string.notification_channel_sync), Robo.notifications.getNotificationChannel(channelId).name)
         assertEquals(NotificationManager.IMPORTANCE_DEFAULT, Robo.notifications.getNotificationChannel(channelId).importance)
         assertEquals(Notification.VISIBILITY_PRIVATE, notification.visibility)
         assertEquals(Notification.CATEGORY_ERROR, notification.category)
-        val text = notification.allText()
-        assertTrue(text.contains("Infovore 畫面紀錄已停止上傳"))
-        assertTrue(text.contains("500") && text.contains("7 筆待傳"))
-        assertNoSecrets(text)
-        assertOpens(notification, MainActivity.EXTRA_OPEN_SCREEN)
-        assertEquals(Level.FULL, ScreenSettings(Robo.app).quarantineAlertLevel)
+        assertNoSecrets(notification.allText())
+        assertOpens(notification, MainActivity.EXTRA_OPEN_HEALTH)
         assertEquals(1, Robo.shadowNotifications.size())
-
-        // Nothing repeats at the same level; dealt with, it is withdrawn.
-        Robo.notifications.cancel(QuarantineNotifier.NOTIFICATION_ID)
-        QuarantineNotifier.record(Robo.app, rejected = 500, pending = 9)
-        assertNull(posted(QuarantineNotifier.NOTIFICATION_ID))
-        QuarantineNotifier.record(Robo.app, rejected = 450, pending = 9)
-        assertNull(posted(QuarantineNotifier.NOTIFICATION_ID))
-        assertEquals(Level.NEAR, ScreenSettings(Robo.app).quarantineAlertLevel)
     }
 
     @Test
     fun withoutTheOptInOrThePermissionNothingIsPostedOrCounted() {
         Robo.grantNotificationPermission()
-        QuarantineNotifier.record(Robo.app, rejected = 500, pending = 1)
-        assertEquals(0, Robo.shadowNotifications.size())
-        assertEquals(Level.NONE, ScreenSettings(Robo.app).quarantineAlertLevel)
-
-        Robo.settings().notifyOnSyncFailure = true
-        Robo.denyNotificationPermission()
-        QuarantineNotifier.record(Robo.app, rejected = 500, pending = 1)
         repeat(SyncFailureAlerts.THRESHOLD) { SyncFailureNotifier.record(Robo.app, Robo.settings(), Outcome.FINAL_FAILURE) }
         assertEquals(0, Robo.shadowNotifications.size())
-        assertEquals(Level.NONE, ScreenSettings(Robo.app).quarantineAlertLevel)
+
+        Robo.settings().backgroundFailures = 0
+        Robo.settings().notifyOnSyncFailure = true
+        Robo.denyNotificationPermission()
+        repeat(SyncFailureAlerts.THRESHOLD) { SyncFailureNotifier.record(Robo.app, Robo.settings(), Outcome.FINAL_FAILURE) }
+        assertEquals(0, Robo.shadowNotifications.size())
         assertFalse(Robo.settings().syncFailureNotified)
         assertEquals(SyncFailureAlerts.Delivery.NO_PERMISSION, SyncFailureNotifier.delivery(Robo.app))
     }
@@ -121,11 +102,8 @@ class NotificationsTest {
         setChannelImportance(NotificationManager.IMPORTANCE_NONE)
         assertEquals(SyncFailureAlerts.Delivery.CHANNEL_BLOCKED, SyncFailureNotifier.delivery(Robo.app))
 
-        Robo.fillQuarantine(500)
-        QuarantineNotifier.record(Robo.app, rejected = 500, pending = 0)
         repeat(SyncFailureAlerts.THRESHOLD) { SyncFailureNotifier.record(Robo.app, Robo.settings(), Outcome.FINAL_FAILURE) }
         assertEquals(0, Robo.shadowNotifications.size())
-        assertEquals(Level.NONE, ScreenSettings(Robo.app).quarantineAlertLevel)
         assertFalse(Robo.settings().syncFailureNotified)
         assertEquals(SyncFailureAlerts.THRESHOLD, Robo.settings().backgroundFailures)
 
@@ -133,10 +111,8 @@ class NotificationsTest {
         setChannelImportance(NotificationManager.IMPORTANCE_DEFAULT)
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         Robo.waitFor { posted(SyncFailureNotifier.NOTIFICATION_ID) != null }
-        Robo.waitFor { posted(QuarantineNotifier.NOTIFICATION_ID) != null }
         assertTrue(posted(SyncFailureNotifier.NOTIFICATION_ID)!!.allText().contains("連續失敗 3 次"))
         assertTrue(Robo.settings().syncFailureNotified)
-        assertEquals(Level.FULL, ScreenSettings(Robo.app).quarantineAlertLevel)
 
         // Delivered once: dismissed by the user, a later return to the app does not repeat it.
         Robo.notifications.cancelAll()

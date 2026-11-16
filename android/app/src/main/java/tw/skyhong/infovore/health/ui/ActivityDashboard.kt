@@ -23,16 +23,16 @@ import kotlin.math.roundToInt
 
 /** Native version of /platforms/dayflow: outlined stats, topic chips and stacked daily bars. */
 class ActivityDashboard(private val context: Context, private val kit: ViewKit) {
-    fun render(data: JSONObject, phone: Boolean, onDay: (String) -> Unit): View {
+    fun render(data: JSONObject): View {
         val root = kit.column()
         val extra = data.getJSONObject("extra")
         val stats = data.getJSONObject("stats")
         val days = extra.getJSONArray("daily")
-        root.addView(hero(extra, phone))
+        root.addView(hero(extra))
         val overview = panel()
         overview.addView(kit.heading(Style.SUBHEAD, "時數總覽"))
         val metrics = listOf(
-            (if (phone) "近 30 天有紀錄" else "有紀錄天數") to "${stats.optInt("recordedDays")} 天",
+            "有紀錄天數" to "${stats.optInt("recordedDays")} 天",
             "今日記錄" to duration(stats.optDouble("todayMinutes")),
             "本週記錄" to hours(stats.optDouble("weeklyHours")),
             "本週活躍" to hours(stats.optDouble("weeklyActiveHours")),
@@ -65,7 +65,7 @@ class ActivityDashboard(private val context: Context, private val kit: ViewKit) 
         val all = pools?.optJSONArray("all") ?: extra.optJSONArray("keywords") ?: JSONArray()
         if (all.length() == 0) root.addView(kit.text(Style.CAPTION, "目前沒有可顯示的關鍵字。"))
         else root.addView(chips(all) { item -> "${item.getString("name")} · ${item.optInt("mentions")} 段活動" })
-        root.addView(note(if (phone) "從已整理的手機活動標題與摘要擷取關鍵字；未做電腦 Dayflow 的 AI 主題分類。次數不是使用時長，主題可能重疊。" else "與網頁 Dayflow 使用相同的主題統計。次數為活動提及，不是使用時長；主題可能重疊。"), ViewKit.matchWrap(kit.dp(12)))
+        root.addView(note("與網頁 Dayflow 使用相同的主題統計。次數為活動提及，不是使用時長；主題可能重疊。"), ViewKit.matchWrap(kit.dp(12)))
 
         heading(root, "本週分類", "週一至週日 · 04:00 分日")
         val categories = extra.getJSONArray("categories")
@@ -90,26 +90,23 @@ class ActivityDashboard(private val context: Context, private val kit: ViewKit) 
             card.addView(kit.text(Style.CAPTION, "${duration(day.optDouble("activeMinutes"))} 活躍 · ${duration(day.optDouble("idleMinutes"))} 閒置"), ViewKit.matchWrap(kit.dp(8)))
             val keywords = day.optJSONArray("keywords")
             if (keywords != null && keywords.length() > 0) card.addView(kit.text(Style.CAPTION, (0 until keywords.length()).map { keywords.getJSONObject(it).getString("name") }.joinToString(" · ")), ViewKit.matchWrap(kit.dp(4)))
-            if (phone) {
-                card.addView(kit.textButton("查看 $date 活動  →").apply { setOnClickListener { onDay(date) } }, ViewKit.matchWrap(kit.dp(4)))
-            }
             root.addView(card, ViewKit.matchWrap(kit.dp(8)))
         }
-        root.addView(note(if (phone) "手機抽樣記錄獨立計算，可能與電腦時間重疊。活動摘要只在私人介面顯示，原始畫面不會出現在這裡。" else "電腦時間包含閒置，排除分析錯誤；可能與音樂、影片及手機時間重疊。完整電腦活動描述維持私密。"), ViewKit.matchWrap(kit.dp(16)))
+        root.addView(note("電腦時間包含閒置，排除分析錯誤；可能與音樂、影片時間重疊。完整電腦活動描述維持私密。"), ViewKit.matchWrap(kit.dp(16)))
         return root
     }
 
-    private fun hero(extra: JSONObject, phone: Boolean): View = panel().apply {
+    private fun hero(extra: JSONObject): View = panel().apply {
         background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(kit.color(R.color.dashboard_hero), kit.color(R.color.card_background))).apply {
             cornerRadius = kit.dp(16).toFloat()
             setStroke(kit.dp(1), kit.color(R.color.card_stroke))
         }
-        addView(kit.text(Style.CAPTION, if (phone) "INFOVORE · 手機活動" else "INFOVORE MIRROR · DAYFLOW").apply { setTextColor(kit.color(R.color.dashboard_accent)) })
-        addView(kit.heading(Style.TITLE, if (phone) "手機足跡" else "Dayflow"), ViewKit.matchWrap(kit.dp(6)))
-        addView(kit.text(Style.CAPTION, if (phone) "每天的手機活動、主題、分類與活躍時間。" else "每天的電腦活動、主題、分類與活躍時間。"), ViewKit.matchWrap(kit.dp(6)))
+        addView(kit.text(Style.CAPTION, "INFOVORE MIRROR · DAYFLOW").apply { setTextColor(kit.color(R.color.dashboard_accent)) })
+        addView(kit.heading(Style.TITLE, "Dayflow"), ViewKit.matchWrap(kit.dp(6)))
+        addView(kit.text(Style.CAPTION, "每天的電腦活動、主題、分類與活躍時間。"), ViewKit.matchWrap(kit.dp(6)))
         val at = extra.optString("lastSyncedAt")
         val stamp = runCatching { DateTimeFormatter.ofPattern("M/d HH:mm").withZone(ZoneId.of("Asia/Taipei")).format(Instant.parse(at)) }.getOrNull()
-        addView(kit.text(Style.CAPTION, if (stamp == null) "尚未收到紀錄" else "${if (phone) "最新記錄" else "最後同步"} $stamp"), ViewKit.matchWrap(kit.dp(12)))
+        addView(kit.text(Style.CAPTION, if (stamp == null) "尚未收到紀錄" else "最後同步 $stamp"), ViewKit.matchWrap(kit.dp(12)))
     }
 
     private fun heading(root: LinearLayout, title: String, description: String) {

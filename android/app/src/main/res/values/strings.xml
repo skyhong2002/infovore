@@ -1,11 +1,9 @@
 <resources>
     <string name="app_name">Infovore</string>
-    <string name="screen_service_label">Infovore 手機足跡</string>
-    <string name="screen_service_description">在螢幕開啟且已解鎖時，約每分鐘及切換 App 時記錄前景 App 名稱、畫面上可見的文字，並視需要附上一張小縮圖，上傳到你自己的 infovore 伺服器，由伺服器以 AI 摘要成時間軸後刪除原始資料。密碼欄位、禁止截圖的安全畫面與你排除的 App 不會擷取文字或畫面。可在 Infovore App 內暫停或關閉記錄。</string>
 
     <!-- Header and first-run steps -->
     <string name="header_version">版本 %1$s</string>
-    <string name="header_intro">管理連線、健康同步與手機足跡。</string>
+    <string name="header_intro">管理連線與健康資料同步。</string>
     <string name="setup_title">開始使用</string>
     <string name="setup_step_row">%1$s  %2$d. %3$s\n%4$s</string>
     <string name="field_error">⚠ %1$s</string>
@@ -16,7 +14,6 @@
     <!-- Collapsible sections -->
     <string name="section_connection">連線設定</string>
     <string name="section_health">健康資料同步</string>
-    <string name="section_screen">手機足跡設定</string>
     <string name="state_expanded">已展開</string>
     <string name="state_collapsed">已收合</string>
     <string name="action_expand">展開</string>
@@ -40,27 +37,6 @@
     <string name="destination_change_ok">變更並重新匯入</string>
     <string name="destination_change_ok_no_reimport">變更目的地</string>
     <string name="destination_change_busy">健康同步或畫面記錄上傳進行中，完成後才能變更同步目的地</string>
-    <string name="action_delete_other_destination">刪除這些紀錄</string>
-    <string name="delete_other_destination_title">刪除舊目的地的待傳紀錄？</string>
-    <string name="delete_other_destination_message">手機上有 %1$d 筆畫面記錄屬於先前的同步目的地，還沒上傳。刪除後無法復原，也不會送到任何伺服器。</string>
-    <string name="delete_other_destination_ok">刪除</string>
-    <string name="delete_other_destination_done">已刪除 %1$d 筆舊目的地的紀錄</string>
-    <string name="delete_other_destination_busy">畫面記錄正在上傳，請稍後再刪除</string>
-    <string name="action_delete_rejected">刪除被拒收的紀錄</string>
-    <string name="delete_rejected_title">刪除被伺服器拒收的畫面紀錄？</string>
-    <string name="delete_rejected_message">%1$d 筆畫面紀錄被伺服器拒收，已移出上傳佇列且不會再送出。刪除後無法復原。</string>
-    <string name="delete_rejected_done">已刪除 %1$d 筆被拒收的紀錄</string>
-    <string name="requeue_rejected_title">把被拒收的畫面紀錄放回佇列重送？</string>
-    <string name="requeue_rejected_message">%1$d 筆被拒收的紀錄會放回目前目的地的上傳佇列，下次上傳時再送出一次。只在伺服器端的問題已修正時才這樣做；若伺服器仍拒收，它們會再次移到隔離區。</string>
-    <string name="requeue_rejected_others">另有 %1$d 筆屬於其他目的地或已超過 7 天，會留在隔離區，只能刪除。</string>
-    <string name="requeue_rejected_ok">放回佇列</string>
-    <string name="requeue_rejected_done">已放回 %1$d 筆紀錄到上傳佇列</string>
-    <string name="action_reset_dropped">重設淘汰計數</string>
-    <string name="reset_dropped_title">重設淘汰計數？</string>
-    <string name="reset_dropped_message">已因過期淘汰 %1$d 筆、因容量淘汰 %2$d 筆的計數會歸零。這只清除計數，不會刪除或恢復任何紀錄（被淘汰的紀錄已經刪除）。</string>
-    <string name="reset_dropped_ok">歸零</string>
-    <string name="reset_dropped_changed">剛才又有紀錄被淘汰，請先看更新後的計數</string>
-    <string name="screen_records_busy">畫面記錄正在上傳，請稍後再試</string>
     <string name="connection_summary_ready">已設定 · %1$s</string>
     <string name="connection_summary_unsaved">有未儲存的變更</string>
     <string name="connection_summary_incomplete">尚未完成</string>
@@ -100,33 +76,7 @@
     <string name="health_background_note">背景同步每 6 小時在有網路時執行一次。使用私網位址時請保持 Tailscale 連線，並在 Garmin Connect → 設定 → Health Connect 開啟資料分享。</string>
 
     <!-- Phone screen recording -->
-    <string name="screen_warning">敏感功能，預設關閉。啟用後，App 會透過無障礙服務記錄前景 App 名稱、畫面上的文字（密碼欄位除外）與小縮圖，上傳到你的 Infovore 伺服器整理成時間軸，伺服器摘要後刪除原始資料。安全畫面、密碼管理器與你排除的 App 只記錄名稱。每一步都需要你手動完成，隨時可以暫停或關閉。</string>
-    <string name="screen_step_settings">1. 上傳 token 與排除的 App</string>
-    <string name="label_phone_token">DAYFLOW_PHONE_TOKEN（選填）</string>
-    <string name="help_phone_token">至少 32 字元，與健康同步的 token 不同；使用上方連線設定的網址。</string>
-    <string name="label_exclusions">排除的 App 套件</string>
-    <string name="help_exclusions">以逗號或換行分隔。密碼管理器與驗證器等 %1$d 個 App 已預設排除。</string>
-    <string name="action_save_screen">儲存畫面記錄設定</string>
-    <string name="screen_saved">已安全儲存；排除 %1$d 個自訂套件（另有 %2$d 個預設）。</string>
-    <string name="screen_step_service">2. 開啟無障礙服務</string>
-    <string name="accessibility_on">無障礙服務「Infovore 手機足跡」：已開啟</string>
-    <string name="accessibility_off">無障礙服務「Infovore 手機足跡」：未開啟</string>
-    <string name="screen_restricted_help">側載安裝的 App 需先到「應用程式資訊 → ⋮ → 允許受限制的設定」，才能開啟無障礙服務。</string>
-    <string name="action_open_app_info">開啟 App 資訊（允許受限制的設定）</string>
-    <string name="action_open_accessibility">開啟無障礙設定</string>
-    <string name="screen_step_recording">3. 記錄控制</string>
-    <string name="label_recording_switch">啟用記錄</string>
-    <string name="confirm_recording_title">啟用手機畫面記錄？</string>
-    <string name="confirm_recording_message">無障礙服務開啟時，Infovore 會在螢幕開啟且已解鎖時，約每分鐘及切換 App 時記錄前景 App、畫面文字與小縮圖，並上傳到你的 Infovore 伺服器。\n\n密碼欄位、安全畫面與排除的 App 不會擷取內容。你可以隨時暫停或關閉。</string>
-    <string name="confirm_recording_ok">啟用記錄</string>
     <string name="action_cancel">取消</string>
-    <string name="screen_upload_heading">上傳</string>
-    <string name="screen_upload_note">紀錄會自動在有網路時上傳；也可以手動上傳或測試伺服器連線。</string>
-    <string name="action_upload_now">立即上傳</string>
-    <string name="action_test_connection">測試連線</string>
-    <string name="screen_task_in_progress">處理中</string>
-    <string name="screen_uploading">上傳中…</string>
-    <string name="screen_testing">測試連線中…</string>
 
     <!-- Dialogs and errors -->
     <string name="unsaved_title">有未儲存的變更</string>
@@ -135,6 +85,5 @@
     <string name="unsaved_discard">捨棄</string>
     <string name="unsaved_keep_editing">繼續編輯</string>
     <string name="error_no_activity">此裝置找不到可開啟的設定畫面。</string>
-    <string name="home_server_pending">伺服器待整理 %1$d 筆 · %2$d 筆重試中</string>
     <string name="home_content_unavailable">暫時無法讀取內容，請重新整理。</string>
 </resources>

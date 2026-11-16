@@ -1,7 +1,9 @@
 package tw.skyhong.infovore.health.robo
 
 import androidx.work.ListenableWorker.Result
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.TestListenableWorkerBuilder
@@ -15,13 +17,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import tw.skyhong.infovore.health.RetiredScreenRecorder
 import tw.skyhong.infovore.health.SyncFailureAlerts
 import tw.skyhong.infovore.health.SyncFailureNotifier
 import tw.skyhong.infovore.health.SyncKind
 import tw.skyhong.infovore.health.SyncRunner
 import tw.skyhong.infovore.health.SyncScheduler
 import tw.skyhong.infovore.health.SyncWorker
-import tw.skyhong.infovore.health.screen.ScreenUploadWorker
 import java.util.concurrent.TimeUnit
 
 /**
@@ -38,30 +40,45 @@ class BackgroundWorkTest {
         TestListenableWorkerBuilder<SyncWorker>(Robo.app).setRunAttemptCount(attempt).build()
 
     @Test
-    fun startUpSchedulesBothPeriodicWorksOnceWithANetworkConstraint() {
+    fun startUpSchedulesThePeriodicSyncOnceWithANetworkConstraint() {
         // TestInfovoreApp ran the app's real start-up (InfovoreHealthApp.start).
         val sync = uniqueWork("infovore-health-periodic-sync").single()
         assertEquals(WorkInfo.State.ENQUEUED, sync.state)
         assertEquals(TimeUnit.HOURS.toMillis(SyncFailureAlerts.PERIOD_HOURS.toLong()), sync.periodicityInfo?.repeatIntervalMillis)
         assertEquals(NetworkType.CONNECTED, sync.constraints.requiredNetworkType)
-        val upload = uniqueWork("infovore-dayflow-phone-upload").single()
-        assertEquals(TimeUnit.MINUTES.toMillis(15), upload.periodicityInfo?.repeatIntervalMillis)
-        assertEquals(NetworkType.CONNECTED, upload.constraints.requiredNetworkType)
 
         // Scheduling again (every process start) keeps the existing work rather than restarting it.
         SyncScheduler.schedule(Robo.app)
-        ScreenUploadWorker.schedule(Robo.app)
         assertEquals(sync.id, uniqueWork("infovore-health-periodic-sync").single().id)
-        assertEquals(upload.id, uniqueWork("infovore-dayflow-phone-upload").single().id)
     }
 
     @Test
-    fun withoutATokenTheWorkersDoNothing() = runBlocking {
+    fun anUpgradeRemovesTheRetiredScreenRecordersWorkFilesAndSettingsOnce() {
+        // What 0.5.1 left behind: the periodic upload, queued captures and the recorder's settings.
+        Robo.app.getSharedPreferences("infovore_migrations", 0).edit().clear().commit()
+        WorkManager.getInstance(Robo.app).enqueueUniquePeriodicWork(
+            RetiredScreenRecorder.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES).build(),
+        ).result.get()
+        val queued = java.io.File(Robo.app.noBackupFilesDir, "${RetiredScreenRecorder.QUEUE_DIR}/d-abc/1.json").apply { parentFile!!.mkdirs(); writeText("{}") }
+        Robo.app.getSharedPreferences(RetiredScreenRecorder.PREFERENCES, 0).edit().putBoolean("enabled", true).commit()
+
+        RetiredScreenRecorder.cleanUp(Robo.app)
+
+        assertTrue(uniqueWork(RetiredScreenRecorder.WORK_NAME).all { it.state == WorkInfo.State.CANCELLED })
+        assertFalse(queued.exists())
+        assertFalse(java.io.File(Robo.app.noBackupFilesDir, RetiredScreenRecorder.QUEUE_DIR).exists())
+        assertFalse(Robo.app.getSharedPreferences(RetiredScreenRecorder.PREFERENCES, 0).contains("enabled"))
+        // The periodic health sync is untouched.
+        assertEquals(WorkInfo.State.ENQUEUED, uniqueWork("infovore-health-periodic-sync").single().state)
+    }
+
+    @Test
+    fun withoutATokenTheWorkerDoesNothing() = runBlocking {
         assertEquals(Result.success(), syncWorker().doWork())
         assertEquals(0, Robo.settings().backgroundFailures)
         assertEquals("尚未同步", Robo.settings().lastStatus)
-        val upload = TestListenableWorkerBuilder<ScreenUploadWorker>(Robo.app).build()
-        assertEquals(Result.success(), upload.doWork())
     }
 
     @Test

@@ -22,24 +22,21 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import tw.skyhong.infovore.health.main.ConnectionController
 import tw.skyhong.infovore.health.main.HealthController
-import tw.skyhong.infovore.health.main.ScreenController
 import tw.skyhong.infovore.health.main.SetupController
 import tw.skyhong.infovore.health.main.UiHost
-import tw.skyhong.infovore.health.screen.ScreenSettings
 import tw.skyhong.infovore.health.ui.FormState
 import tw.skyhong.infovore.health.ui.ViewKit
 import tw.skyhong.infovore.health.ui.ViewKit.Style
 
 /**
- * Settings and status screen, organised as: first-run steps, connection settings, Health Connect
- * sync, and the opt-in phone screen recorder (collapsed, advanced). The activity only assembles
+ * Settings and status screen, organised as: first-run steps, connection settings and Health
+ * Connect sync. The activity only assembles
  * the section controllers in `main/` and handles the lifecycle; each controller builds its views
  * with [ViewKit], and every decision about what to show lives in the pure, unit-tested classes in
  * `ui/`.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var host: UiHost
-    private lateinit var screen: ScreenController
     private lateinit var connection: ConnectionController
     private lateinit var health: HealthController
     private lateinit var setup: SetupController
@@ -53,11 +50,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val model = ViewModelProvider(this)[MainViewModel::class.java]
-        host = UiHost(this, ViewKit(this), SecureSettings(this), ScreenSettings(this), model)
-        screen = ScreenController(host, onDirtyChanged = ::updateBackCallback)
+        host = UiHost(this, ViewKit(this), SecureSettings(this), model)
         connection = ConnectionController(
             host,
-            screen,
             historyPermissionGranted = { health.historyPermissionGranted },
             onEdited = { health.render() },
             onSaved = ::renderAll,
@@ -79,28 +74,23 @@ class MainActivity : AppCompatActivity() {
         handleOpenIntent(intent)
     }
 
-    /** The "同步問題" notifications open the health section or the screen-record section. */
+    /** The "同步問題" notification opens the health section. */
     private fun handleOpenIntent(intent: Intent?) {
         if (intent == null) return
-        val section = when {
-            intent.getBooleanExtra(EXTRA_OPEN_HEALTH, false) -> health.section
-            intent.getBooleanExtra(EXTRA_OPEN_SCREEN, false) -> screen.section
-            else -> return
-        }
+        if (!intent.getBooleanExtra(EXTRA_OPEN_HEALTH, false)) return
+        val section = health.section
         intent.removeExtra(EXTRA_OPEN_HEALTH)
-        intent.removeExtra(EXTRA_OPEN_SCREEN)
         section.setExpanded(true)
         host.scrollTo(section.root)
     }
 
     override fun onResume() {
         super.onResume()
-        // Permissions and the accessibility service can change in system settings while we are away.
+        // Permissions can change in system settings while we are away.
         lifecycleScope.launch {
             health.refresh()
             health.render()
         }
-        screen.render()
         // Notifications may have been turned back on in system settings: deliver what was missed.
         health.catchUpNotifications()
     }
@@ -109,7 +99,6 @@ class MainActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         outState.putBoolean(STATE_CONNECTION_OPEN, connection.section.expanded)
         outState.putBoolean(STATE_HEALTH_OPEN, health.section.expanded)
-        outState.putBoolean(STATE_SCREEN_OPEN, screen.section.expanded)
     }
 
     private fun buildContent(saved: Bundle?): View {
@@ -127,8 +116,6 @@ class MainActivity : AppCompatActivity() {
         content.addView(setup.build(), ViewKit.matchWrap(kit.dp(16)))
         content.addView(connection.build(saved?.getBoolean(STATE_CONNECTION_OPEN)).root, ViewKit.matchWrap(kit.dp(16)))
         content.addView(health.build(saved?.getBoolean(STATE_HEALTH_OPEN) ?: true).root, ViewKit.matchWrap(kit.dp(16)))
-        // Sensitive and opt-in: always starts collapsed unless the user had it open before a rotation.
-        content.addView(screen.build(saved?.getBoolean(STATE_SCREEN_OPEN) ?: false).root, ViewKit.matchWrap(kit.dp(16)))
         content.addView(kit.text(Style.CAPTION, getString(R.string.footer_privacy)).apply {
             setPadding(kit.dp(4), kit.dp(16), kit.dp(4), 0)
         })
@@ -186,7 +173,6 @@ class MainActivity : AppCompatActivity() {
                         health.render()
                     }
                 }
-                launch { host.model.screen.collect { screen.render() } }
             }
         }
     }
@@ -194,12 +180,11 @@ class MainActivity : AppCompatActivity() {
     private fun renderAll() {
         connection.render()
         health.render()
-        screen.render()
     }
 
     private fun updateBackCallback() {
         if (!built) return
-        backCallback.isEnabled = FormState.confirmBeforeLeaving(connection.dirty(), screen.dirty())
+        backCallback.isEnabled = FormState.confirmBeforeLeaving(connection.dirty())
     }
 
     private fun confirmDiscardChanges() {
@@ -215,10 +200,9 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    /** Saves both forms, then leaves; a destination change finishes from its confirmation dialog. */
+    /** Saves the form, then leaves; a destination change finishes from its confirmation dialog. */
     private fun saveAllAndFinish() {
-        val screenOk = !screen.dirty() || screen.save(showSuccess = true)
-        val finishIfSaved = { if (screenOk && !connection.dirty() && !screen.dirty()) finish() }
+        val finishIfSaved = { if (!connection.dirty()) finish() }
         if (!connection.dirty()) {
             finishIfSaved()
         } else if (connection.save(showSuccess = true, afterConfirmedSave = finishIfSaved) == ConnectionController.SaveResult.SAVED) {
@@ -243,10 +227,7 @@ class MainActivity : AppCompatActivity() {
         /** Intent extra: expand and scroll to the health section (from the sync-problem notification). */
         const val EXTRA_OPEN_HEALTH = "tw.skyhong.infovore.health.OPEN_HEALTH"
 
-        /** Intent extra: expand and scroll to the screen-record section (from the quarantine warning). */
-        const val EXTRA_OPEN_SCREEN = "tw.skyhong.infovore.health.OPEN_SCREEN"
         private const val STATE_CONNECTION_OPEN = "connection_open"
         private const val STATE_HEALTH_OPEN = "health_open"
-        private const val STATE_SCREEN_OPEN = "screen_open"
     }
 }

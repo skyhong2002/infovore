@@ -2,7 +2,6 @@ import { recordedCoverage, type RecordedInterval } from './coverage.js';
 import { measureRead, type ReadPhase } from './read-timing.js';
 import { migrateDayflowQuality } from '../dayflow/quality-store.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
-import { migrateDayflowPhone } from '../dayflow/phone-store.js';
 import { ComputaiStore, migrateComputai, migrateComputaiSegments } from '../computai/store.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -412,7 +411,9 @@ export class Repository {
     const afterHardcover = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterHardcover.user_version < 17) migrateDayflowQuality(this.db);
     const afterDayflowQuality = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
-    if (afterDayflowQuality.user_version < 18) migrateDayflowPhone(this.db);
+    // Version 18 created the dayflow_phone_* tables for the retired Android screen recorder
+    // (replaced by PocketLog). New databases skip it; existing tables are left untouched.
+    if (afterDayflowQuality.user_version < 18) this.db.exec('PRAGMA user_version = 18');
     const afterDayflowPhone = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterDayflowPhone.user_version < 19) this.migrateHealthRecordDevice();
     const afterHealthRecordDevice = this.db.prepare('PRAGMA user_version').get() as { user_version: number };

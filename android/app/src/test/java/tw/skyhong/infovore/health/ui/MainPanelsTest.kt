@@ -5,8 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import tw.skyhong.infovore.health.MainViewModel.ScreenTask
-import tw.skyhong.infovore.health.MainViewModel.ScreenTaskState
 import tw.skyhong.infovore.health.SyncKind
 import tw.skyhong.infovore.health.SyncState
 
@@ -65,26 +63,6 @@ class MainPanelsTest {
         assertEquals(Tone.WARNING, SyncPanel.summaryTone(Tone.OK, unverified = true, busy = false))
         assertEquals(Tone.ERROR, SyncPanel.summaryTone(Tone.ERROR, unverified = true, busy = false))
         assertEquals(Tone.NEUTRAL, SyncPanel.summaryTone(Tone.OK, unverified = true, busy = true))
-    }
-
-    @Test
-    fun screenTaskPanelDisablesButtonsWhileATaskRuns() {
-        val running = ScreenTaskPanel.map(ScreenTaskState(running = ScreenTask.UPLOAD), uploadAllowed = true, tokenUsable = true)
-        assertFalse(running.uploadEnabled || running.testEnabled || running.retryVisible)
-        assertTrue(running.progressVisible && running.resultVisible)
-        assertEquals(ScreenTask.UPLOAD, running.running)
-        assertEquals(Tone.NEUTRAL, running.tone)
-
-        val failed = ScreenTaskPanel.map(
-            ScreenTaskState(result = "上傳失敗", tone = Tone.ERROR, failed = ScreenTask.UPLOAD), uploadAllowed = true, tokenUsable = false,
-        )
-        assertTrue(failed.uploadEnabled && failed.retryVisible && failed.resultVisible)
-        assertFalse(failed.testEnabled)
-        assertEquals(Tone.ERROR, failed.tone)
-
-        val idle = ScreenTaskPanel.map(ScreenTaskState(), uploadAllowed = false, tokenUsable = true)
-        assertFalse(idle.resultVisible || idle.uploadEnabled)
-        assertTrue(idle.testEnabled)
     }
 
     @Test

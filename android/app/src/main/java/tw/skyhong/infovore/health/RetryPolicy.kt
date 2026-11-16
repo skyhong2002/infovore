@@ -37,7 +37,7 @@ object RetryAfter {
 }
 
 /**
- * How background work (SyncWorker, ScreenUploadWorker) reacts to a failed run. Android-free so
+ * How background work (SyncWorker) reacts to a failed run. Android-free so
  * it can be unit tested.
  *
  * - [Kind.NEEDS_ACTION]: retrying cannot help until the user (or the server's owner) changes

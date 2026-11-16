@@ -136,7 +136,8 @@ class InfovoreApi(
             connection.requestMethod = method
             connection.connectTimeout = timing.connectTimeoutMs
             connection.readTimeout = timing.readTimeoutMs
-            connection.setRequestProperty("Authorization", "Bearer $token")
+            // Public reads (the site's JSON) carry no credentials at all.
+            if (token.isNotEmpty()) connection.setRequestProperty("Authorization", "Bearer $token")
             if (body != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")

@@ -2,7 +2,6 @@ package tw.skyhong.infovore.health.ui
 
 import tw.skyhong.infovore.health.EndpointPolicy
 import tw.skyhong.infovore.health.SecureSettings
-import tw.skyhong.infovore.health.screen.Exclusions
 import java.net.URI
 import java.net.URISyntaxException
 
@@ -81,18 +80,6 @@ object InputValidation {
             null
         }
         return FieldResult.Valid(days, note)
-    }
-
-    /** Valid package names are kept; any other entry is reported instead of being dropped silently. */
-    fun exclusions(raw: String): FieldResult<String> {
-        val entries = raw.split(',', ';', '\n', '\r', '\t', ' ').map(String::trim).filter(String::isNotEmpty)
-        val invalid = entries.filter { Exclusions.parse(it).isEmpty() }.distinct()
-        if (invalid.isNotEmpty()) {
-            val shown = invalid.take(3).joinToString("、") + if (invalid.size > 3) " 等 ${invalid.size} 項" else ""
-            return FieldResult.Invalid("不是有效的 App 套件名稱：$shown（格式如 com.example.bank）")
-        }
-        val count = entries.distinct().size
-        return FieldResult.Valid(raw.trim(), if (count > 0) "將排除 $count 個自訂套件" else null)
     }
 
     const val HISTORY_WITHOUT_PERMISSION_DAYS = 30

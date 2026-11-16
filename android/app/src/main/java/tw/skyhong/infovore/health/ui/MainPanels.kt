@@ -1,7 +1,5 @@
 package tw.skyhong.infovore.health.ui
 
-import tw.skyhong.infovore.health.MainViewModel.ScreenTask
-import tw.skyhong.infovore.health.MainViewModel.ScreenTaskState
 import tw.skyhong.infovore.health.SyncKind
 import tw.skyhong.infovore.health.SyncState
 
@@ -104,33 +102,6 @@ object SyncPanel {
         busy -> Tone.NEUTRAL
         unverified && healthTone == Tone.OK -> Tone.WARNING
         else -> healthTone
-    }
-}
-
-/** The phone-screen section's upload / test buttons and result box for a [ScreenTaskState]. */
-data class ScreenTaskUi(
-    val uploadEnabled: Boolean,
-    val testEnabled: Boolean,
-    val progressVisible: Boolean,
-    val resultVisible: Boolean,
-    /** Which task is running (its "in progress" text is shown), or null to show [ScreenTaskState.result]. */
-    val running: ScreenTask?,
-    val tone: Tone,
-    val retryVisible: Boolean,
-)
-
-object ScreenTaskPanel {
-    fun map(task: ScreenTaskState, uploadAllowed: Boolean, tokenUsable: Boolean): ScreenTaskUi {
-        val busy = task.running != null
-        return ScreenTaskUi(
-            uploadEnabled = uploadAllowed && !busy,
-            testEnabled = tokenUsable && !busy,
-            progressVisible = busy,
-            resultVisible = busy || task.result != null,
-            running = task.running,
-            tone = if (busy) Tone.NEUTRAL else task.tone,
-            retryVisible = task.failed != null && !busy,
-        )
     }
 }
 
