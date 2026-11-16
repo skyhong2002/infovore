@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import tw.skyhong.infovore.health.location.LocationTracking
 import tw.skyhong.infovore.health.ui.ActivityDashboard
 import tw.skyhong.infovore.health.ui.ViewKit
 import tw.skyhong.infovore.health.ui.ViewKit.Style
@@ -110,6 +111,8 @@ class HomeActivity : AppCompatActivity() {
         loadedTarget = target
         select(tab)
         web?.onResume()
+        // The location recorder, when on, resumes whenever Infovore comes to the foreground.
+        LocationTracking.resumeIfEnabled(this)
     }
 
     override fun onStop() {

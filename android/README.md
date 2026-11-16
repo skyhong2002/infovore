@@ -1,10 +1,40 @@
 # Infovore Health for Android
 
-This private companion (current version 0.6.0) reads selected records from Android Health Connect and
-uploads them to infovore's authenticated ingest service. Garmin Connect can
+This private companion (current version 0.7.0) reads selected records from Android Health Connect,
+records the phone's location when asked, and uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
 Google account credentials.
+
+## Location history (0.7.0)
+
+Settings has a **位置紀錄** section:
+
+- **持續記錄位置** (off by default) asks for precise location and starts a
+  foreground service (`LocationTrackingService`, type `location`) with an
+  ongoing **正在記錄位置** notification. It asks the platform fused provider
+  (GPS/network as a fallback) for a fix about once a minute and at most every
+  15 m of movement, at balanced accuracy (Wi-Fi/cell) unless **高精確度** is on.
+  Fixes queue in `noBackupFilesDir/location-queue.csv` (at most 50,000) and are
+  removed only after the server stored them. `LocationUploadWorker` uploads
+  every 15 minutes with a network connection, sooner after 120 queued fixes,
+  and on **立即上傳**; transient failures retry up to three times, a refused
+  token stops until the next run.
+- Android only lets the service start while Infovore is on screen. It resumes
+  whenever the app opens; with **一律允許** location (offered, never required)
+  it also resumes after a reboot or app update (`LocationBootReceiver`).
+- **匯入 Google 地圖時間軸** opens the system file picker. The file is parsed as a
+  stream (`TimelineParser`: the on-device export's `semanticSegments` and
+  `rawSignals`, the iOS array export, Takeout `Records.json` and
+  `timelineObjects`) and uploaded in batches of at most 1,000 points or 500
+  visits and trips while it is read, so large exports do not need memory. The
+  import keeps running when the screen closes; cancelling keeps what was sent.
+  Records with no time or position are skipped and counted.
+- Uploads use the saved endpoint and `HEALTH_CONNECT_TOKEN` (the server accepts
+  a separate `LOCATION_TOKEN` when set). **在網頁上查看位置足跡** opens
+  `<endpoint>/location`, which asks for the same token.
+
+Location is private: it is not shown on public pages, feeds or cards.
 
 ## Phone activity moved to PocketLog (0.6.0)
 
@@ -35,7 +65,8 @@ the separate settings screen.
 
 The app requests read-only access to exercise sessions, steps, distance, total
 calories, heart rate, sleep, weight, and body fat. Exercise routes are not
-requested. The ingest token is encrypted with Android Keystore, Android backup
+requested; location comes only from the opt-in recorder and imported Timeline
+files (see "Location history"). The ingest token is encrypted with Android Keystore, Android backup
 is disabled, and the server keeps raw Health Connect records outside the public
 activity, feed, and MCP projections. Infovore's Health platform page uses only
 safe aggregates and recent workout summaries.

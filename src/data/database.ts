@@ -1,4 +1,5 @@
 import { recordedCoverage, type RecordedInterval } from './coverage.js';
+import { LocationStore, migrateLocation } from '../location/store.js';
 import { measureRead, type ReadPhase } from './read-timing.js';
 import { migrateDayflowQuality } from '../dayflow/quality-store.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
@@ -296,6 +297,7 @@ export class Repository {
   private readonly db: DatabaseSync;
   readonly dayflow: DayflowStore;
   readonly computai: ComputaiStore;
+  readonly location: LocationStore;
 
   constructor(path: string, options: { dayflowQuality?: boolean } = {}) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -304,6 +306,7 @@ export class Repository {
     this.migrate();
     this.dayflow = new DayflowStore(this.db, options.dayflowQuality);
     this.computai = new ComputaiStore(this.db);
+    this.location = new LocationStore(this.db);
   }
 
   close(): void { this.db.close(); }
@@ -426,6 +429,8 @@ export class Repository {
     // retired phone recorder's private screen text, thumbnails and cards on every boot.
     this.db.exec(`DROP TABLE IF EXISTS dayflow_phone_observations;
       DROP TABLE IF EXISTS dayflow_phone_cards; DROP TABLE IF EXISTS dayflow_phone_meta;`);
+    // Unversioned for the same reason: creates the private location tables when missing.
+    migrateLocation(this.db);
   }
 
   // Audit trail of reconcile deletions the user explicitly confirmed beyond the

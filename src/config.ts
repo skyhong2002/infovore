@@ -39,6 +39,9 @@ if (dayflowToken && dayflowToken.length < 32) throw new Error('DAYFLOW_TOKEN mus
 const computaiToken = process.env.COMPUTAI_TOKEN ?? '';
 if (computaiToken && computaiToken.length < 32) throw new Error('COMPUTAI_TOKEN must contain at least 32 characters');
 const healthConnectToken = process.env.HEALTH_CONNECT_TOKEN ?? ingestToken;
+// The Android companion uploads location with the token it already holds for Health Connect.
+const locationToken = process.env.LOCATION_TOKEN ?? healthConnectToken;
+if (locationToken && locationToken.length < 32) throw new Error('LOCATION_TOKEN must contain at least 32 characters');
 const publicBaseUrl = basePublicUrl(process.env);
 const qualityBaseUrl = (process.env.DAYFLOW_AI_BASE_URL ?? '').replace(/\/+$/, '');
 const qualityApiKey = process.env.DAYFLOW_AI_API_KEY ?? '';
@@ -66,6 +69,7 @@ export const config = {
   publicBaseUrl,
   ingestToken,
   healthConnect: { token: healthConnectToken },
+  location: { token: locationToken },
   dayflow: { token: dayflowToken, quality: dayflowQuality },
   computai: { token: computaiToken },
   maxSourceAgeHours,

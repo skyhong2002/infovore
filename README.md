@@ -122,6 +122,11 @@ above use webp (≈10× smaller than the SVG), so this page loads fast.
 - `GET /api/ingest/health-connect/status` — authenticated Android sync status
 - `POST /api/ingest/health-connect` — authenticated private Health Connect batches
 - `POST /api/ingest/computai/reports` — authenticated ComputAI 30-day report
+- `GET /api/ingest/location/status` / `POST /api/ingest/location/batches` —
+  authenticated private location history from the Android companion
+- `GET /location` — private location page (data-free shell; unlocked in the tab
+  with the location token, reads `GET /api/location/day?day=` and
+  `GET /api/location/status`, both `Authorization: Bearer`)
 - `POST /mcp` — stateless MCP Streamable HTTP endpoint
 - `GET /healthz` — freshness-aware health check (`healthy`, `degraded`, or `unhealthy`).
   Each source has `fresh` (within `MAX_SOURCE_AGE_HOURS`, which alone decides the
@@ -214,6 +219,22 @@ is not Garmin's proprietary sleep score. This exposes sleep schedules publicly;
 the `get_health_summary` MCP tool exposes the same safe projection. Record/device
 identifiers, origins, notes, and raw heart-rate samples stay private. See
 [`android/README.md`](android/README.md) for setup, permissions, and build steps.
+
+## Android location history
+
+The same companion records the phone's position (opt-in, a foreground service
+with a visible notification) and imports Google Maps Timeline exports: the
+on-device JSON export, the iOS export, and Takeout's `Records.json` and Semantic
+Location History. It uploads points, visits and trips to
+`/api/ingest/location/batches` with the token it already holds
+(`LOCATION_TOKEN`, defaulting to `HEALTH_CONNECT_TOKEN`). They live in the
+`location_points`, `location_visits` and `location_activities` tables (created
+when missing on every boot, without a schema version bump) and never reach public pages, feeds, cards, the sitemap or MCP. `/location`
+shows the latest position, a day's track on OpenStreetMap tiles, and its stays
+and trips, after the token is entered; the token stays in that tab's memory.
+Re-sent batches and re-imported files change nothing: points are keyed by
+source and time, visits and trips by source and start (a newer export replaces
+them).
 
 ## Run it yourself (Docker)
 

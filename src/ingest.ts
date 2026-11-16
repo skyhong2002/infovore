@@ -9,6 +9,7 @@ import { config } from './config.js';
 import { Repository } from './data/database.js';
 import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
 import { HealthReconcileRejected, healthConnectBatchSchema } from './health/types.js';
+import { locationBatchSchema } from './location/types.js';
 
 // A failure after validation (database busy, disk full, lock timeout) is not
 // the client's fault: answer 503 so devices keep their batch and retry, and
@@ -117,6 +118,30 @@ export function createIngestApp(repository: Repository): Hono {
     } catch (error) {
       if (error instanceof StorageFailure) return c.json(storageUnavailable, 503);
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  });
+  // Location history from the Android companion (its own fixes and imported
+  // Google Maps Timeline exports). Stored privately; see src/location.
+  app.use('/api/ingest/location/*', async (c, next) => {
+    if (!config.location.token) return c.json({ error: 'Location ingestion is not configured', retryable: false }, 503);
+    if (!authorized(c.req.header('authorization'), config.location.token)) return c.json({ error: 'Unauthorized' }, 401);
+    await next();
+  });
+  app.get('/api/ingest/location/status', (c) => c.json({ status: 'ready', ...repository.location.status() }));
+  app.post('/api/ingest/location/batches', bodyLimit({
+    maxSize: 1024 * 1024,
+    onError: (c) => c.json({ error: 'Location batch exceeds 1 MiB' }, 413),
+  }), async (c) => {
+    let batch;
+    try {
+      batch = locationBatchSchema.parse(await c.req.json());
+    } catch {
+      return c.json({ error: 'Invalid location batch' }, 400);
+    }
+    try {
+      return c.json({ ok: true, ...store(() => repository.location.ingest(batch)) });
+    } catch {
+      return c.json(storageUnavailable, 503);
     }
   });
   app.get('/api/ingest/health-connect/status', (c) => {

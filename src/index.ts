@@ -12,9 +12,10 @@ import { dayflowDay, type DayflowSnapshot } from './dayflow/types.js';
 import { activityFromEntry } from './data/activity.js';
 import { IN_PROGRESS_STATUSES, PAUSED_STATUSES, QUEUED_STATUSES, isQueued, selectCurrent, selectQueued } from './data/status.js';
 import { recordedShare } from './data/coverage.js';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { locationPage, locationScript } from './output/location.js';
 import { compress } from 'hono/compress';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
@@ -198,6 +199,36 @@ app.use('*', compress());
 app.use('*', async (c, next) => {
   await next();
   for (const [name, value] of Object.entries(securityHeaders)) c.header(name, value);
+});
+// Private location history (src/location): a data-free page plus two reads
+// that need the location token. Never part of the public projections.
+const locationReady = (c: Context): Response | null => {
+  c.header('Cache-Control', 'no-store');
+  c.header('X-Robots-Tag', 'noindex, nofollow');
+  c.header('Vary', 'Authorization');
+  if (!config.location.token) return c.json({ error: 'Location is not configured' }, 404);
+  const auth = c.req.header('authorization');
+  const supplied = Buffer.from(auth?.startsWith('Bearer ') ? auth.slice(7) : '');
+  const expected = Buffer.from(config.location.token);
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return c.json({ error: 'Unauthorized' }, 401);
+  return null;
+};
+app.get('/location', (c) => {
+  if (!config.location.token) return c.notFound();
+  c.header('X-Robots-Tag', 'noindex, nofollow');
+  c.header('Cache-Control', 'no-store');
+  return c.html(locationPage());
+});
+app.get('/location.js', (c) => c.body(locationScript, 200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' }));
+app.get('/api/location/status', (c) => locationReady(c) ?? c.json(repository.location.status()));
+app.get('/api/location/day', (c) => {
+  const refused = locationReady(c);
+  if (refused) return refused;
+  const day = c.req.query('day') ?? taipeiDay(new Date());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(day)) || new Date(day).toISOString().slice(0, 10) !== day) {
+    return c.json({ error: 'Invalid day' }, 400);
+  }
+  return c.json(repository.location.day(day));
 });
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
 const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');

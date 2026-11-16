@@ -3,13 +3,13 @@
 
     <!-- Header and first-run steps -->
     <string name="header_version">版本 %1$s</string>
-    <string name="header_intro">管理連線與健康資料同步。</string>
+    <string name="header_intro">管理連線、健康資料同步與位置紀錄。</string>
     <string name="setup_title">開始使用</string>
     <string name="setup_step_row">%1$s  %2$d. %3$s\n%4$s</string>
     <string name="field_error">⚠ %1$s</string>
     <string name="setup_next_connection">填寫連線設定</string>
     <string name="setup_next_permissions">授權 Health Connect</string>
-    <string name="footer_privacy">隱私：token 以 Android Keystore 加密保存，App 資料不會備份到雲端。健康資料只上傳到上方設定的 Infovore 伺服器。</string>
+    <string name="footer_privacy">隱私：token 以 Android Keystore 加密保存，App 資料不會備份到雲端。健康資料與位置只上傳到上方設定的 Infovore 伺服器，位置不會出現在公開頁面。</string>
 
     <!-- Collapsible sections -->
     <string name="section_connection">連線設定</string>
@@ -86,4 +86,36 @@
     <string name="unsaved_keep_editing">繼續編輯</string>
     <string name="error_no_activity">此裝置找不到可開啟的設定畫面。</string>
     <string name="home_content_unavailable">暫時無法讀取內容，請重新整理。</string>
+    <!-- Location recorder and Google Maps Timeline import -->
+    <string name="section_location">位置紀錄</string>
+    <string name="location_intro">記錄這支手機的位置軌跡，並匯入 Google 地圖時間軸的歷史紀錄。資料只存在你的 Infovore 伺服器，不會出現在公開頁面；在網頁上用同一組金鑰解鎖查看。</string>
+    <string name="location_track_switch">持續記錄位置</string>
+    <string name="location_accuracy_switch">高精確度（使用 GPS，較耗電）</string>
+    <string name="location_accuracy_note">關閉時以 Wi-Fi 與基地台定位（約 20–100 公尺），較省電。約每分鐘一筆；停留不動時不會重複記錄。</string>
+    <string name="location_background_action">允許「一律允許」位置（重新開機後自動繼續）</string>
+    <string name="location_status_off">未開啟。開啟後會在通知列顯示「正在記錄位置」，隨時可以關閉。</string>
+    <string name="location_status_denied">需要「精確位置」權限才能記錄軌跡。若沒有出現權限視窗，請到系統設定 → 應用程式 → Infovore → 權限 開啟位置。</string>
+    <string name="location_status_on">記錄中。定位點先存在手機，約每 15 分鐘上傳一次。</string>
+    <string name="location_status_paused">記錄已暫停；打開 Infovore 即可繼續。</string>
+    <string name="location_status_no_permission">位置權限已被關閉，記錄已暫停。請關閉再開啟上方開關以重新授權。</string>
+    <string name="location_last_heading">最後定位</string>
+    <string name="location_no_fix">尚無定位。</string>
+    <string name="location_fix_value">%1$s\n%2$s%3$s</string>
+    <string name="location_accuracy_value"> · 誤差約 %1$d 公尺</string>
+    <string name="location_open_map">在地圖上開啟</string>
+    <string name="location_queue_value">等待上傳：%1$s 個定位點</string>
+    <string name="location_needs_connection">請先完成上方的連線設定才能上傳。</string>
+    <string name="location_upload_now">立即上傳</string>
+    <string name="location_uploading">上傳中…</string>
+    <string name="location_open_web">在網頁上查看位置足跡</string>
+    <string name="location_import_heading">匯入 Google 地圖時間軸</string>
+    <string name="location_import_help">先在手機的「設定 → 位置 → 定位服務 → 時間軸 → 匯出時間軸資料」存成 JSON 檔（有些手機在 Google 地圖 → 你的時間軸 → 設定裡），再按下方按鈕選擇該檔案。也支援 Google Takeout 的 Records.json 與 Semantic Location History。重複匯入同一個檔案不會產生重複資料。</string>
+    <string name="location_import_action">選擇時間軸檔案並匯入</string>
+    <string name="location_import_cancel">取消匯入</string>
+    <string name="location_import_none">尚未匯入。</string>
+    <string name="location_import_busy">已有匯入正在進行。</string>
+    <string name="location_channel_name">位置紀錄</string>
+    <string name="location_channel_description">記錄位置時常駐顯示，點一下可開啟設定或關閉記錄。</string>
+    <string name="location_notification_title">正在記錄位置</string>
+    <string name="location_notification_text">位置只上傳到你的 Infovore 伺服器。點一下可管理或關閉。</string>
 </resources>

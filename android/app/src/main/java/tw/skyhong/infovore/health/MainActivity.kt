@@ -22,6 +22,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import tw.skyhong.infovore.health.main.ConnectionController
 import tw.skyhong.infovore.health.main.HealthController
+import tw.skyhong.infovore.health.main.LocationController
 import tw.skyhong.infovore.health.main.SetupController
 import tw.skyhong.infovore.health.main.UiHost
 import tw.skyhong.infovore.health.ui.FormState
@@ -40,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var connection: ConnectionController
     private lateinit var health: HealthController
     private lateinit var setup: SetupController
+    private lateinit var location: LocationController
     private var built = false
 
     private val backCallback = object : OnBackPressedCallback(false) {
@@ -60,6 +62,7 @@ class MainActivity : AppCompatActivity() {
         )
         health = HealthController(host, connection = { connection }, onRendered = { setup.render() })
         setup = SetupController(host, connection, health)
+        location = LocationController(host, connectionReady = { connection.savedReady() })
         setContentView(buildContent(savedInstanceState))
         built = true
         onBackPressedDispatcher.addCallback(this, backCallback)
@@ -74,12 +77,16 @@ class MainActivity : AppCompatActivity() {
         handleOpenIntent(intent)
     }
 
-    /** The "同步問題" notification opens the health section. */
+    /** The "同步問題" notification opens the health section, the recording notification the location one. */
     private fun handleOpenIntent(intent: Intent?) {
         if (intent == null) return
-        if (!intent.getBooleanExtra(EXTRA_OPEN_HEALTH, false)) return
-        val section = health.section
+        val section = when {
+            intent.getBooleanExtra(EXTRA_OPEN_HEALTH, false) -> health.section
+            intent.getBooleanExtra(EXTRA_OPEN_LOCATION, false) -> location.section
+            else -> return
+        }
         intent.removeExtra(EXTRA_OPEN_HEALTH)
+        intent.removeExtra(EXTRA_OPEN_LOCATION)
         section.setExpanded(true)
         host.scrollTo(section.root)
     }
@@ -93,12 +100,15 @@ class MainActivity : AppCompatActivity() {
         }
         // Notifications may have been turned back on in system settings: deliver what was missed.
         health.catchUpNotifications()
+        // Location permission can change in system settings too; recording that was on resumes.
+        location.resume()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(STATE_CONNECTION_OPEN, connection.section.expanded)
         outState.putBoolean(STATE_HEALTH_OPEN, health.section.expanded)
+        outState.putBoolean(STATE_LOCATION_OPEN, location.section.expanded)
     }
 
     private fun buildContent(saved: Bundle?): View {
@@ -116,6 +126,7 @@ class MainActivity : AppCompatActivity() {
         content.addView(setup.build(), ViewKit.matchWrap(kit.dp(16)))
         content.addView(connection.build(saved?.getBoolean(STATE_CONNECTION_OPEN)).root, ViewKit.matchWrap(kit.dp(16)))
         content.addView(health.build(saved?.getBoolean(STATE_HEALTH_OPEN) ?: true).root, ViewKit.matchWrap(kit.dp(16)))
+        content.addView(location.build(saved?.getBoolean(STATE_LOCATION_OPEN) ?: false).root, ViewKit.matchWrap(kit.dp(16)))
         content.addView(kit.text(Style.CAPTION, getString(R.string.footer_privacy)).apply {
             setPadding(kit.dp(4), kit.dp(16), kit.dp(4), 0)
         })
@@ -164,6 +175,7 @@ class MainActivity : AppCompatActivity() {
     private fun observeModel() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                location.observe(this)
                 launch {
                     var wasBusy = false
                     host.model.sync.collect { state ->
@@ -180,6 +192,7 @@ class MainActivity : AppCompatActivity() {
     private fun renderAll() {
         connection.render()
         health.render()
+        location.render()
     }
 
     private fun updateBackCallback() {
@@ -227,7 +240,11 @@ class MainActivity : AppCompatActivity() {
         /** Intent extra: expand and scroll to the health section (from the sync-problem notification). */
         const val EXTRA_OPEN_HEALTH = "tw.skyhong.infovore.health.OPEN_HEALTH"
 
+        /** Intent extra: expand and scroll to the location section (from the recording notification). */
+        const val EXTRA_OPEN_LOCATION = "tw.skyhong.infovore.health.OPEN_LOCATION"
+
         private const val STATE_CONNECTION_OPEN = "connection_open"
         private const val STATE_HEALTH_OPEN = "health_open"
+        private const val STATE_LOCATION_OPEN = "location_open"
     }
 }
