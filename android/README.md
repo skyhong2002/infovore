@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.8.0) reads selected records from Android Health Connect,
+This private companion (current version 0.9.0) reads selected records from Android Health Connect,
 records the phone's location when asked, and uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -68,19 +68,12 @@ captures (`noBackupFilesDir/screen-queue`), the recorder's settings, its
 Keystore key and any quarantine notification (`RetiredScreenRecorder`). If the
 accessibility service was enabled, Android drops it with the service itself.
 
-## Activity overview
+## Only health and location (0.9.0)
 
-The launch screen follows `/platforms/dayflow`: a tinted source header, four
-outlined stat tiles, distinctive recent keywords, all recent keywords, weekly
-category chips and stacked bars for recent recorded days, read from the same
-public `/api/dayflow.json` as the site (no credentials are sent). Light/dark
-surfaces, compact outlined chips and 16dp/11dp corners match the website. No
-data is replaced by demonstration content.
-
-Bottom navigation has **總覽**, **瀏覽**, **設定**. Browse keeps the native recent
-public content list with category filters; details open the public site inside
-the app, and external links open in the browser. Health Connect setup remains in
-the separate settings screen.
+The app does two jobs: sync Health Connect (Garmin watch data) and record
+location. The settings screen is the launch screen; the Dayflow overview and the
+content browser (`HomeActivity`, 0.5–0.8) were removed, since the website shows
+both. Opening the app still resumes location recording and checks for updates.
 
 ## Data and privacy
 
@@ -95,9 +88,9 @@ safe aggregates and recent workout summaries.
 ## App layout (0.4.1)
 
 The screen is split into a **開始使用** checklist (connection → Health Connect
-permission → first sync, with a button for the next step) and two collapsible
-sections: **連線設定** and **健康資料同步**. Each section header shows its current
-state.
+permission → first sync, with a button for the next step) and collapsible
+sections: **連線設定**, **健康資料同步** and **位置紀錄**. Each section header shows
+its current state.
 
 - Fields are validated before saving, with the reason shown under the field:
   the endpoint must be `https://` (the private Tailscale address allowed in

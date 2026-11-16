@@ -16,6 +16,4 @@
     <color name="tone_warning_background">#FFF4E0</color>
     <color name="tone_error_background">#FCE8E6</color>
     <color name="tone_neutral_background">#EEF1F5</color>
-    <color name="dashboard_hero">#E6E5F0</color>
-    <color name="dashboard_accent">#55527C</color>
 </resources>

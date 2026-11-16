@@ -221,4 +221,17 @@ class MainActivityUiTest {
         val health = sectionHeader(activity, activity.getString(R.string.section_health))
         assertTrue(health.contentDescription.toString().contains(activity.getString(R.string.health_summary_unverified)))
     }
+
+    @Test
+    fun theLauncherOpensTheSettingsScreenWithOnlyConnectionHealthAndLocation() {
+        val launch = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(Robo.app.packageName)
+        val launchers = Robo.app.packageManager.queryIntentActivities(launch, 0)
+        assertEquals(listOf(MainActivity::class.java.name), launchers.map { it.activityInfo.name })
+        val activity = launch().get()
+        for (section in listOf(R.string.section_connection, R.string.section_health, R.string.section_location)) {
+            assertTrue(hasVisibleText(activity.root, activity.getString(section)))
+        }
+        // The Dayflow overview and content browsing are gone.
+        for (gone in listOf("活動總覽", "瀏覽", "回到 Infovore")) assertFalse(gone, hasVisibleText(activity.root, gone))
+    }
 }
