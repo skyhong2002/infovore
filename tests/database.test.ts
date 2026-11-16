@@ -402,3 +402,25 @@ test('cached reads see writes from another connection, like the ingest container
     assert.equal(reader.healthConnectStatus().totalStored, before);
   } finally { reader.close(); writer.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('opening a database drops the retired phone recorder tables and keeps everything else', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'infovore-phone-drop-'));
+  try {
+    const path = join(dir, 'infovore.sqlite');
+    new Repository(path).close();
+    const raw = new DatabaseSync(path);
+    raw.exec(`CREATE TABLE dayflow_phone_observations (id TEXT, text TEXT, image BLOB);
+      INSERT INTO dayflow_phone_observations VALUES ('o1', 'private screen text', NULL);
+      CREATE TABLE dayflow_phone_cards (id INTEGER); CREATE TABLE dayflow_phone_meta (id INTEGER);`);
+    const version = (raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+    raw.close();
+    new Repository(path).close();
+    const reopened = new DatabaseSync(path);
+    assert.equal((reopened.prepare("SELECT COUNT(*) c FROM sqlite_master WHERE name LIKE 'dayflow_phone%'").get() as { c: number }).c, 0);
+    assert.equal((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, version);
+    assert.ok(reopened.prepare("SELECT 1 FROM sqlite_master WHERE name = 'dayflow_days'").get());
+    reopened.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

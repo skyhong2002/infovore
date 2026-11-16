@@ -171,8 +171,8 @@ Phone screen activity is no longer recorded by infovore: the Android
 companion's Dayflow-style recorder, the `/api/ingest/dayflow-phone/*` ingest,
 the `/phone` private timeline and the 手機足跡 platform were removed in favour of
 [PocketLog](https://github.com/skyhong2002/PocketLog), a separate self-hosted
-activity journal. `DAYFLOW_PHONE_TOKEN` is ignored. Databases that already
-have the `dayflow_phone_*` tables keep them untouched; nothing reads them.
+activity journal. `DAYFLOW_PHONE_TOKEN` is ignored. Existing
+`dayflow_phone_*` tables (screen text, thumbnails, cards) are dropped on boot.
 
 ## macOS ComputAI sync
 

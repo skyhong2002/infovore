@@ -412,7 +412,7 @@ export class Repository {
     if (afterHardcover.user_version < 17) migrateDayflowQuality(this.db);
     const afterDayflowQuality = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     // Version 18 created the dayflow_phone_* tables for the retired Android screen recorder
-    // (replaced by PocketLog). New databases skip it; existing tables are left untouched.
+    // (replaced by PocketLog). New databases skip it; existing tables are dropped below.
     if (afterDayflowQuality.user_version < 18) this.db.exec('PRAGMA user_version = 18');
     const afterDayflowPhone = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
     if (afterDayflowPhone.user_version < 19) this.migrateHealthRecordDevice();
@@ -422,6 +422,10 @@ export class Repository {
     // Leaves user_version at 20 when its safety limit trips; a later
     // migration must not assume version 21 means the cleanup ran.
     if (afterHealthConfirmedDeletes.user_version < 21) migrateStatsfmPlayDuplicates(this.db);
+    // Unversioned and idempotent (the statsfm step may hold user_version at 20): removes the
+    // retired phone recorder's private screen text, thumbnails and cards on every boot.
+    this.db.exec(`DROP TABLE IF EXISTS dayflow_phone_observations;
+      DROP TABLE IF EXISTS dayflow_phone_cards; DROP TABLE IF EXISTS dayflow_phone_meta;`);
   }
 
   // Audit trail of reconcile deletions the user explicitly confirmed beyond the
