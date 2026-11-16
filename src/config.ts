@@ -42,6 +42,20 @@ const healthConnectToken = process.env.HEALTH_CONNECT_TOKEN ?? ingestToken;
 // The Android companion uploads location with the token it already holds for Health Connect.
 const locationToken = process.env.LOCATION_TOKEN ?? healthConnectToken;
 if (locationToken && locationToken.length < 32) throw new Error('LOCATION_TOKEN must contain at least 32 characters');
+// Fog of World: a read-only Dropbox app mirrors its sync folder (src/fog). All three or none.
+const fogDropboxParts = [process.env.FOG_DROPBOX_APP_KEY, process.env.FOG_DROPBOX_APP_SECRET, process.env.FOG_DROPBOX_REFRESH_TOKEN];
+if (fogDropboxParts.some(Boolean) && !fogDropboxParts.every(Boolean)) {
+  throw new Error('FOG_DROPBOX_APP_KEY, FOG_DROPBOX_APP_SECRET and FOG_DROPBOX_REFRESH_TOKEN must be set together');
+}
+const fogIntervalMinutes = Number(process.env.FOG_SYNC_INTERVAL_MINUTES ?? 30);
+if (!Number.isInteger(fogIntervalMinutes) || fogIntervalMinutes < 5 || fogIntervalMinutes > 1440) {
+  throw new Error('FOG_SYNC_INTERVAL_MINUTES must be an integer between 5 and 1440');
+}
+const fogDropbox = fogDropboxParts.every(Boolean) ? {
+  appKey: process.env.FOG_DROPBOX_APP_KEY!, appSecret: process.env.FOG_DROPBOX_APP_SECRET!,
+  refreshToken: process.env.FOG_DROPBOX_REFRESH_TOKEN!,
+  path: process.env.FOG_DROPBOX_PATH || '/Apps/Fog of World/Sync', intervalMinutes: fogIntervalMinutes,
+} : null;
 const publicBaseUrl = basePublicUrl(process.env);
 const qualityBaseUrl = (process.env.DAYFLOW_AI_BASE_URL ?? '').replace(/\/+$/, '');
 const qualityApiKey = process.env.DAYFLOW_AI_API_KEY ?? '';
@@ -70,6 +84,7 @@ export const config = {
   ingestToken,
   healthConnect: { token: healthConnectToken },
   location: { token: locationToken },
+  fog: { dropbox: fogDropbox },
   dayflow: { token: dayflowToken, quality: dayflowQuality },
   computai: { token: computaiToken },
   maxSourceAgeHours,

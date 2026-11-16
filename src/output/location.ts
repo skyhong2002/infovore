@@ -15,7 +15,7 @@ button,input{font:inherit;min-height:44px;border:1px solid var(--line);border-ra
 .layout{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start}
 .map{position:relative;height:min(62vh,520px);overflow:hidden;border-radius:16px;border:1px solid var(--line);background:var(--line);touch-action:none;cursor:grab}
 .map img{position:absolute;width:256px;height:256px;user-select:none;-webkit-user-drag:none;pointer-events:none}
-.map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.map #fog img{opacity:1}.map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .zoom{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px;z-index:2}.zoom button{min-height:40px;width:40px;padding:0;font-size:20px}
 .credit{position:absolute;right:0;bottom:0;background:var(--card);opacity:.85;font-size:12px;padding:2px 8px;border-top-left-radius:8px;z-index:2}
 .number{font-size:32px;line-height:1.25;font-weight:650}.now{font-size:18px;font-weight:600}
@@ -29,11 +29,12 @@ button,input{font:inherit;min-height:44px;border:1px solid var(--line);border-ra
 <div id="workspace" hidden>
 <div class="toolbar"><button id="previous" aria-label="前一天">←</button><label for="day">日期</label><input id="day" type="date"><button id="next" aria-label="後一天">→</button><button id="today">今天</button><button id="refresh">重新整理</button><button id="logout">鎖定</button></div>
 <div class="layout"><section aria-label="地圖與時間軸">
-<div class="map" id="map" role="img" aria-label="當天軌跡地圖"><div class="zoom"><button id="zoomIn" type="button" aria-label="放大">+</button><button id="zoomOut" type="button" aria-label="縮小">−</button></div><div id="tiles"></div><svg id="overlay" aria-hidden="true"></svg><div class="credit">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></div></div>
+<div class="map" id="map" role="img" aria-label="當天軌跡地圖"><div class="zoom"><button id="zoomIn" type="button" aria-label="放大">+</button><button id="zoomOut" type="button" aria-label="縮小">−</button></div><div id="tiles"></div><div id="fog"></div><svg id="overlay" aria-hidden="true"></svg><div class="credit">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></div></div>
 <div class="panel" style="margin-top:16px"><h2>這一天</h2><div id="message" class="meta" role="status" aria-live="polite"></div><div id="timeline"></div></div>
 </section><aside>
 <div class="panel"><h2>目前位置</h2><p id="now" class="now">—</p><p id="nowMeta" class="meta"></p><p><a id="nowLink" href="#" target="_blank" rel="noopener" hidden>在 Google 地圖開啟</a></p></div>
 <div class="panel"><h2>當天移動</h2><div id="distance" class="number">—</div><p id="counts" class="meta"></p></div>
+<div class="panel" id="fogPanel" hidden><h2>Fog of World</h2><div id="fogArea" class="number">—</div><p id="fogMeta" class="meta"></p><label class="meta"><input id="fogToggle" type="checkbox" checked style="min-height:0;width:auto;margin-right:6px">在地圖上顯示迷霧</label></div>
 <div class="panel"><h2>資料狀態</h2><p id="status" class="meta"></p></div>
 </aside></div>
 <p class="meta">Asia/Taipei · 每天 00:00 起算。手機定位是抽樣記錄，室內或關閉定位時會有空白。</p></div>
@@ -42,7 +43,19 @@ button,input{font:inherit;min-height:44px;border:1px solid var(--line);border-ra
 
 export const locationScript = `(() => {
 const $ = id => document.getElementById(id);
-let token = '', request = 0, controller, data = null, view = null, drag = null;
+let token = '', request = 0, controller, data = null, view = null, drag = null, fogReady = false;
+// Fog tiles need the token, so they are fetched here and shown from blob URLs (kept per tab, freed on lock).
+const fogTiles = new Map();
+function fogTile(z, x, y) {
+  const key = z+'/'+x+'/'+y;
+  if (!fogTiles.has(key)) {
+    if (fogTiles.size > 300) { const [old, url] = fogTiles.entries().next().value; url.then(u => u && URL.revokeObjectURL(u)); fogTiles.delete(old); }
+    fogTiles.set(key, fetch('/api/location/fog/'+key+'.png', {headers: {Authorization: 'Bearer '+token}, cache: 'no-store'})
+      .then(r => r.ok ? r.blob() : null).then(b => b ? URL.createObjectURL(b) : null).catch(() => null));
+  }
+  return fogTiles.get(key);
+}
+function clearFog() { for (const url of fogTiles.values()) url.then(u => u && URL.revokeObjectURL(u)); fogTiles.clear(); $('fog').replaceChildren(); }
 const TZ = 'Asia/Taipei';
 const today = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0,10);
 $('day').value = today(); $('day').max = today();
@@ -86,6 +99,16 @@ function draw() {
     }
   }
   $('tiles').replaceChildren(...tiles);
+  const fog = [];
+  if (fogReady && $('fogToggle').checked && token) {
+    for (const tile of tiles) {
+      const [, fz, fx, fy] = /\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(tile.src);
+      const img = document.createElement('img'); img.alt = ''; img.style.left = tile.style.left; img.style.top = tile.style.top;
+      fogTile(fz, fx, fy).then(url => { if (url) img.src = url; });
+      fog.push(img);
+    }
+  }
+  $('fog').replaceChildren(...fog);
   const svg = $('overlay'), NS = 'http://www.w3.org/2000/svg', parts = [];
   const at = (lat, lng) => { const p = project(lat, lng, z); return [p[0] - left, p[1] - top]; };
   const el = (name, attrs) => { const e = document.createElementNS(NS, name); for (const k in attrs) { const v = String(attrs[k]); if (v.startsWith('var(')) e.style.setProperty(k, v); else e.setAttribute(k, v); } return e; };
@@ -130,7 +153,7 @@ function timeline() {
   return items.length;
 }
 function clear() { data = null; view = null; $('timeline').replaceChildren(); $('tiles').replaceChildren(); $('overlay').replaceChildren(); $('distance').textContent = '—'; $('counts').textContent = ''; }
-function lock() { request++; controller?.abort(); token = ''; $('token').value = ''; clear(); $('now').textContent = '—'; $('nowMeta').textContent = ''; $('nowLink').hidden = true; $('status').textContent = ''; $('workspace').hidden = true; $('unlock').hidden = false; $('error').textContent = ''; }
+function lock() { request++; controller?.abort(); token = ''; clearFog(); fogReady = false; $('fogPanel').hidden = true; $('token').value = ''; clear(); $('now').textContent = '—'; $('nowMeta').textContent = ''; $('nowLink').hidden = true; $('status').textContent = ''; $('workspace').hidden = true; $('unlock').hidden = false; $('error').textContent = ''; }
 async function get(path, signal) {
   const response = await fetch(path, {headers: {Authorization: 'Bearer '+token}, cache: 'no-store', signal});
   if (response.status === 401) { const e = new Error('unauthorized'); e.unauthorized = true; throw e; }
@@ -141,7 +164,15 @@ async function load() {
   const id = ++request; controller?.abort(); controller = new AbortController(); clear();
   $('message').textContent = '正在讀取位置紀錄…'; $('error').textContent = ''; $('refresh').disabled = true;
   try {
-    const [day, status] = await Promise.all([get('/api/location/day?day='+encodeURIComponent($('day').value), controller.signal), get('/api/location/status', controller.signal)]);
+    const [day, status, fog] = await Promise.all([get('/api/location/day?day='+encodeURIComponent($('day').value), controller.signal), get('/api/location/status', controller.signal), get('/api/location/fog/status', controller.signal).catch(() => null)]);
+    if (id !== request) return;
+    fogReady = Boolean(fog && fog.configured && fog.tiles > 0);
+    $('fogPanel').hidden = !(fog && fog.configured);
+    if (fog && fog.configured) {
+      $('fogArea').textContent = fog.exploredKm2.toLocaleString('zh-TW', {maximumFractionDigits: 1})+' km²';
+      $('fogMeta').textContent = '已探索 · '+fog.tiles+' 個圖格'+(fog.lastSuccessAt ? ' · 同步於 '+stamp(fog.lastSuccessAt) : ' · 尚未同步')+(fog.lastError ? '\n最近一次同步失敗：'+fog.lastError : '');
+      $('fogMeta').style.whiteSpace = 'pre-line';
+    }
     if (id !== request) return;
     $('unlock').hidden = true; $('workspace').hidden = false; $('token').value = '';
     data = day;
@@ -168,7 +199,7 @@ async function load() {
   } finally { if (id === request) $('refresh').disabled = false; }
 }
 $('unlock').addEventListener('submit', e => { e.preventDefault(); token = $('token').value.trim(); $('workspace').hidden = false; load(); });
-$('logout').onclick = lock; $('refresh').onclick = load; $('day').onchange = load; $('today').onclick = () => { $('day').value = today(); load(); };
+$('fogToggle').onchange = draw; $('logout').onclick = lock; $('refresh').onclick = load; $('day').onchange = load; $('today').onclick = () => { $('day').value = today(); load(); };
 function move(n) { const d = new Date($('day').value+'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); const day = d.toISOString().slice(0,10); if (day > today()) return; $('day').value = day; load(); }
 $('previous').onclick = () => move(-1); $('next').onclick = () => move(1);
 window.addEventListener('pagehide', lock);

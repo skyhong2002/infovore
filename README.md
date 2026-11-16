@@ -236,6 +236,24 @@ Re-sent batches and re-imported files change nothing: points are keyed by
 source and time, visits and trips by source and start (a newer export replaces
 them).
 
+### Fog of World
+
+The ingest service mirrors Fog of World's Dropbox sync folder every
+`FOG_SYNC_INTERVAL_MINUTES` (default 30) into `fog_tiles`, downloading only
+files whose Dropbox revision changed and dropping the ones Fog of World
+removed. It needs a Dropbox app with **Full Dropbox** access and only the
+`files.metadata.read` and `files.content.read` scopes, and an offline refresh
+token: set `FOG_DROPBOX_APP_KEY`, `FOG_DROPBOX_APP_SECRET`,
+`FOG_DROPBOX_REFRESH_TOKEN` and `FOG_DROPBOX_PATH` (default
+`/Apps/Fog of World/Sync`; a Dropbox in Chinese names it
+`/應用程式/Fog of World/Sync`). Nothing is written to Dropbox. The files are
+decoded as fog-machine documents them (512×512 Mercator tiles, 128×128 blocks
+of 64×64 explored bits, each block checked against its stored count; see
+`src/fog/tiles.ts`). `/location` shows the explored area and draws the fog
+over the map from `GET /api/location/fog/{z}/{x}/{y}.png` (dark where
+unexplored), with `GET /api/location/fog/status` for the totals; both need the
+location token.
+
 ## Run it yourself (Docker)
 
 ```sh

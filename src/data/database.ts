@@ -1,5 +1,6 @@
 import { recordedCoverage, type RecordedInterval } from './coverage.js';
 import { LocationStore, migrateLocation } from '../location/store.js';
+import { FogStore, migrateFog } from '../fog/store.js';
 import { measureRead, type ReadPhase } from './read-timing.js';
 import { migrateDayflowQuality } from '../dayflow/quality-store.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
@@ -298,6 +299,7 @@ export class Repository {
   readonly dayflow: DayflowStore;
   readonly computai: ComputaiStore;
   readonly location: LocationStore;
+  readonly fog: FogStore;
 
   constructor(path: string, options: { dayflowQuality?: boolean } = {}) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -307,6 +309,7 @@ export class Repository {
     this.dayflow = new DayflowStore(this.db, options.dayflowQuality);
     this.computai = new ComputaiStore(this.db);
     this.location = new LocationStore(this.db);
+    this.fog = new FogStore(this.db);
   }
 
   close(): void { this.db.close(); }
@@ -431,6 +434,7 @@ export class Repository {
       DROP TABLE IF EXISTS dayflow_phone_cards; DROP TABLE IF EXISTS dayflow_phone_meta;`);
     // Unversioned for the same reason: creates the private location tables when missing.
     migrateLocation(this.db);
+    migrateFog(this.db);
   }
 
   // Audit trail of reconcile deletions the user explicitly confirmed beyond the

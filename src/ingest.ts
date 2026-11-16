@@ -10,6 +10,7 @@ import { Repository } from './data/database.js';
 import { canEnrichPublicEvent, enrichPublicEvent, normalizeEvent, type EventInput } from './sources/events.js';
 import { HealthReconcileRejected, healthConnectBatchSchema } from './health/types.js';
 import { locationBatchSchema } from './location/types.js';
+import { startFogSync } from './fog/dropbox.js';
 
 // A failure after validation (database busy, disk full, lock timeout) is not
 // the client's fault: answer 503 so devices keep their batch and retry, and
@@ -187,5 +188,6 @@ if (process.env.NODE_ENV !== 'test') {
   const repository = new Repository(config.databasePath, { dayflowQuality: Boolean(config.dayflow.quality) });
   const app = createIngestApp(repository);
   if (config.dayflow.quality && config.dayflow.token && config.sourceEnabled('dayflow')) startDayflowQualityWorker(repository.dayflow, config.dayflow.quality);
+  if (config.fog.dropbox) startFogSync(repository.fog, config.fog.dropbox);
   serve({ fetch: app.fetch, port: config.port }, (info) => console.log(`infovore ingest listening on :${info.port}`));
 }

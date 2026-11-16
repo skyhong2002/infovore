@@ -221,6 +221,17 @@ app.get('/location', (c) => {
 });
 app.get('/location.js', (c) => c.body(locationScript, 200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' }));
 app.get('/api/location/status', (c) => locationReady(c) ?? c.json(repository.location.status()));
+// Fog of World exploration mirrored from Dropbox (src/fog): its totals and a
+// fog overlay per map tile (dark where unexplored), drawn over the location map.
+app.get('/api/location/fog/status', (c) => locationReady(c) ?? c.json({ configured: Boolean(config.fog.dropbox), ...repository.fog.status() }));
+app.get('/api/location/fog/:z/:x/:file', (c) => {
+  const refused = locationReady(c);
+  if (refused) return refused;
+  const match = /^(\d+)\.png$/.exec(c.req.param('file'));
+  const png = match ? repository.fog.png(Number(c.req.param('z')), Number(c.req.param('x')), Number(match[1])) : null;
+  if (!png) return c.json({ error: 'Invalid tile' }, 400);
+  return c.body(new Uint8Array(png), 200, { 'Content-Type': 'image/png' });
+});
 app.get('/api/location/day', (c) => {
   const refused = locationReady(c);
   if (refused) return refused;
