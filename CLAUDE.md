@@ -8,6 +8,9 @@ verification results (tests + a spot-check of the live site) when done.
 
 - Stage files explicitly; never commit `.DS_Store` or scratch files.
 - Commit messages: short imperative subject matching the existing history.
+- When a change touches `android/`, bump `versionCode`/`versionName` and run
+  `scripts/release-android.sh` after pushing: installed apps offer GitHub
+  releases as in-app updates (see android/README.md, "In-app updates").
 
 ## Deploy
 

@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import tw.skyhong.infovore.health.main.ConnectionController
 import tw.skyhong.infovore.health.main.HealthController
 import tw.skyhong.infovore.health.main.LocationController
+import tw.skyhong.infovore.health.update.UpdatePrompt
 import tw.skyhong.infovore.health.main.SetupController
 import tw.skyhong.infovore.health.main.UiHost
 import tw.skyhong.infovore.health.ui.FormState
@@ -42,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var health: HealthController
     private lateinit var setup: SetupController
     private lateinit var location: LocationController
+    private lateinit var updates: UpdatePrompt
     private var built = false
 
     private val backCallback = object : OnBackPressedCallback(false) {
@@ -63,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         health = HealthController(host, connection = { connection }, onRendered = { setup.render() })
         setup = SetupController(host, connection, health)
         location = LocationController(host, connectionReady = { connection.savedReady() })
+        updates = UpdatePrompt(this)
         setContentView(buildContent(savedInstanceState))
         built = true
         onBackPressedDispatcher.addCallback(this, backCallback)
@@ -102,6 +105,7 @@ class MainActivity : AppCompatActivity() {
         health.catchUpNotifications()
         // Location permission can change in system settings too; recording that was on resumes.
         location.resume()
+        updates.onResume()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -165,6 +169,10 @@ class MainActivity : AppCompatActivity() {
         val titles = kit.column().apply { setPadding(kit.dp(12), 0, 0, 0) }
         titles.addView(kit.heading(Style.TITLE, getString(R.string.app_name)))
         titles.addView(kit.text(Style.CAPTION, getString(R.string.header_version, BuildConfig.VERSION_NAME)))
+        titles.addView(kit.textButton(getString(R.string.update_check_action)).apply {
+            setPadding(0, 0, kit.dp(8), 0)
+            setOnClickListener { updates.checkNow() }
+        })
         row.addView(titles, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         return kit.column().apply {
             addView(row)

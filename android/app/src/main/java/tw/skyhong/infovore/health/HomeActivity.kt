@@ -32,6 +32,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tw.skyhong.infovore.health.location.LocationTracking
+import tw.skyhong.infovore.health.update.UpdatePrompt
 import tw.skyhong.infovore.health.ui.ActivityDashboard
 import tw.skyhong.infovore.health.ui.ViewKit
 import tw.skyhong.infovore.health.ui.ViewKit.Style
@@ -49,12 +50,14 @@ class HomeActivity : AppCompatActivity() {
     private var loadedTarget: String? = null
     private var browseFilter = ""
     private var browsePath: String? = null
+    private lateinit var updates: UpdatePrompt
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         kit = ViewKit(this)
         settings = SecureSettings(this)
+        updates = UpdatePrompt(this)
         // The 時間軸 tab (phone timeline) is gone; a state saved by 0.5.x opens the overview.
         tab = savedInstanceState?.getString("tab")?.takeIf { it in TABS } ?: "home"
         browsePath = savedInstanceState?.getString("browsePath")
@@ -113,6 +116,8 @@ class HomeActivity : AppCompatActivity() {
         web?.onResume()
         // The location recorder, when on, resumes whenever Infovore comes to the foreground.
         LocationTracking.resumeIfEnabled(this)
+        // A newer GitHub release asks whether to update.
+        updates.checkAutomatically()
     }
 
     override fun onStop() {

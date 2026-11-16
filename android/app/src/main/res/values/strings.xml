@@ -118,4 +118,20 @@
     <string name="location_channel_description">記錄位置時常駐顯示，點一下可開啟設定或關閉記錄。</string>
     <string name="location_notification_title">正在記錄位置</string>
     <string name="location_notification_text">位置只上傳到你的 Infovore 伺服器。點一下可管理或關閉。</string>
+    <!-- In-app updates from GitHub releases -->
+    <string name="update_check_action">檢查更新</string>
+    <string name="update_check_failed">無法連線到 GitHub 檢查更新，請稍後再試。</string>
+    <string name="update_latest">已是最新版本（%1$s）。</string>
+    <string name="update_offer_title">有新版本 %1$s</string>
+    <string name="update_offer_message">目前版本 %1$s，可更新到 %2$s。</string>
+    <string name="update_offer_size">（約 %1$s）</string>
+    <string name="update_action_install">更新</string>
+    <string name="update_action_later">稍後</string>
+    <string name="update_permission_title">允許 Infovore 安裝更新</string>
+    <string name="update_permission_message">Android 需要你允許 Infovore「安裝未知應用程式」，才能直接安裝新版本。請在下一個畫面開啟「允許這個來源的應用程式」，返回後會自動繼續更新。只需設定一次。</string>
+    <string name="update_permission_open">前往設定</string>
+    <string name="update_progress_title">正在更新</string>
+    <string name="update_downloading">正在下載 %1$s…</string>
+    <string name="update_downloading_percent">正在下載 %1$s… %2$d%%</string>
+    <string name="update_failed_title">更新沒有完成</string>
 </resources>

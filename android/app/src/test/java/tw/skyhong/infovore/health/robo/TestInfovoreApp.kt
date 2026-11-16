@@ -16,6 +16,8 @@ import tw.skyhong.infovore.health.SyncEnvironment
 import tw.skyhong.infovore.health.SyncRunner
 import tw.skyhong.infovore.health.SyncState
 import tw.skyhong.infovore.health.InfovoreHealthApp
+import tw.skyhong.infovore.health.update.UpdateChecker
+import tw.skyhong.infovore.health.update.UpdateInstaller
 
 /**
  * The Robolectric application (robolectric.properties): Robolectric does not run the androidx
@@ -31,6 +33,9 @@ class TestInfovoreApp : Application() {
         FakeAndroidKeyStore.install()
         // Process-wide test seams and the shared sync state would otherwise leak from the previous test.
         EndpointPolicy.testHttpHost = null
+        // Opening the app looks for updates: never reach GitHub from a test (port 9 refuses the connection).
+        UpdateChecker.testBase = "http://127.0.0.1:9"
+        UpdateInstaller.reset()
         SyncEnvironment.testClock = null
         SyncEnvironment.testSyncIds = null
         SyncEnvironment.testApiTiming = null

@@ -1,10 +1,31 @@
 # Infovore Health for Android
 
-This private companion (current version 0.7.0) reads selected records from Android Health Connect,
+This private companion (current version 0.8.0) reads selected records from Android Health Connect,
 records the phone's location when asked, and uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
 Google account credentials.
+
+## In-app updates (0.8.0)
+
+Opening the app (at most every three hours) asks GitHub for this public
+repository's releases, without credentials. A published, non-draft release
+tagged `android-v<versionName>` whose asset `infovore-<versionName>-<versionCode>.apk`
+is downloaded from this repository and has a higher `versionCode` opens
+**有新版本** with its notes: **更新** downloads it straight into a
+`PackageInstaller` session, checks GitHub's SHA-256 for the asset, and commits
+it; **稍後** stays quiet about that version for a day. Settings has
+**檢查更新** next to the version.
+
+The first time, Android asks to allow Infovore to **安裝未知應用程式**; the app
+opens that page and continues when you return. Android then shows its own
+install confirmation. Once Infovore has installed itself, later updates
+request `USER_ACTION_NOT_REQUIRED` and may install without a prompt. Android
+only accepts an update signed with the same key, so releases must be built with
+`scripts/release-android.sh`: it signs with sky-server's `~/.android/debug.keystore`
+(the key installed copies carry), refuses any other certificate, and creates the
+release. Bump `versionCode` and `versionName` first; the key never leaves the
+server.
 
 ## Location history (0.7.0)
 
