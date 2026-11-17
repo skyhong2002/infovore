@@ -23,14 +23,29 @@ const DAY_MS = 86_400_000;
 const REGION_ACCURACY_LIMIT_M = 2_000;
 const DISTANCE_ACCURACY_LIMIT_M = 100;
 
-export interface PlacesRegion { region: string; country: string; firstDay: string; lastDay: string; days: number }
-export interface PlacesMap { label: string; z: number; x: number; y: number; cols: number; rows: number; km2: number }
+/**
+ * A region and the evidence for it: stays on dated days (Timeline and the
+ * phone), ground explored in Fog of World (undated), or an entry added by hand.
+ */
+export interface PlacesRegion {
+  region: string;
+  country: string;
+  /** The name in the country's own language when it differs (臺南市); else ''. */
+  local: string;
+  code: string;
+  days: number;
+  firstDay: string | null;
+  lastDay: string | null;
+  exploredKm2: number | null;
+  manual: boolean;
+}
+export interface PlacesMap { label: string; code: string; z: number; x: number; y: number; cols: number; rows: number; km2: number }
 export interface PlacesExtra {
   asOf: string;
   delayHours: number;
   explored: { km2: number; tiles: number; last30DaysKm2: number | null };
   regions: PlacesRegion[];
-  countries: Array<{ country: string; regions: number; days: number }>;
+  countries: Array<{ country: string; code: string; regions: number; days: number; exploredKm2: number }>;
   travel: {
     since: string | null;
     allTimeKm: number;
@@ -114,21 +129,73 @@ function regionsVisited(points: readonly Point[], visits: readonly Visit[], plac
     const region = regionAt(visit.lat, visit.lng);
     if (region) stay(region, dayOf(visit.start));
   }
-  const seen = stayed;
-  const regions: PlacesRegion[] = [...seen.values()].map(({ region, days }) => {
+  return { stayed, since: first === null ? null : dayOf(first) };
+}
+
+// Fog of World regions below this explored area are too thin to call visited.
+const FOG_REGION_MIN_KM2 = 0.2;
+
+/** Explored km² per region in the public fog, leaving out blocks inside a zone. */
+function fogRegions(fog: FogStore, cutoff: string, places: PlacesConfig) {
+  const lookup = regionCache();
+  const regions = new Map<string, { region: Region; km2: number }>();
+  for (const tile of fog.publicState(cutoff).tiles.values()) {
+    for (const block of tile.blocks) {
+      const gx = (tile.x * TILE_BLOCKS + block.x + 0.5) * BLOCK_PIXELS;
+      const gy = (tile.y * TILE_BLOCKS + block.y + 0.5) * BLOCK_PIXELS;
+      const lng = (gx / WORLD_PIXELS) * 360 - 180;
+      const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * gy) / WORLD_PIXELS))) * 180) / Math.PI;
+      if (inPrivacyZone(places.zones, lat, lng)) continue;
+      const region = lookup(lat, lng);
+      if (!region) continue;
+      const side = (40_075.016686 * Math.cos((lat * Math.PI) / 180)) / WORLD_PIXELS;
+      const key = `${region.region}\u001f${region.country}`;
+      const entry = regions.get(key) ?? { region, km2: 0 };
+      entry.km2 += block.explored * side * side;
+      regions.set(key, entry);
+    }
+  }
+  return regions;
+}
+
+function mergeRegions(stayed: ReturnType<typeof regionsVisited>['stayed'], fogged: ReturnType<typeof fogRegions>, places: PlacesConfig) {
+  const ignored = new Set(places.fogIgnoreRegions.map((name) => name.toLowerCase()));
+  const merged = new Map<string, PlacesRegion>();
+  const blank = (region: Region): PlacesRegion =>
+    ({ ...region, days: 0, firstDay: null, lastDay: null, exploredKm2: null, manual: false });
+  for (const [key, { region, days }] of stayed) {
     const sorted = [...days].sort();
-    return { ...region, firstDay: sorted[0], lastDay: sorted.at(-1)!, days: sorted.length };
-  }).sort((a, b) => b.lastDay.localeCompare(a.lastDay) || b.days - a.days);
-  const byCountry = new Map<string, { regions: number; days: Set<string> }>();
-  for (const { region, days } of seen.values()) {
-    const entry = byCountry.get(region.country) ?? { regions: 0, days: new Set<string>() };
+    merged.set(key, { ...blank(region), days: sorted.length, firstDay: sorted[0], lastDay: sorted.at(-1)! });
+  }
+  for (const [key, { region, km2 }] of fogged) {
+    const known = merged.get(key);
+    if (known) known.exploredKm2 = Math.round(km2 * 100) / 100;
+    else if (km2 >= FOG_REGION_MIN_KM2 && !ignored.has(region.region.toLowerCase())) {
+      merged.set(key, { ...blank(region), exploredKm2: Math.round(km2 * 100) / 100 });
+    }
+  }
+  for (const place of places.extraPlaces) {
+    const region = regionOf(place.lat, place.lng);
+    if (!region) continue;
+    const key = `${region.region}\u001f${region.country}`;
+    const known = merged.get(key);
+    if (known) known.manual = true;
+    else merged.set(key, { ...blank(region), manual: true });
+  }
+  const regions = [...merged.values()].sort((a, b) =>
+    (b.lastDay ?? '').localeCompare(a.lastDay ?? '') || (b.exploredKm2 ?? 0) - (a.exploredKm2 ?? 0) || a.region.localeCompare(b.region));
+  const byCountry = new Map<string, { code: string; regions: number; days: Set<string>; km2: number }>();
+  for (const region of regions) {
+    const entry = byCountry.get(region.country) ?? { code: region.code, regions: 0, days: new Set<string>(), km2: 0 };
     entry.regions++;
-    for (const day of days) entry.days.add(day);
+    entry.km2 += region.exploredKm2 ?? 0;
+    for (const day of stayed.get(`${region.region}\u001f${region.country}`)?.days ?? []) entry.days.add(day);
     byCountry.set(region.country, entry);
   }
-  const countries = [...byCountry].map(([country, entry]) => ({ country, regions: entry.regions, days: entry.days.size }))
-    .sort((a, b) => b.days - a.days);
-  return { regions, countries, since: first === null ? null : dayOf(first) };
+  const countries = [...byCountry].map(([country, entry]) => ({
+    country, code: entry.code, regions: entry.regions, days: entry.days.size, exploredKm2: Math.round(entry.km2 * 100) / 100,
+  })).sort((a, b) => b.days - a.days || b.exploredKm2 - a.exploredKm2);
+  return { regions, countries };
 }
 
 // A day's distance, like LocationStore.day(): the phone's own fixes when it
@@ -181,12 +248,12 @@ function travel(location: LocationStore, points: readonly Point[], until: number
   };
 }
 
-// One overview map per country with explored ground, framed on its explored
+// One overview map per country with explored ground (up to ten), framed on its explored
 // blocks at the closest zoom (at most PUBLIC_MAX_ZOOM) that fits 4 × 3 map tiles.
 function maps(fog: FogStore, cutoff: string): PlacesMap[] {
   const state = fog.publicState(cutoff);
   const lookup = regionCache();
-  const countries = new Map<string, { minX: number; minY: number; maxX: number; maxY: number; km2: number }>();
+  const countries = new Map<string, { code: string; minX: number; minY: number; maxX: number; maxY: number; km2: number }>();
   for (const tile of state.tiles.values()) {
     let sx = 0, sy = 0, n = 0;
     const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
@@ -200,23 +267,24 @@ function maps(fog: FogStore, cutoff: string): PlacesMap[] {
     if (!n) continue;
     const lng = (sx / n / WORLD_PIXELS) * 360 - 180;
     const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * sy) / n / WORLD_PIXELS))) * 180) / Math.PI;
-    const country = lookup(lat, lng)?.country;
-    if (!country) continue;
+    const found = lookup(lat, lng);
+    if (!found) continue;
+    const country = found.country;
     const pixelKm = (40_075.016686 * Math.cos((lat * Math.PI) / 180)) / WORLD_PIXELS;
-    const entry = countries.get(country) ?? { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, km2: 0 };
+    const entry = countries.get(country) ?? { code: found.code, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, km2: 0 };
     entry.minX = Math.min(entry.minX, box.minX); entry.minY = Math.min(entry.minY, box.minY);
     entry.maxX = Math.max(entry.maxX, box.maxX); entry.maxY = Math.max(entry.maxY, box.maxY);
     entry.km2 += n * pixelKm * pixelKm;
     countries.set(country, entry);
   }
-  return [...countries].sort((a, b) => b[1].km2 - a[1].km2).slice(0, 3).map(([label, box]) => {
+  return [...countries].filter(([, box]) => box.km2 >= FOG_REGION_MIN_KM2).sort((a, b) => b[1].km2 - a[1].km2).slice(0, 10).map(([label, box]) => {
     for (let z = PUBLIC_MAX_ZOOM; ; z--) {
       const perTile = WORLD_PIXELS / 2 ** z;
       const x = Math.floor(box.minX / perTile);
       const y = Math.floor(box.minY / perTile);
       const cols = Math.floor((box.maxX - 1) / perTile) - x + 1;
       const rows = Math.floor((box.maxY - 1) / perTile) - y + 1;
-      if ((cols <= 4 && rows <= 3) || z <= 2) return { label, z, x, y, cols: Math.min(cols, 4), rows: Math.min(rows, 3), km2: Math.round(box.km2 * 10) / 10 };
+      if ((cols <= 4 && rows <= 3) || z <= 2) return { label, code: box.code, z, x, y, cols: Math.min(cols, 4), rows: Math.min(rows, 3), km2: Math.round(box.km2 * 10) / 10 };
     }
   });
 }
@@ -231,6 +299,7 @@ export function placesSnapshot(location: LocationStore, fog: FogStore, places: P
   if (memo?.key === key) return memo.snapshot;
   const points = location.pointsBefore(until);
   const visited = regionsVisited(points, location.visitsBefore(until), places);
+  const { regions, countries } = mergeRegions(visited.stayed, fogRegions(fog, cutoff, places), places);
   const moved = travel(location, points, until, visited.since);
   const history = fog.areaHistory();
   const monthAgo = dayOf(until - 30 * DAY_MS);
@@ -243,8 +312,8 @@ export function placesSnapshot(location: LocationStore, fog: FogStore, places: P
       tiles: fogState.tiles.size,
       last30DaysKm2: baseline ? Math.round((fogState.exploredKm2 - baseline.km2) * 100) / 100 : null,
     },
-    regions: visited.regions,
-    countries: visited.countries,
+    regions,
+    countries,
     travel: moved,
     maps: maps(fog, cutoff),
   };
@@ -253,8 +322,8 @@ export function placesSnapshot(location: LocationStore, fog: FogStore, places: P
     profile: { id: 'places', name: ownerName, avatar: '', url: '' },
     stats: {
       exploredKm2: Math.round(fogState.exploredKm2),
-      regions: visited.regions.length,
-      countries: visited.countries.length,
+      regions: regions.length,
+      countries: countries.length,
       kmLast30Days: moved.last30Km,
     },
     entries: [],

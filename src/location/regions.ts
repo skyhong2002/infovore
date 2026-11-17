@@ -4,9 +4,16 @@ import { readFileSync } from 'node:fs';
 // region of the nearest populated place in assets/regions.json (built from
 // GeoNames by scripts/build-regions.mjs). No coordinates leave the server.
 
-export interface Region { region: string; country: string }
+export interface Region {
+  region: string;
+  country: string;
+  /** The region's name in the country's own language, when it differs (臺南市, 서울특별시); else ''. */
+  local: string;
+  /** ISO 3166 country code. */
+  code: string;
+}
 
-interface RegionData { regions: Array<[string, string]>; points: number[] }
+interface RegionData { regions: Array<[string, string, string, string]>; points: number[] }
 
 const CELL = 1; // degrees per lookup bucket
 const MAX_DISTANCE_KM = 150; // farther than this from any town: at sea, no region
@@ -53,6 +60,11 @@ export function regionOf(lat: number, lng: number): Region | null {
     if (best >= 0 && Math.sqrt(bestKm2) <= ring * CELL * 111.2 * Math.max(cos, 0.2)) break;
   }
   if (best < 0 || Math.sqrt(bestKm2) > MAX_DISTANCE_KM) return null;
-  const [region, country] = data.regions[data.points[best + 2]];
-  return { region: region || country, country };
+  const [region, country, local, code] = data.regions[data.points[best + 2]];
+  return { region: region || country, country, local: region ? local : '', code };
+}
+
+/** The country's flag as regional-indicator emoji (TW → 🇹🇼). */
+export function flagOf(code: string): string {
+  return /^[A-Z]{2}$/.test(code) ? String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : '';
 }

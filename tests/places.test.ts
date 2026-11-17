@@ -9,7 +9,7 @@ const { Repository } = await import('../src/data/database.js');
 const { encodeTile } = await import('../src/fog/tiles.js');
 const { clearZonesRgba, FOG_COLOR, renderFogRgba, parseTile } = await import('../src/fog/tiles.js');
 const { afterFogSync, lastSeenRegion, placesSnapshot, publicCutoff } = await import('../src/location/public.js');
-const { regionOf } = await import('../src/location/regions.js');
+const { flagOf, regionOf } = await import('../src/location/regions.js');
 const { inPrivacyZone, parsePlacesConfig, parsePrivacyZones } = await import('../src/location/zones.js');
 
 const WORLD = 2 ** 22;
@@ -30,9 +30,11 @@ test('privacy zones parse strictly and contain what is inside them', () => {
 });
 
 test('regions are named offline at the county or first-level scale', () => {
-  assert.deepEqual(regionOf(25.034, 121.561), { region: 'Taipei City', country: 'Taiwan' });
-  assert.deepEqual(regionOf(23.0, 120.21), { region: 'Tainan', country: 'Taiwan' });
-  assert.deepEqual(regionOf(37.556, 126.922), { region: 'Seoul', country: 'South Korea' });
+  assert.deepEqual(regionOf(25.034, 121.561), { region: 'Taipei City', country: 'Taiwan', local: '臺北市', code: 'TW' });
+  assert.deepEqual(regionOf(23.0, 120.21), { region: 'Tainan', country: 'Taiwan', local: '臺南市', code: 'TW' });
+  assert.deepEqual(regionOf(37.556, 126.922), { region: 'Seoul', country: 'South Korea', local: '서울특별시', code: 'KR' });
+  assert.deepEqual(regionOf(48.86, 2.35), { region: 'Ile-de-France', country: 'France', local: '', code: 'FR' }, 'no accent-only twin');
+  assert.equal(flagOf('TW'), '🇹🇼');
   assert.equal(regionOf(29.5, 125.0), null, 'open sea');
 });
 
@@ -86,7 +88,7 @@ test('the public projection is delayed, leaves zones out and carries no coordina
     assert.ok(!json.includes(coordinate), `no coordinate ${coordinate}`);
   }
   // Now: the latest fix at least a day old, outside zones.
-  assert.deepEqual(lastSeenRegion(repo.location, places, now), { region: 'Tainan', country: 'Taiwan', day: '2026-11-12' });
+  assert.deepEqual(lastSeenRegion(repo.location, places, now), { region: 'Tainan', country: 'Taiwan', local: '臺南市', code: 'TW', day: '2026-11-12' });
   assert.equal(lastSeenRegion(repo.location, places, new Date(+now + 10 * 86_400_000)), null, 'nothing in the 7 days before');
   repo.close();
 });
@@ -146,6 +148,37 @@ test('the Places page, JSON and fog tiles are public but capped', async () => {
   assert.equal((await app.request('/api/places/fog/9/428/223.png')).status, 200);
   assert.equal((await app.request('/api/places/fog/10/856/446.png')).status, 400, 'no closer than zoom 9');
   assert.match(await (await app.request('/platforms')).text(), /href="\/platforms\/places"/);
-  assert.match(await (await app.request('/now')).text(), /Last seen around<\/a> Tainan, Taiwan/);
+  assert.match(await (await app.request('/now')).text(), /Last seen around<\/a> 🇹🇼 Tainan 臺南市, Taiwan/);
+  assert.match(body, /Tainan <span lang="zh-Hant-TW" class="places-local">臺南市<\/span>/);
   assert.match(await (await app.request('/sitemap.xml')).text(), /\/platforms\/places/);
+});
+
+// A square of explored fog pixels around a place, about 0.25 km² at 60 × 60.
+function patch(lat: number, lng: number, side: number) {
+  const [gx, gy] = fogPixel(lat, lng);
+  const pixels: Array<[number, number]> = [];
+  for (let dy = 0; dy < side; dy++) for (let dx = 0; dx < side; dx++) pixels.push([gx + dx, gy + dy]);
+  return encodeTile(Math.floor(gx / 8192), Math.floor(gy / 8192), pixels);
+}
+
+test('Fog of World and hand-added trips add undated regions, minus thin and ignored ones', () => {
+  const repo = new Repository(':memory:');
+  const now = new Date('2026-11-17T04:00:00Z');
+  seedLocation(repo, now);
+  for (const [name, tile] of [['kyoto', patch(35.0, 135.76, 60)], ['changhua', patch(24.08, 120.54, 60)], ['osaka', patch(34.69, 135.5, 10)]] as const) {
+    repo.fog.put(tile.name, name, tile.data, '2026-11-01T00:00:00.000Z');
+  }
+  const places = parsePlacesConfig({
+    LOCATION_PRIVACY_ZONES: '24.787,120.997,1500', PLACES_FOG_IGNORE_REGIONS: 'Changhua, Nowhere', PLACES_EXTRA: '41.39,2.17',
+  })!;
+  const extra = placesSnapshot(repo.location, repo.fog, places, 'Owner', now).extra;
+  const named = extra.regions.map((r) => `${r.region}/${r.days}/${r.exploredKm2 === null ? '-' : 'fog'}/${r.manual ? 'manual' : '-'}`);
+  assert.deepEqual(named, ['Tainan/1/-/-', 'Taipei City/1/-/-', 'Kyoto/0/fog/-', 'Catalonia/0/-/manual'],
+    'Changhua is ignored for Fog of World alone; the Osaka patch is too thin');
+  const kyoto = extra.regions.find((r) => r.region === 'Kyoto')!;
+  assert.ok(kyoto.exploredKm2! > 0.2 && kyoto.exploredKm2! < 0.35, String(kyoto.exploredKm2));
+  assert.equal(kyoto.local, '京都府');
+  assert.deepEqual(extra.countries.map((c) => `${c.code}:${c.regions}:${c.days}`), ['TW:2:2', 'JP:1:0', 'ES:1:0']);
+  assert.deepEqual(extra.maps.map((m) => m.code).sort(), ['JP', 'TW'], 'a map per country with enough fog');
+  repo.close();
 });

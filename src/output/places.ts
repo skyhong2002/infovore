@@ -1,6 +1,7 @@
-import type { PlacesExtra, PlacesMap } from '../location/public.js';
+import type { PlacesExtra, PlacesMap, PlacesRegion } from '../location/public.js';
 import { dateFormat } from '../data/time.js';
 import { html } from './pages.js';
+import { flagOf } from '../location/regions.js';
 
 // The public Places platform: see src/location/public.ts for what is (and is
 // never) published. The maps are plain <img> grids of OpenStreetMap tiles with
@@ -21,7 +22,11 @@ const STYLE = `<style>
 .places-regions{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
 .places-regions article{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px}
 .places-regions strong{display:block;font-size:14px}
-.places-regions span{color:var(--muted);font-size:12px}
+.places-regions strong>.places-local{display:inline;color:var(--muted);font-weight:400;font-size:13px}
+.places-regions article>span{color:var(--muted);font-size:12px}
+.places-country{margin-bottom:16px}
+.places-country h3{align-items:baseline;display:flex;flex-wrap:wrap;font-size:15px;gap:8px;margin:0 0 8px}
+.places-country h3 span{color:var(--muted);font-size:12px;font-weight:400}
 </style>`;
 
 function map(entry: PlacesMap): string {
@@ -34,7 +39,20 @@ function map(entry: PlacesMap): string {
     }
   }
   return `<figure><div class="places-map" style="grid-template-columns:repeat(${entry.cols},minmax(0,1fr));width:${entry.cols * 256}px" role="img" aria-label="Fog of World explored ground in ${html(entry.label)}">${cells.join('')}</div>
-    <figcaption>${html(entry.label)} · ${kmText(entry.km2).replace(' km', ' km²')} explored · map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</figcaption></figure>`;
+    <figcaption>${flagOf(entry.code)} ${html(entry.label)} · ${kmText(entry.km2).replace(' km', ' km²')} explored · map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</figcaption></figure>`;
+}
+
+// Lets browsers pick the right CJK glyphs for the local names.
+const LOCAL_LANG: Record<string, string> = { TW: 'zh-Hant-TW', HK: 'zh-Hant-HK', CN: 'zh-Hans', JP: 'ja', KR: 'ko' };
+
+function regionCard(region: PlacesRegion): string {
+  const facts: string[] = [];
+  if (region.days && region.firstDay && region.lastDay) {
+    facts.push(`${region.days} ${region.days === 1 ? 'day' : 'days'} · ${html(region.firstDay === region.lastDay ? show(region.lastDay, longDay) : `${show(region.firstDay)} – ${show(region.lastDay, longDay)}`)}`);
+  }
+  if (region.exploredKm2 !== null) facts.push(`${region.exploredKm2.toLocaleString('en', { maximumFractionDigits: region.exploredKm2 < 1 ? 2 : 1 })} km² explored`);
+  if (!facts.length && region.manual) facts.push('Visited before recording');
+  return `<article><strong>${html(region.region)}${region.local ? ` <span${LOCAL_LANG[region.code] ? ` lang="${LOCAL_LANG[region.code]}"` : ''} class="places-local">${html(region.local)}</span>` : ''}</strong><span>${facts.join(' · ')}</span></article>`;
 }
 
 export function placesDetails(extra: PlacesExtra): string {
@@ -53,9 +71,13 @@ export function placesDetails(extra: PlacesExtra): string {
     ? `<section><div class="platform-section-heading"><h2>How</h2><span>Trips as Google Maps Timeline classified them · all time</span></div>
       <div class="platform-tags">${extra.travel.modes.map((mode) => `<span>${html(mode.label)} · ${kmText(mode.km)} · ${mode.trips} ${mode.trips === 1 ? 'trip' : 'trips'}</span>`).join('')}</div></section>`
     : '';
-  const regions = `<section><div class="platform-section-heading"><h2>Regions</h2><span>${extra.regions.length} in ${extra.countries.length} ${extra.countries.length === 1 ? 'country' : 'countries'} · most recent first</span></div>
-    <div class="places-regions">${extra.regions.map((region) => `<article><strong>${html(region.region === region.country ? region.country : region.region)}</strong><span>${html(region.region === region.country ? '' : `${region.country} · `)}${region.days} ${region.days === 1 ? 'day' : 'days'} · ${html(region.firstDay === region.lastDay ? show(region.lastDay, longDay) : `${show(region.firstDay)} – ${show(region.lastDay, longDay)}`)}</span></article>`).join('')
-      || '<div class="empty">No regions yet.</div>'}</div>
-    <div class="platform-note">Everything here is ${Math.round(extra.delayHours / 24)} days behind and stops at whole days. Regions are counties, cities or first-level divisions (named offline from GeoNames); nothing recorded inside private areas counts towards them, and the map shows those areas as plain explored ground. Coordinates, places, visits and times of day stay private.</div></section>`;
+  const total = extra.regions.length;
+  const regions = `<section><div class="platform-section-heading"><h2>Regions</h2><span>${total} in ${extra.countries.length} ${extra.countries.length === 1 ? 'country' : 'countries'}</span></div>
+    ${extra.countries.map((country) => {
+      const list = extra.regions.filter((region) => region.country === country.country);
+      return `<div class="places-country"><h3>${flagOf(country.code)} ${html(country.country)}<span>${list.length} ${list.length === 1 ? 'region' : 'regions'}${country.days ? ` · ${country.days} ${country.days === 1 ? 'day' : 'days'} recorded` : ''}</span></h3>
+        <div class="places-regions">${list.map(regionCard).join('')}</div></div>`;
+    }).join('') || '<div class="empty">No regions yet.</div>'}
+    <div class="platform-note">Everything here is ${Math.round(extra.delayHours / 24)} days behind and stops at whole days. A region counts on a recorded day after a stay of an hour or more (passing through does not count); Fog of World adds the regions its history explored, which carry no dates; a few older trips are added by hand. Regions are counties, cities or first-level divisions, named offline from GeoNames. Nothing recorded inside private areas counts towards them, and the map shows those areas as plain explored ground. Coordinates, places, visits and times of day stay private.</div></section>`;
   return STYLE + explored + regions + travel + modes;
 }

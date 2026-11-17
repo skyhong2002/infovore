@@ -7,6 +7,7 @@ import { activityMeta } from './activity-meta.js';
 import { baseStyles } from './styles.js';
 import { createHash } from 'node:crypto';
 import { dateFormat } from '../data/time.js';
+import { flagOf } from '../location/regions.js';
 import { ADAPTIVE_MEDIA_SCRIPT, INFO_SCRIPT, inlineScript, SCROLL_REGION_SCRIPT, THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT } from './scripts.js';
 
 export function html(value: unknown): string {
@@ -275,7 +276,7 @@ export interface NowExtras {
   queued?: Activity[];
   now?: Date;
   /** Region of the latest fix outside the privacy zones, at least a day old (src/location/public.ts). */
-  lastSeen?: { region: string; country: string; day: string } | null;
+  lastSeen?: { region: string; country: string; local: string; code: string; day: string } | null;
 }
 
 const lastSeenDay = dateFormat('en', { timeZone: 'UTC', month: 'short', day: 'numeric' });
@@ -289,7 +290,7 @@ export function nowPage(ownerName: string, current: Activity[], upcoming: Activi
     ? `<details class="paused" id="paused"><summary class="details-toggle">Paused · ${paused.length} ${paused.length === 1 ? 'title' : 'titles'} still marked in progress but untouched for over ${STALE_AFTER_DAYS} days</summary><div class="grid">${paused.map((activity) => activityCard(activity, 'paused', now)).join('')}</div></details>`
     : '';
   const intro = `<section class="page-intro"><div><div class="eyebrow">Present view</div><h1>Now</h1><p>A short-term view of what ${html(ownerName)} is in the middle of, what is lined up next, and what just happened.</p></div><div class="page-intro-aside">In progress = touched within ${STALE_AFTER_DAYS} days; games count for ${PLAYING_WINDOW_DAYS} days after a session.${extras.lastSeen
-    ? `<br><a href="/platforms/places">Last seen around</a> ${html(extras.lastSeen.region === extras.lastSeen.country ? extras.lastSeen.country : `${extras.lastSeen.region}, ${extras.lastSeen.country}`)} · ${html(lastSeenDay.format(new Date(`${extras.lastSeen.day}T00:00:00Z`)))}, shown at least a day late.`
+    ? `<br><a href="/platforms/places">Last seen around</a> ${flagOf(extras.lastSeen.code)} ${html(extras.lastSeen.region === extras.lastSeen.country ? extras.lastSeen.country : `${extras.lastSeen.region}${extras.lastSeen.local ? ` ${extras.lastSeen.local}` : ''}, ${extras.lastSeen.country}`)} · ${html(lastSeenDay.format(new Date(`${extras.lastSeen.day}T00:00:00Z`)))}, shown at least a day late.`
     : ''}</div></section>`;
   return shell(`${ownerName} · now`, intro
     + section('In progress', 'Playing, watching and reading right now, newest progress first.', current, 'current', pausedBlock)

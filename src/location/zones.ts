@@ -12,6 +12,14 @@ export interface PlacesConfig {
   delayHours: number;
   /** The "last seen around" line on Now lags this far behind. */
   nowDelayHours: number;
+  /**
+   * Regions (English names, as on the page) that Fog of World alone does not
+   * make visited: its history has no dates, so a corridor ridden through by
+   * train cannot be told from a trip (PLACES_FOG_IGNORE_REGIONS, comma-separated).
+   */
+  fogIgnoreRegions: string[];
+  /** Places visited before any recording, one point each (PLACES_EXTRA="lat,lng;lat,lng"): their regions count. */
+  extraPlaces: Array<{ lat: number; lng: number }>;
 }
 
 const MIN_RADIUS_M = 500;
@@ -38,7 +46,15 @@ export function parsePlacesConfig(env: NodeJS.ProcessEnv): PlacesConfig | null {
   const zones = parsePrivacyZones(env.LOCATION_PRIVACY_ZONES ?? '');
   const delayHours = hours(env.LOCATION_PUBLIC_DELAY_HOURS, 72, 'LOCATION_PUBLIC_DELAY_HOURS');
   const nowDelayHours = hours(env.LOCATION_NOW_DELAY_HOURS, 24, 'LOCATION_NOW_DELAY_HOURS');
-  return zones.length ? { zones, delayHours, nowDelayHours } : null;
+  const fogIgnoreRegions = (env.PLACES_FOG_IGNORE_REGIONS ?? '').split(',').map((name) => name.trim()).filter(Boolean);
+  const extraPlaces = (env.PLACES_EXTRA ?? '').split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const [lat, lng] = part.split(',').map((value) => Number(value.trim()));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 85 || Math.abs(lng) > 180) {
+      throw new Error('PLACES_EXTRA: expected lat,lng pairs separated by ";"');
+    }
+    return { lat, lng };
+  });
+  return zones.length ? { zones, delayHours, nowDelayHours, fogIgnoreRegions, extraPlaces } : null;
 }
 
 const EARTH_M = 6_371_008.8;

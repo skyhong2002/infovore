@@ -262,7 +262,12 @@ history and Fog of World say at the scale of regions and kilometres:
 - the explored area and an overview fog map per country;
 - the regions visited, with first and last day and day counts. A day counts
   only after a stay: at least an hour of fixes in the region, or a Timeline
-  visit of 30 minutes or more. Passing through by train or road does not count;
+  visit of 30 minutes or more. Passing through by train or road does not count.
+  Fog of World adds the regions its (undated) history explored, at 0.2 km² or
+  more, except those in `PLACES_FOG_IGNORE_REGIONS` (English names,
+  comma-separated: corridors only ridden through). `PLACES_EXTRA="lat,lng;…"`
+  adds the regions of trips from before any recording. Every region shows its
+  country's flag and its name in the local language when GeoNames has one;
 - the distance per day over the last 30 days;
 - trip modes from Timeline imports.
 
