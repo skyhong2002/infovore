@@ -61,7 +61,8 @@ export function platformOverview(source: string, image: string, snapshot: Source
   if (source === 'places') {
     const regions = (extra.regions as Array<{ region: string; country: string }> | undefined) ?? [];
     const latest = regions[0];
-    return result(`${count('exploredKm2')} km² explored`, latest
+    // The delayed fog has nothing public for its first few days; lead with regions then.
+    return result(stats.exploredKm2 ? `${count('exploredKm2')} km² explored` : `${count('regions')} regions visited`, latest
       ? `${count('regions')} regions · lately ${latest.region === latest.country ? latest.country : latest.region} · ${count('kmLast30Days')} km in 30 days`
       : 'Regions and distances appear a few days after recording.');
   }
