@@ -260,7 +260,9 @@ location token.
 history and Fog of World say at the scale of regions and kilometres:
 
 - the explored area and an overview fog map per country;
-- the regions visited, with first and last day and day counts;
+- the regions visited, with first and last day and day counts. A day counts
+  only after a stay: at least an hour of fixes in the region, or a Timeline
+  visit of 30 minutes or more. Passing through by train or road does not count;
 - the distance per day over the last 30 days;
 - trip modes from Timeline imports.
 
