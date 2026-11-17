@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { clearZonesRgba, encodePng, exploredKm2, parseTile, renderFogRgba, type FogTile } from './tiles.js';
+import { encodePng, exploredKm2, parseTile, renderExploredRgba, renderFogRgba, type FogTile } from './tiles.js';
 import type { PrivacyZone } from '../location/zones.js';
 
 // Fog of World tiles mirrored from the owner's Dropbox (src/fog/dropbox.ts).
@@ -106,7 +106,7 @@ export class FogStore {
     return { version: data.version, tiles: data.tiles, exploredKm2: Math.round(data.km2 * 100) / 100 };
   }
 
-  /** The public overlay as of [cutoff], with every privacy zone cleared. */
+  /** The public explored-ground layer as of [cutoff], with privacy zones blended out (renderExploredRgba). */
   publicPng(z: number, x: number, y: number, cutoff: string, zones: readonly PrivacyZone[]): Buffer | null {
     if (!Number.isInteger(z) || z < 0 || z > 20) return null;
     const n = 2 ** z;
@@ -115,9 +115,7 @@ export class FogStore {
     const key = `${z}/${x}/${y}`;
     const cached = this.publicPngCache.get(key);
     if (cached) return cached;
-    const rgba = renderFogRgba(data.tiles, z, x, y);
-    clearZonesRgba(rgba, z, x, y, zones);
-    const png = encodePng(rgba, 256, 256);
+    const png = encodePng(renderExploredRgba(data.tiles, z, x, y, zones), 256, 256);
     if (this.publicPngCache.size >= 600) this.publicPngCache.delete(this.publicPngCache.keys().next().value!);
     this.publicPngCache.set(key, png);
     return png;

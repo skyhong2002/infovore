@@ -4,8 +4,10 @@ import { html } from './pages.js';
 import { flagOf } from '../location/regions.js';
 
 // The public Places platform: see src/location/public.ts for what is (and is
-// never) published. The maps are plain <img> grids of OpenStreetMap tiles with
-// the delayed, zone-cleared fog on top, so no script is needed.
+// never) published. The maps are plain <img> grids: CARTO's light or dark
+// basemap (whichever matches the page theme; CSS hides the other, and lazy
+// images that are not displayed are not fetched) under the delayed explored-
+// ground layer, so no script is needed.
 
 const dayLabel = dateFormat('en', { timeZone: 'UTC', month: 'short', day: 'numeric' });
 const longDay = dateFormat('en', { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' });
@@ -13,11 +15,15 @@ const show = (day: string, format = dayLabel) => format.format(new Date(`${day}T
 const kmText = (value: number) => `${value.toLocaleString('en', { maximumFractionDigits: value < 10 ? 1 : 0 })} km`;
 
 const STYLE = `<style>
-.places-map{display:grid;gap:0;max-width:100%;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-sm);background:#aad3df}
+.places-map{display:grid;gap:0;width:100%;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-raised)}
 .places-map div{position:relative;aspect-ratio:1}
 .places-map img{position:absolute;inset:0;width:100%;height:100%;display:block}
-.places-maps{display:grid;gap:18px}
+.places-map .base-light{display:none}
+:root[data-theme=light] .places-map .base-light{display:block}:root[data-theme=light] .places-map .base-dark{display:none}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]) .places-map .base-light{display:block}:root:not([data-theme=dark]) .places-map .base-dark{display:none}}
+.places-maps{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
 .places-maps figure{margin:0}
+.places-maps figure.wide{grid-column:1/-1}
 .places-maps figcaption{color:var(--muted);font-size:12px;margin-top:6px}
 .places-regions{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
 .places-regions article{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px}
@@ -35,11 +41,15 @@ function map(entry: PlacesMap): string {
     for (let col = 0; col < entry.cols; col++) {
       const x = entry.x + col;
       const y = entry.y + row;
-      cells.push(`<div><img src="https://tile.openstreetmap.org/${entry.z}/${x}/${y}.png" alt="" loading="lazy" referrerpolicy="no-referrer"><img src="/api/places/fog/${entry.z}/${x}/${y}.png" alt="" loading="lazy"></div>`);
+      const base = (style: string) => {
+        const url = `https://basemaps.cartocdn.com/${style}_all/${entry.z}/${x}/${y}`;
+        return `<img class="base-${style}" src="${url}.png" srcset="${url}.png 1x, ${url}@2x.png 2x" alt="" loading="lazy">`;
+      };
+      cells.push(`<div>${base('dark')}${base('light')}<img src="/api/places/fog/${entry.z}/${x}/${y}.png" alt="" loading="lazy"></div>`);
     }
   }
-  return `<figure><div class="places-map" style="grid-template-columns:repeat(${entry.cols},minmax(0,1fr));width:${entry.cols * 256}px" role="img" aria-label="Fog of World explored ground in ${html(entry.label)}">${cells.join('')}</div>
-    <figcaption>${flagOf(entry.code)} ${html(entry.label)} · ${kmText(entry.km2).replace(' km', ' km²')} explored · map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</figcaption></figure>`;
+  return `<figure${entry.cols >= 3 ? ' class="wide"' : ''}><div class="places-map" style="grid-template-columns:repeat(${entry.cols},minmax(0,1fr))" role="img" aria-label="Fog of World explored ground in ${html(entry.label)}">${cells.join('')}</div>
+    <figcaption>${flagOf(entry.code)} ${html(entry.label)} · ${kmText(entry.km2).replace(' km', ' km²')} explored · map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a></figcaption></figure>`;
 }
 
 // Lets browsers pick the right CJK glyphs for the local names.

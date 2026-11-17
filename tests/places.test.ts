@@ -7,7 +7,7 @@ process.env.LOCATION_PRIVACY_ZONES = '24.787,120.997,1500; 25.1,121.9,800';
 const { app, repository } = await import('../src/index.js');
 const { Repository } = await import('../src/data/database.js');
 const { encodeTile } = await import('../src/fog/tiles.js');
-const { clearZonesRgba, FOG_COLOR, renderFogRgba, parseTile } = await import('../src/fog/tiles.js');
+const { EXPLORED_COLOR, renderExploredRgba, parseTile } = await import('../src/fog/tiles.js');
 const { afterFogSync, lastSeenRegion, placesSnapshot, publicCutoff } = await import('../src/location/public.js');
 const { flagOf, regionOf } = await import('../src/location/regions.js');
 const { inPrivacyZone, parsePlacesConfig, parsePrivacyZones } = await import('../src/location/zones.js');
@@ -117,20 +117,32 @@ test('the public fog shows each tile as it was before the delay and clears priva
   const left = repo.fog.publicState('2026-11-30T00:00:00.000Z');
   assert.equal([...left.tiles.values()][0].blocks.reduce((n, b) => n + b.explored, 0), 2);
 
-  // A zone renders as explored ground, not as a hole or a trail.
+  // In a zone the real pixels give way to noise as dense as the ring around it:
+  // a lone track there vanishes, and a well-walked zone shows no hole.
   const [zx, zy] = fogPixel(24.787, 120.997);
-  const home = encodeTile(Math.floor(zx / 8192), Math.floor(zy / 8192), [[zx, zy]]);
-  const tiles = new Map([[`${Math.floor(zx / 8192)},${Math.floor(zy / 8192)}`, parseTile(home.name, home.data)]]);
   const z = 9;
+  const scale = WORLD / (256 * 2 ** z); // fog pixels per map pixel
   const mx = Math.floor(zx / (WORLD / 2 ** z));
   const my = Math.floor(zy / (WORLD / 2 ** z));
-  const rgba = renderFogRgba(tiles, z, mx, my);
-  const before = [...Array(256 * 256).keys()].filter((i) => rgba[i * 4 + 3] === 0).length;
-  clearZonesRgba(rgba, z, mx, my, places.zones);
-  const after = [...Array(256 * 256).keys()].filter((i) => rgba[i * 4 + 3] === 0).length;
-  // 1500 m at ≈ 277 m a pixel: a disc of ≈ 90 pixels.
-  assert.ok(before <= 1 && after > 60 && after < 120, `${before} → ${after}`);
-  assert.equal(rgba[3], FOG_COLOR[3], 'away from the zone the fog stays');
+  const explored = (rgba: Uint8Array) => [...Array(256 * 256).keys()].filter((i) => rgba[i * 4 + 3] === 255);
+  const layer = (pixels: Array<[number, number]>) => {
+    const tile = encodeTile(Math.floor(zx / 8192), Math.floor(zy / 8192), pixels);
+    return renderExploredRgba(new Map([[`${Math.floor(zx / 8192)},${Math.floor(zy / 8192)}`, parseTile(tile.name, tile.data)]]), z, mx, my, places.zones);
+  };
+  const lone = layer([[zx, zy]]);
+  assert.equal(explored(lone).length, 0, 'the track inside the zone is gone');
+  assert.equal(lone[3], 0, 'unexplored ground is transparent');
+  // Every other map pixel within ~4 km explored: the zone fills at about half.
+  const grid: Array<[number, number]> = [];
+  for (let dy = -16; dy <= 16; dy++) for (let dx = -16; dx <= 16; dx++) if ((dx + dy) % 2 === 0) grid.push([zx + dx * scale, zy + dy * scale]);
+  const dense = layer(grid.filter(([x, y]) => Math.floor(x / 8192) === Math.floor(zx / 8192) && Math.floor(y / 8192) === Math.floor(zy / 8192)));
+  const r = 1500 / (40_075_016.686 * Math.cos((24.787 * Math.PI) / 180) / (256 * 2 ** z));
+  const cx = zx / scale - mx * 256;
+  const cy = zy / scale - my * 256;
+  const inZone = explored(dense).filter((i) => ((i % 256) + 0.5 - cx) ** 2 + (Math.floor(i / 256) + 0.5 - cy) ** 2 <= r * r).length;
+  // ≈ 90 pixels in the zone, about half of them explored.
+  assert.ok(inZone > 25 && inZone < 70, String(inZone));
+  assert.deepEqual([...dense.subarray(explored(dense)[0] * 4, explored(dense)[0] * 4 + 3)], [...EXPLORED_COLOR]);
   repo.close();
 });
 

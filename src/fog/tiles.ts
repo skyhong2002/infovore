@@ -183,30 +183,69 @@ export function renderFogRgba(tiles: ReadonlyMap<string, FogTile>, z: number, tx
   return rgba;
 }
 
+export const EXPLORED_COLOR = [255, 107, 53] as const;
+const HALO_ALPHA = 90;
+
+// Deterministic per-pixel noise in [0, 1), so a tile renders the same each time.
+function noise(x: number, y: number, z: number): number {
+  let h = Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ Math.imul(z + 1, 0x9e3779b9);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) / 2 ** 32;
+}
+
 /**
- * Clears (shows as explored) every map pixel within the given circles, so the
- * public map draws no detail there: a privacy zone reads like the rest of a
- * well-walked city instead of outlining the paths to a door.
+ * The public overview layer for map tile z/x/y: explored ground in
+ * EXPLORED_COLOR with a soft halo (so thin tracks stay visible at country
+ * scale), transparent elsewhere. Inside a privacy zone the real pixels are
+ * replaced by noise as dense as the ring around the zone, so the zone shows
+ * neither the paths in it nor a hole or a disc that would mark its centre.
  */
-export function clearZonesRgba(rgba: Uint8Array, z: number, tx: number, ty: number,
-  zones: ReadonlyArray<{ lat: number; lng: number; radiusM: number }>): void {
+export function renderExploredRgba(tiles: ReadonlyMap<string, FogTile>, z: number, tx: number, ty: number,
+  zones: ReadonlyArray<{ lat: number; lng: number; radiusM: number }> = []): Uint8Array {
   const size = 256;
+  const fog = renderFogRgba(tiles, z, tx, ty);
+  const mask = new Uint8Array(size * size);
+  for (let i = 0; i < mask.length; i++) mask[i] = fog[i * 4 + 3] === 0 ? 1 : 0;
   const world = size * 2 ** z;
   for (const zone of zones) {
-    const cx = ((zone.lng + 180) / 360) * world - tx * size;
     const latRad = (zone.lat * Math.PI) / 180;
+    const cx = ((zone.lng + 180) / 360) * world - tx * size;
     const cy = ((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2) * world - ty * size;
     const r = zone.radiusM / ((EARTH_CIRCUMFERENCE_M * Math.cos(latRad)) / world);
-    const top = Math.max(0, Math.floor(cy - r));
-    const bottom = Math.min(size - 1, Math.ceil(cy + r));
-    const left = Math.max(0, Math.floor(cx - r));
-    const right = Math.min(size - 1, Math.ceil(cx + r));
-    for (let y = top; y <= bottom; y++) {
-      for (let x = left; x <= right; x++) {
-        if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) rgba[(y * size + x) * 4 + 3] = 0;
+    const outer = r * 1.75;
+    if (cx + outer < 0 || cy + outer < 0 || cx - outer >= size || cy - outer >= size) continue;
+    let ring = 0;
+    let ringExplored = 0;
+    const inside: number[] = [];
+    for (let y = Math.max(0, Math.floor(cy - outer)); y <= Math.min(size - 1, Math.ceil(cy + outer)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - outer)); x <= Math.min(size - 1, Math.ceil(cx + outer)); x++) {
+        const d2 = (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2;
+        if (d2 <= r * r) inside.push(y * size + x);
+        else if (d2 <= outer * outer) { ring++; ringExplored += mask[y * size + x]; }
       }
     }
+    const density = ring >= 8 ? ringExplored / ring : 0.5;
+    for (const i of inside) mask[i] = noise(tx * size + (i % size), ty * size + Math.floor(i / size), z) < density ? 1 : 0;
   }
+  const rgba = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = y * size + x;
+      let alpha = 0;
+      if (mask[i]) alpha = 255;
+      else {
+        for (let dy = -1; dy <= 1 && !alpha; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && ny >= 0 && nx < size && ny < size && mask[ny * size + nx]) { alpha = HALO_ALPHA; break; }
+          }
+        }
+      }
+      if (alpha) rgba.set([...EXPLORED_COLOR, alpha], i * 4);
+    }
+  }
+  return rgba;
 }
 
 const CRC_TABLE = (() => {
