@@ -50,10 +50,18 @@ class UiHost(
         }
     }
 
+    /**
+     * Starts [intent]; false when no app handles it, or when the system refuses to let this app
+     * start it (a [SecurityException], e.g. a settings screen that is not exported to other apps
+     * on this Android version), so the caller can fall back instead of crashing.
+     */
     fun openSafely(intent: Intent, showError: Boolean = true): Boolean = try {
         activity.startActivity(intent)
         true
     } catch (_: ActivityNotFoundException) {
+        if (showError) toast(string(R.string.error_no_activity))
+        false
+    } catch (_: SecurityException) {
         if (showError) toast(string(R.string.error_no_activity))
         false
     }

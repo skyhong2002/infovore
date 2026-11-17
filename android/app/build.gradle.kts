@@ -11,8 +11,8 @@ android {
         applicationId = "tw.skyhong.infovore.health"
         minSdk = 34
         targetSdk = 36
-        versionCode = 27
-        versionName = "0.10.0"
+        versionCode = 28
+        versionName = "0.10.1"
 
         // The one private host plain HTTP may reach (see android/README.md, "Private HTTP host").
         // It must match the <domain> in res/xml/network_security_config.xml; a unit test checks it.

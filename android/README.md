@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.10.0) reads selected records from Android Health Connect,
+This private companion (current version 0.10.1) reads selected records from Android Health Connect,
 records the phone's location when asked, and uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
