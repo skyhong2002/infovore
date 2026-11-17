@@ -33,7 +33,7 @@ export const placesMapScript = String.raw`(() => {
   function colors() {
     const style = getComputedStyle(root);
     const read = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
-    return { sea: read('--atlas-sea', '#0e1116'), land: read('--atlas-land', '#1d222a'), border: read('--atlas-border', '#39404c') };
+    return { sea: read('--atlas-sea', '#0e1116'), land: read('--atlas-land', '#1d222a'), border: read('--atlas-border', '#39404c'), glow: Number(read('--atlas-glow', '0.85')) };
   }
 
   function path(lists) {
@@ -123,7 +123,7 @@ export const placesMapScript = String.raw`(() => {
     if ('filter' in ctx) {
       ctx.save();
       ctx.filter = 'blur(' + Math.round(3 + Math.min(4, z / 2)) + 'px)';
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = c.glow;
       paint();
       ctx.restore();
     }

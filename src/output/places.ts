@@ -14,9 +14,9 @@ const show = (day: string, format = dayLabel) => format.format(new Date(`${day}T
 const kmText = (value: number) => `${value.toLocaleString('en', { maximumFractionDigits: value < 10 ? 1 : 0 })} km`;
 
 const STYLE = `<style>
-.places-atlas{--atlas-sea:#0d1015;--atlas-land:#1c2028;--atlas-border:#3a414d;position:relative;height:min(70vh,560px);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--atlas-sea)}
-:root[data-theme=light] .places-atlas{--atlas-sea:#dfe5ea;--atlas-land:#f7f6f2;--atlas-border:#c4c9cf}
-@media(prefers-color-scheme:light){:root:not([data-theme=dark]) .places-atlas{--atlas-sea:#dfe5ea;--atlas-land:#f7f6f2;--atlas-border:#c4c9cf}}
+.places-atlas{--atlas-sea:#0d1015;--atlas-land:#1c2028;--atlas-border:#3a414d;--atlas-glow:.85;position:relative;height:min(70vh,560px);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--atlas-sea)}
+:root[data-theme=light] .places-atlas{--atlas-sea:#dfe5ea;--atlas-land:#f7f6f2;--atlas-border:#c4c9cf;--atlas-glow:.3}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]) .places-atlas{--atlas-sea:#dfe5ea;--atlas-land:#f7f6f2;--atlas-border:#c4c9cf;--atlas-glow:.3}}
 .places-atlas canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
 .places-atlas canvas.dragging{cursor:grabbing}
 .atlas-zoom{position:absolute;right:12px;top:12px;display:flex;flex-direction:column;gap:6px}
