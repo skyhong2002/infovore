@@ -18,9 +18,19 @@ const PAGE = 500;
 
 interface ActivitiesPage {
   activities: Array<{ id: string; start_ms: number; end_ms: number; category: string }>;
-  cards: Array<{ id: string; category?: string; title?: string; summary?: string }>;
+  cards: Array<{ id: string; category?: string; title?: string; summary?: string; source?: string }>;
   next_cursor: { after_start_ms: number; after_id: string } | null;
   journal_epoch: number;
+}
+
+// Only cards summarized by the model or written by the owner are read for
+// keywords: app-only cards are titled with the package name (com.google.android…)
+// and excerpt cards are raw screen text. Package names are removed regardless.
+const KEYWORD_SOURCES = new Set(['ai', 'user']);
+const packageName = /\b[a-z][a-z0-9_]*(?:\.[a-z0-9_]+){2,}\b/gi;
+export function cardKeywords(card: ActivitiesPage['cards'][number] | undefined): string[] {
+  if (!card || !KEYWORD_SOURCES.has(card.source ?? '')) return [];
+  return narrativeKeywords((card.title ?? '').replace(packageName, ' '), (card.summary ?? '').replace(packageName, ' '));
 }
 
 export class PocketlogHttpError extends Error {
@@ -62,7 +72,7 @@ export async function readActivities(config: PocketlogConfig, from: number, to: 
       for (const a of page.activities) {
         const card = cards.get(a.id);
         activities.push({ id: a.id, start: a.start_ms, end: a.end_ms, category: card?.category ?? a.category,
-          keywords: card ? narrativeKeywords(card.title ?? '', card.summary ?? '') : [] });
+          keywords: cardKeywords(card) });
       }
       cursor = page.next_cursor;
     } while (cursor);

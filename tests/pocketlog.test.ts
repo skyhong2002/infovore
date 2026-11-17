@@ -17,7 +17,7 @@ const categories = [
   { id: 'idle', name: '閒置', color: '#92949e', role: 'neutral' },
 ];
 
-interface Stored { id: string; start_ms: number; end_ms: number; category: string; app: string; title: string; summary: string; edited?: string }
+interface Stored { id: string; start_ms: number; end_ms: number; category: string; app: string; title: string; summary: string; edited?: string; source?: string }
 
 // A PocketLog stand-in: clips to the requested range, pages two at a time, checks the key.
 function fakePocketlog(journal: Stored[], options: { epoch?: () => number; token?: string } = {}) {
@@ -37,7 +37,7 @@ function fakePocketlog(journal: Stored[], options: { epoch?: () => number; token
     const clip = (a: Stored) => ({ start_ms: Math.max(from, a.start_ms), end_ms: Math.min(to, a.end_ms) });
     return Response.json({
       activities: page.map((a) => ({ id: a.id, app: a.app, category: a.category, ...clip(a) })),
-      cards: page.map((a) => ({ id: a.id, app: a.app, category: a.edited ?? a.category, title: a.title, summary: a.summary, source: 'ai', ...clip(a) })),
+      cards: page.map((a) => ({ id: a.id, app: a.app, category: a.edited ?? a.category, title: a.title, summary: a.summary, source: a.source ?? 'ai', ...clip(a) })),
       next_cursor: start + 2 < rows.length ? { after_start_ms: page.at(-1)!.start_ms, after_id: page.at(-1)!.id } : null,
       journal_epoch: options.epoch?.() ?? 5, scanned: page.length,
     });
@@ -59,23 +59,27 @@ test('the sync keeps intervals, categories and vocabulary keywords, never titles
     { id: 'a3', start_ms: at('2026-11-17T10:00:00+08:00'), end_ms: at('2026-11-17T10:30:00+08:00'), category: 'idle',
       app: 'com.android.systemui', title: 'Lock screen', summary: '' },
     { id: 'a4', start_ms: at('2026-11-18T09:00:00+08:00'), end_ms: at('2026-11-18T09:45:00+08:00'), category: 'work',
-      app: 'com.github.android', title: 'Reviewing a GitHub pull request', summary: '' },
+      app: 'com.github.android', title: 'Reviewing a GitHub pull request on com.github.android', summary: '' },
+    // App-only cards are titled with the package name: no keywords from them.
+    { id: 'a5', start_ms: at('2026-11-18T10:00:00+08:00'), end_ms: at('2026-11-18T10:05:00+08:00'), category: 'unsorted',
+      app: 'com.google.android.apps.maps', title: 'com.google.android.apps.maps', summary: '', source: 'app_only' },
   ];
   const { fetcher, calls } = fakePocketlog(journal);
   const first = await syncPocketlog(repo.pocketlog, config, now, fetcher);
-  assert.equal(first.read, 4);
+  assert.equal(first.read, 5);
   assert.ok(calls.filter((c) => c.startsWith('/v1/activities')).length > 13, 'the first run backfills in 30-day reads');
   const stored = repo.pocketlog.activities();
-  assert.deepEqual(stored.map((a) => [a.id, a.category]), [['a1', 'work'], ['a2', 'social_media'], ['a3', 'idle'], ['a4', 'work']]);
+  assert.deepEqual(stored.map((a) => [a.id, a.category]), [['a1', 'work'], ['a2', 'social_media'], ['a3', 'idle'], ['a4', 'work'], ['a5', 'unsorted']]);
   assert.deepEqual(stored[0].keywords, ['Kotlin', 'Debugging']);
-  assert.deepEqual(stored[3].keywords, ['GitHub', 'Code review']);
+  assert.deepEqual(stored[3].keywords, ['GitHub', 'Code review'], 'no Android from the package name');
+  assert.deepEqual(stored[4].keywords, []);
   const dump = JSON.stringify(stored) + JSON.stringify(repo.pocketlog.categories());
   for (const secret of ['Alice', '0912', 'com.secret.app', 'Scrolling', 'Lock screen']) assert.ok(!dump.includes(secret), secret);
 
   // A later short re-read only sees a clipped part of a1; the stored interval stays whole.
   const later = new Date(+now + 26 * H);
   const recent = await syncPocketlog(repo.pocketlog, config, later, fakePocketlog(journal).fetcher);
-  assert.ok(recent.read >= 3);
+  assert.ok(recent.read >= 4);
   assert.equal(repo.pocketlog.activities()[0].start, journal[0].start_ms);
   assert.equal(repo.pocketlog.activities()[0].end, journal[0].end_ms);
 
@@ -86,8 +90,8 @@ test('the sync keeps intervals, categories and vocabulary keywords, never titles
   assert.equal(days['2026-11-15'].categories[0].name, '工作');
   assert.equal(days['2026-11-17'].idleMinutes, 30);
   assert.equal(days['2026-11-17'].activeMinutes, 0);
-  assert.equal(snapshot.stats.todayMinutes, 45);
-  assert.equal(snapshot.stats.weeklyHours, 2.3, 'Mon 17th onwards: 30 + 45 minutes');
+  assert.equal(snapshot.stats.todayMinutes, 50);
+  assert.equal(snapshot.stats.weeklyHours, 2.3, 'Mon 16th onwards: 60 + 30 + 50 minutes');
   assert.ok(!JSON.stringify(snapshot).includes('pocketlog:'), 'private card handles stay internal');
   repo.close();
 });
