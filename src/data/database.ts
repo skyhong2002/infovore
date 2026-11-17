@@ -2,6 +2,7 @@ import { recordedCoverage, type RecordedInterval } from './coverage.js';
 import { LocationStore, migrateLocation } from '../location/store.js';
 import { FogStore, migrateFog } from '../fog/store.js';
 import { PocketlogStore, migratePocketlog } from '../pocketlog/store.js';
+import { BackloggdLibraryStore, migrateBackloggdLibrary } from '../backloggd/library.js';
 import { measureRead, type ReadPhase } from './read-timing.js';
 import { migrateDayflowQuality } from '../dayflow/quality-store.js';
 import { DayflowStore, migrateDayflow } from '../dayflow/store.js';
@@ -302,6 +303,7 @@ export class Repository {
   readonly location: LocationStore;
   readonly fog: FogStore;
   readonly pocketlog: PocketlogStore;
+  readonly backloggdLibrary: BackloggdLibraryStore;
 
   constructor(path: string, options: { dayflowQuality?: boolean } = {}) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -313,6 +315,7 @@ export class Repository {
     this.location = new LocationStore(this.db);
     this.fog = new FogStore(this.db);
     this.pocketlog = new PocketlogStore(this.db);
+    this.backloggdLibrary = new BackloggdLibraryStore(this.db);
   }
 
   close(): void { this.db.close(); }
@@ -439,6 +442,7 @@ export class Repository {
     migrateLocation(this.db);
     migrateFog(this.db);
     migratePocketlog(this.db);
+    migrateBackloggdLibrary(this.db);
   }
 
   // Audit trail of reconcile deletions the user explicitly confirmed beyond the

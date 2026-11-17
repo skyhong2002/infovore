@@ -261,6 +261,7 @@ export function platformPage(
   fetchedAt: string | null,
   cardVersions: Record<string, string> = {},
   timeSpent: SourceTimeSpent | null = null,
+  libraryHtml = '',
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
   const coverage = definition.source === 'pocketlog' ? `${number(snapshot.stats.recordedDays ?? 0)} recorded days` : `${number(snapshot.entries.length)} synced entries`;
@@ -321,6 +322,6 @@ export function platformPage(
       <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : waiting}</div>
     </section>
-    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || (['dayflow', 'places', 'pocketlog'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>')}${cards}</div>${aside}</div>`;
+    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || (['dayflow', 'places', 'pocketlog'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>')}${libraryHtml}${cards}</div>${aside}</div>`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms', '', { path: `/platforms/${definition.source}` });
 }

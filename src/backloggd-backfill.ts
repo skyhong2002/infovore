@@ -10,18 +10,13 @@
 // Backloggd cards keep rendering from the hourly refresh. The import is
 // idempotent: activities upsert on the same identity the hourly source uses,
 // and the time ledger keeps a per-(game, day) watermark.
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { config } from './config.js';
 import { Repository } from './data/database.js';
+import { importArchive, readArchive, writeArchive } from './backloggd/sync.js';
 import {
   LIST_NAMES, archiveToImport, crawlBackloggd, type BackloggdArchive,
 } from './sources/backloggd-archive.js';
-
-function readArchive(path: string): BackloggdArchive {
-  const archive = JSON.parse(readFileSync(path, 'utf8')) as BackloggdArchive;
-  if (archive.version !== 1 || !archive.games || !archive.logs) throw new Error(`${path} is not a version-1 Backloggd archive`);
-  return archive;
-}
 
 function summarize(archive: BackloggdArchive): string[] {
   const logs = Object.values(archive.logs);
@@ -73,10 +68,7 @@ async function main(): Promise<void> {
       delayMs: delay,
       existing,
       log: (message) => console.log(`[crawl] ${message}`),
-      save: (a) => {
-        writeFileSync(`${file}.tmp`, JSON.stringify(a), { mode: 0o600 });
-        renameSync(`${file}.tmp`, file);
-      },
+      save: (a) => writeArchive(file, a),
     });
     console.log(summarize(archive).join('\n'));
     const problems = reconcile(archive);
@@ -97,25 +89,19 @@ async function main(): Promise<void> {
   if (command === 'import') {
     const problems = reconcile(archive);
     if (problems.length) throw new Error(`refusing to import an incomplete archive:\n  ${problems.join('\n  ')}`);
-    const { entries, sessions, undated } = archiveToImport(archive);
-    console.log(`${entries.length} dated games, ${sessions.length} per-day sessions, ${undated.length} played games without a date (skipped)`);
+    const { entries, sessions, undated } = archiveToImport(archive);    console.log(`${entries.length} dated games, ${sessions.length} per-day sessions, ${undated.length} played games without a date (skipped)`);
     if (flags.includes('--dry-run')) return;
 
     const repository = new Repository(config.databasePath);
     try {
       const allTime = () => repository.timeSpent().sources.find((s) => s.source === 'backloggd')?.windows.allTime ?? 0;
       const before = { activities: repository.countActivities(), seconds: allTime() };
-      const persisted = repository.ingestEntries(entries);
-      repository.recordTimeLedger({
-        source: 'backloggd',
-        profile: { id: archive.username, name: archive.username, avatar: '', url: '' },
-        stats: {},
-        entries: [],
-        extra: { yearExtras: '', sessions },
-      });
+      const persisted = importArchive(repository, archive);
       const after = { activities: repository.countActivities(), seconds: allTime() };
       console.log(`activities: ${persisted.inserted} new, ${persisted.updated} already present (${before.activities} → ${after.activities})`);
       console.log(`playtime ledger: ${(before.seconds / 3600).toFixed(1)}h → ${(after.seconds / 3600).toFixed(1)}h`);
+      const library = repository.backloggdLibrary.read();
+      console.log(`library: ${LIST_NAMES.map((n) => `${library?.games[n].length ?? 0} ${n}`).join(', ')}; ${library?.reviews.length ?? 0} reviews, ${library?.lists.length ?? 0} lists, ${library?.journal.length ?? 0} journal entries`);
     } finally {
       repository.close();
     }

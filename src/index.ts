@@ -1,4 +1,7 @@
 import { buildRhythmCard } from './output/rhythm.js';
+import { backloggdLibrarySection } from './output/backloggd-library.js';
+import { syncBackloggdLibrary } from './backloggd/sync.js';
+import { join, dirname } from 'node:path';
 import { measureRead } from './data/read-timing.js';
 import { buildNowCard } from './output/now.js';
 import { buildCloudTerms, buildWordCloudCard, type CloudEntry, type CloudTerm } from './output/cloud.js';
@@ -131,7 +134,27 @@ if (config.healthConnect.token) {
 // is failed and released; if it ever resumes, it is ignored instead of
 // overwriting a newer run.
 const SOURCE_DEADLINE_MS = 10 * 60_000;
+// Left by `backloggd-backfill crawl`; the daily library sync updates it in place.
+const backloggdArchivePath = process.env.BACKLOGGD_ARCHIVE_PATH
+  ?? join(dirname(config.databasePath), 'backloggd-archive.json');
 const runningSources = new Map<string, number>();
+
+// Daily and never fatal: runs detached so a slow crawl cannot hold the source
+// refresh lock, keeps the last good library when it fails, and the next
+// hourly refresh retries.
+let backloggdLibraryRunning = false;
+async function refreshBackloggdLibrary(): Promise<void> {
+  if (backloggdLibraryRunning) return;
+  backloggdLibraryRunning = true;
+  try {
+    const synced = await syncBackloggdLibrary(repository, { archivePath: backloggdArchivePath, username: config.backloggd.username });
+    if (synced) console.log(`[refresh] backloggd library ok (${synced.inserted} new activities, ${synced.datedGames} dated games)`);
+  } catch (err) {
+    console.error(`[refresh] backloggd library failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    backloggdLibraryRunning = false;
+  }
+}
 
 async function refreshSource(name: string, isRetry = false, deadlineMs = SOURCE_DEADLINE_MS): Promise<void> {
   if (runningSources.has(name)) {
@@ -153,6 +176,7 @@ async function refreshSource(name: string, isRetry = false, deadlineMs = SOURCE_
       setCache(`data:${name}`, data);
       await renderCards(name, data);
       console.log(`[refresh] ${name} ok (${persisted.inserted} new, ${persisted.updated} seen)`);
+      if (name === 'backloggd') void refreshBackloggdLibrary();
       if (name === 'youtube') {
         // Coverage intervals ride along with the summary refresh but must not
         // fail the public mirror when the private feed is unavailable.
@@ -870,7 +894,8 @@ app.get('/platforms/:source', (c) => {
   const timeSpent = ['statsfm', 'simkl', 'kitsu', 'backloggd', 'hardcover', 'youtube', 'computai'].includes(source)
     ? timeSpentWithAgents().summary.sources.find((entry) => entry.source === source) ?? null
     : null;
-  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions, timeSpent));
+  const library = source === 'backloggd' ? backloggdLibrarySection(repository.backloggdLibrary.read()) : '';
+  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions, timeSpent, library));
 });
 
 app.get('/cards', (c) => {
@@ -1212,6 +1237,13 @@ app.all('/mcp', async (c) => {
   headers.set('Access-Control-Allow-Origin', '*');
   headers.set('Access-Control-Expose-Headers', 'MCP-Session-Id, MCP-Protocol-Version');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+});
+
+app.get('/api/backloggd/library.json', (c) => {
+  const library = repository.backloggdLibrary.read();
+  if (!library) return c.json({ error: 'not found' }, 404);
+  c.header('Cache-Control', 'no-cache');
+  return c.json({ username: config.backloggd.username, ...library });
 });
 
 app.get('/api/:file{[a-z-]+\\.json}', (c) => {

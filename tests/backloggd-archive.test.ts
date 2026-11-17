@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as cheerio from 'cheerio';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Repository } from '../src/data/database.js';
+import { importArchive, readArchive, syncBackloggdLibrary, writeArchive } from '../src/backloggd/sync.js';
+import { backloggdLibrarySection } from '../src/output/backloggd-library.js';
 import {
   archiveToImport, crawlBackloggd, nextPageHref, parseGameGrid, parseJournalPage, parseListGames,
   parseListsIndex, parseLogPage, parseProfileStats, parseReviews,
@@ -187,4 +192,74 @@ test('importing an archive is idempotent and matches the hourly source identity'
   assert.equal(hours(), 150 * 60);
   assert.equal(repository.countActivities(), 1);
   repository.close();
+});
+
+const reviewHtml = `
+  <div class="row">
+    <div class="col-2"><a href="/games/hades/"><div class="game-cover"><img class="card-img" alt="Hades <3"></div></a></div>
+    <div class="col">
+      <div class="row top-bar review-details"><div class="stars-top" style="width:100%"></div><div class="game-status"><a>Completed</a></div></div>
+      <div class="row review-body"><p class="card-text">${'x'.repeat(400)}<script>alert(1)</script></p></div>
+      <div class="row review-bottom-bar"><a href="/u/sky/review/9/">Open</a></div>
+    </div>
+  </div>`;
+
+test('importing writes the browsable library, and the page escapes it', async () => {
+  const site = fakeSite({ ...sitePages(), '/u/sky/reviews/': reviewHtml });
+  const archive = await crawlBackloggd({ username: 'sky', load: site.load, delayMs: 0 });
+  const repository = new Repository(':memory:');
+  assert.equal(repository.backloggdLibrary.read(), null);
+
+  const result = importArchive(repository, archive);
+  assert.equal(result.datedGames, 1);
+  importArchive(repository, archive); // replace, never duplicate
+  const library = repository.backloggdLibrary.read()!;
+  assert.deepEqual(Object.fromEntries(Object.entries(library.games).map(([k, v]) => [k, v.length])),
+    { played: 2, playing: 0, backlog: 1, wishlist: 0 });
+  const hades = library.games.played.find((g) => g.slug === 'hades')!;
+  assert.deepEqual([hades.status, hades.rating, hades.timeMinutes, hades.lastPlayed, hades.platforms],
+    ['Completed', 4.5, 150, '2026-10-22', ['Windows PC via Mac', 'Switch']]);
+  assert.equal(library.reviews.length, 1);
+  assert.deepEqual(library.lists.map((l) => [l.name, l.games.length]), [['Best', 1]]);
+  assert.equal(library.journal.length, 1);
+
+  const page = backloggdLibrarySection(library);
+  assert.match(page, /Played library/);
+  assert.match(page, /Hades &lt;3/);
+  assert.doesNotMatch(page, /<script>alert/);
+  assert.equal(backloggdLibrarySection(null), '');
+  repository.close();
+});
+
+test('the daily library sync refetches recent logs, is throttled, and does nothing without an archive', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bl-sync-'));
+  try {
+    const archivePath = join(dir, 'archive.json');
+    const repository = new Repository(':memory:');
+    const options = { archivePath, username: 'sky', delayMs: 0 };
+    assert.equal(await syncBackloggdLibrary(repository, { ...options, load: fakeSite(sitePages()).load }), null);
+
+    writeArchive(archivePath, await crawlBackloggd({ username: 'sky', load: fakeSite(sitePages()).load, delayMs: 0 }));
+    assert.equal(readArchive(archivePath).logs.hades?.status, 'Completed');
+
+    // The recent game's log changed upstream; the cached log for others is not refetched.
+    const changed = sitePages();
+    changed['/u/sky/logs/hades/'] = logHtml.replace('<p>Completed</p>', '<p>Playing</p>');
+    const site = fakeSite(changed);
+    const now = new Date('2026-11-18T00:00:00Z');
+    const result = await syncBackloggdLibrary(repository, { ...options, load: site.load, now });
+    assert.equal(result?.datedGames, 1);
+    assert.deepEqual(site.requested.filter((p) => p.includes('/logs/')), ['/u/sky/logs/hades/']);
+    assert.equal(repository.backloggdLibrary.read()!.games.played.find((g) => g.slug === 'hades')!.status, 'Playing');
+    assert.equal(readArchive(archivePath).logs.hades?.status, 'Playing');
+
+    // A second run within the interval is skipped; a day later it runs again.
+    const again = fakeSite(changed);
+    assert.equal(await syncBackloggdLibrary(repository, { ...options, load: again.load, now: new Date('2026-11-18T05:00:00Z') }), null);
+    assert.equal(again.requested.length, 0);
+    assert.notEqual(await syncBackloggdLibrary(repository, { ...options, load: again.load, now: new Date('2026-11-19T01:00:00Z') }), null);
+    repository.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

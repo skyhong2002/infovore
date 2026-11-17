@@ -270,6 +270,10 @@ export interface CrawlOptions {
   save?: (archive: BackloggdArchive) => void | Promise<void>;
   log?: (message: string) => void;
   maxPages?: number;
+  // Re-fetch the logs of every game on the journal's newest page even when
+  // cached, so an incremental run picks up new sessions, ratings and statuses
+  // without redoing the whole account.
+  refreshRecent?: boolean;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -320,7 +324,11 @@ export async function crawlBackloggd(options: CrawlOptions): Promise<BackloggdAr
 
   // Only games that were played (or are being played) can have a log page.
   const slugs = [...new Set([...archive.games.played, ...archive.games.playing].map((g) => g.slug))];
-  const todo = slugs.filter((slug) => !(slug in archive.logs));
+  const recent = new Set<string>();
+  if (options.refreshRecent) {
+    for (const entry of parseJournalPage(await load(`${base}/journal/`))) recent.add(entry.slug);
+  }
+  const todo = slugs.filter((slug) => !(slug in archive.logs) || recent.has(slug));
   say(`logs: ${slugs.length - todo.length} cached, ${todo.length} to fetch`);
   let consecutiveFailures = 0;
   for (const [index, slug] of todo.entries()) {

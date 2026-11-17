@@ -92,6 +92,14 @@ npx tsx src/backloggd-backfill.ts import ~/backloggd-archive/<user>.json --dry-r
 npx tsx src/backloggd-backfill.ts import ~/backloggd-archive/<user>.json   # run where DATABASE_PATH lives
 ```
 
+Import also fills the browsable library (every list, per-game log summary,
+reviews, lists, journal) shown below the recent games on `/platforms/backloggd`
+and served at `/api/backloggd/library.json`. Once the archive sits next to the
+database as `backloggd-archive.json` (override with `BACKLOGGD_ARCHIVE_PATH`),
+the hourly refresh runs a detached daily incremental sync: it re-walks the
+lists, reviews, lists and journal, refetches only the logs of recently played
+or new games, updates the archive in place and re-imports.
+
 The archive holds review text, so keep it out of the repo. Import is
 idempotent: games upsert as the same activities the hourly source writes (one
 per game, dated by its last-played day) and per-day playtime keeps the ledger's
