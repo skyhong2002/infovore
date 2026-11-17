@@ -1,4 +1,5 @@
 import { publicBaseUrl as basePublicUrl } from './seo.js';
+import { parsePlacesConfig } from './location/zones.js';
 
 // Which sources to enable. Empty = all. e.g. SOURCES=kitsu,statsfm
 // `goodreads` is accepted as a legacy name for `hardcover`: Goodreads shut
@@ -10,7 +11,7 @@ const sources = [...new Set((process.env.SOURCES ?? '')
   .filter(Boolean)
   .map((s) => (s === 'goodreads' ? 'hardcover' : s)))];
 
-const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'hardcover', 'youtube', 'health', 'dayflow', 'computai'] as const;
+const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'hardcover', 'youtube', 'health', 'dayflow', 'computai', 'places'] as const;
 const port = Number(process.env.PORT ?? 3000);
 const maxSourceAgeHours = Number(process.env.MAX_SOURCE_AGE_HOURS ?? 36);
 const refreshIntervalMinutes = Number(process.env.REFRESH_INTERVAL_MINUTES ?? 60);
@@ -56,6 +57,8 @@ const fogDropbox = fogDropboxParts.every(Boolean) ? {
   refreshToken: process.env.FOG_DROPBOX_REFRESH_TOKEN!,
   path: process.env.FOG_DROPBOX_PATH || '/Apps/Fog of World/Sync', intervalMinutes: fogIntervalMinutes,
 } : null;
+// The public Places page (src/location/public.ts): on with at least one privacy zone.
+const places = locationToken ? parsePlacesConfig(process.env) : null;
 const publicBaseUrl = basePublicUrl(process.env);
 const qualityBaseUrl = (process.env.DAYFLOW_AI_BASE_URL ?? '').replace(/\/+$/, '');
 const qualityApiKey = process.env.DAYFLOW_AI_API_KEY ?? '';
@@ -85,6 +88,7 @@ export const config = {
   healthConnect: { token: healthConnectToken },
   location: { token: locationToken },
   fog: { dropbox: fogDropbox },
+  places,
   dayflow: { token: dayflowToken, quality: dayflowQuality },
   computai: { token: computaiToken },
   maxSourceAgeHours,

@@ -229,7 +229,7 @@ Location History. It uploads points, visits and trips to
 `/api/ingest/location/batches` with the token it already holds
 (`LOCATION_TOKEN`, defaulting to `HEALTH_CONNECT_TOKEN`). They live in the
 `location_points`, `location_visits` and `location_activities` tables (created
-when missing on every boot, without a schema version bump) and never reach public pages, feeds, cards, the sitemap or MCP. `/location`
+when missing on every boot, without a schema version bump) and never reach public pages, feeds, cards, the sitemap or MCP, except as the delayed regional summary of [Places](#public-places). `/location`
 shows the latest position, a day's track on OpenStreetMap tiles, and its stays
 and trips, after the token is entered; the token stays in that tab's memory.
 Re-sent batches and re-imported files change nothing: points are keyed by
@@ -253,6 +253,35 @@ of 64×64 explored bits, each block checked against its stored count; see
 over the map from `GET /api/location/fog/{z}/{x}/{y}.png` (dark where
 unexplored), with `GET /api/location/fog/status` for the totals; both need the
 location token.
+
+### Public Places
+
+`/platforms/places` (and `GET /api/places.json`) publishes what the location
+history and Fog of World say at the scale of regions and kilometres:
+
+- the explored area and an overview fog map per country;
+- the regions visited, with first and last day and day counts;
+- the distance per day over the last 30 days;
+- trip modes from Timeline imports.
+
+Now adds "Last seen around <region>". The rules live in
+`src/location/public.ts`:
+
+- **Delay.** Everything is `LOCATION_PUBLIC_DELAY_HOURS` (default 72) behind,
+  cut at whole Taipei days. The fog map uses each tile's revision from before
+  that cutoff (`fog_tile_history`, pruned after each sync). The Now line is
+  `LOCATION_NOW_DELAY_HOURS` (default 24) behind.
+- **Privacy zones.** Set `LOCATION_PRIVACY_ZONES="lat,lng,radiusMetres;…"`
+  (500–20000 m) in the server env only, never in the repo. Points inside a zone
+  count towards no region and no Now line. The public fog map draws zones as
+  plain explored ground. Without a zone the feature stays off. It also needs
+  `places` in `SOURCES` when that is set.
+- **Resolution.** The public fog tiles (`GET /api/places/fog/{z}/{x}/{y}.png`)
+  stop at zoom 9, about 300 m a pixel.
+- **Regions.** Names come offline from GeoNames (CC BY 4.0) via
+  `assets/regions.json`, rebuilt with `scripts/build-regions.mjs`. A region is a
+  first-level division, or a county or city in Taiwan.
+- **Never published:** coordinates, place names, visits and times of day.
 
 ## Run it yourself (Docker)
 

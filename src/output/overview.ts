@@ -58,6 +58,13 @@ export function platformOverview(source: string, image: string, snapshot: Source
     `${count('moviesCompleted')} movies · ${count('showsCompleted')} shows completed`);
   if (source === 'backloggd') return result(`${count('playedThisYear')} games played this year`,
     `${count('gamesPlayed')} played · ${count('backlog')} in backlog`);
+  if (source === 'places') {
+    const regions = (extra.regions as Array<{ region: string; country: string }> | undefined) ?? [];
+    const latest = regions[0];
+    return result(`${count('exploredKm2')} km² explored`, latest
+      ? `${count('regions')} regions · lately ${latest.region === latest.country ? latest.country : latest.region} · ${count('kmLast30Days')} km in 30 days`
+      : 'Regions and distances appear a few days after recording.');
+  }
   if (source === 'events') {
     const upcoming = snapshot.entries.filter(entry => ['upcoming', 'ticketed'].includes(entry.status ?? '')
       && Date.parse(entry.activityAt) >= +now).sort((a, b) => Date.parse(a.activityAt) - Date.parse(b.activityAt));

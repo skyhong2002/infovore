@@ -1,5 +1,7 @@
 import { dayflowDetails } from './dayflow.js';
 import { computaiDetails } from './computai.js';
+import { placesDetails } from './places.js';
+import type { PlacesExtra } from '../location/public.js';
 import type { ComputaiExtra } from '../computai/types.js';
 import type { DayflowExtra } from '../dayflow/types.js';
 import type { SourceTimeSpent } from '../data/database.js';
@@ -215,6 +217,7 @@ function platformNav(active?: string): string {
     ['health', 'Health'],
     ['dayflow', 'Dayflow'],
     ['computai', 'ComputAI'],
+    ['places', 'Places'],
     ['events', 'Manual'],
   ];
   return `<nav class="platform-nav" aria-label="Platforms"><a href="/platforms"${active ? '' : ' aria-current="page"'}>All</a>${sources.map(([source, title]) =>
@@ -259,7 +262,7 @@ export function platformPage(
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
   const coverage = `${number(snapshot.entries.length)} synced entries`;
-  const waiting = 'Stored manually';
+  const waiting = definition.source === 'places' ? 'Updated with every sync, shown days behind' : 'Stored manually';
   const stats = Object.entries(snapshot.stats).filter(([key]) => !hiddenStats.has(key)).map(([key, value]) =>
     `<div class="platform-stat"><span>${html(statLabels[key] ?? label(key))}</span><strong>${number(value)}</strong></div>`
   ).join('');
@@ -274,6 +277,7 @@ export function platformPage(
     definition.source === 'dayflow' ? dayflowDetails(extra as unknown as DayflowExtra) : '',
     definition.source === 'computai' ? computaiDetails(extra as unknown as ComputaiExtra) : '',
     definition.source === 'health' ? healthDetails(extra as unknown as HealthConnectExtra) : '',
+    definition.source === 'places' ? placesDetails(extra as unknown as PlacesExtra) : '',
     typeof extra.yearExtras === 'string' && extra.yearExtras
       ? `<div class="platform-note">${html(extra.yearExtras)}</div>`
       : '',
@@ -293,7 +297,7 @@ export function platformPage(
     ['Profile', html(snapshot.profile.name || ownerName)],
     ['Platform', `${html(definition.title)}${definition.via ? ` · via <a href="${html(definition.via.url)}">${html(definition.via.name)}</a>` : ''}`],
     ...(profileUrl ? [['Source', `<a href="${html(profileUrl)}">${html(profileUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))} ↗</a>`] as [string, string]] : []),
-    ['Data', `<a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a> · <a href="/search?source=${html(definition.source)}">Search</a>`],
+    ['Data', `<a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a>${definition.source === 'places' ? '' : ` · <a href="/search?source=${html(definition.source)}">Search</a>`}`],
     ['Synced', fetchedAt ? html(date(fetchedAt)) : waiting],
     ['Entries', coverage],
   ];
@@ -315,6 +319,6 @@ export function platformPage(
       <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : waiting}</div>
     </section>
-    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || (definition.source === 'dayflow' ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>')}${cards}</div>${aside}</div>`;
+    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || (['dayflow', 'places'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>')}${cards}</div>${aside}</div>`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms', '', { path: `/platforms/${definition.source}` });
 }

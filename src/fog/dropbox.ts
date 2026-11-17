@@ -96,14 +96,18 @@ export async function syncFog(store: FogStore, config: FogDropboxConfig, fetcher
   }
 }
 
-/** Syncs now and then every [FogDropboxConfig.intervalMinutes]. Failures are logged and retried next time. */
-export function startFogSync(store: FogStore, config: FogDropboxConfig): () => void {
+/**
+ * Syncs now and then every [FogDropboxConfig.intervalMinutes]; [afterSync] runs after each successful
+ * run (the public Places upkeep). Failures are logged and retried next time.
+ */
+export function startFogSync(store: FogStore, config: FogDropboxConfig, afterSync?: () => void): () => void {
   let running = false;
   const run = async () => {
     if (running) return;
     running = true;
     try {
       const result = await syncFog(store, config);
+      afterSync?.();
       if (result.downloaded || result.removed) console.log(`fog sync: ${result.downloaded} downloaded, ${result.removed} removed, ${result.tiles} tiles`);
     } catch (error) {
       console.error(`fog sync failed: ${error instanceof Error ? error.message : String(error)}`);

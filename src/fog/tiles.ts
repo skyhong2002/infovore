@@ -183,6 +183,32 @@ export function renderFogRgba(tiles: ReadonlyMap<string, FogTile>, z: number, tx
   return rgba;
 }
 
+/**
+ * Clears (shows as explored) every map pixel within the given circles, so the
+ * public map draws no detail there: a privacy zone reads like the rest of a
+ * well-walked city instead of outlining the paths to a door.
+ */
+export function clearZonesRgba(rgba: Uint8Array, z: number, tx: number, ty: number,
+  zones: ReadonlyArray<{ lat: number; lng: number; radiusM: number }>): void {
+  const size = 256;
+  const world = size * 2 ** z;
+  for (const zone of zones) {
+    const cx = ((zone.lng + 180) / 360) * world - tx * size;
+    const latRad = (zone.lat * Math.PI) / 180;
+    const cy = ((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2) * world - ty * size;
+    const r = zone.radiusM / ((EARTH_CIRCUMFERENCE_M * Math.cos(latRad)) / world);
+    const top = Math.max(0, Math.floor(cy - r));
+    const bottom = Math.min(size - 1, Math.ceil(cy + r));
+    const left = Math.max(0, Math.floor(cx - r));
+    const right = Math.min(size - 1, Math.ceil(cx + r));
+    for (let y = top; y <= bottom; y++) {
+      for (let x = left; x <= right; x++) {
+        if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) rgba[(y * size + x) * 4 + 3] = 0;
+      }
+    }
+  }
+}
+
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {

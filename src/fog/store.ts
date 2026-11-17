@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { encodePng, exploredKm2, parseTile, renderFogRgba, type FogTile } from './tiles.js';
+import { clearZonesRgba, encodePng, exploredKm2, parseTile, renderFogRgba, type FogTile } from './tiles.js';
+import type { PrivacyZone } from '../location/zones.js';
 
 // Fog of World tiles mirrored from the owner's Dropbox (src/fog/dropbox.ts).
 // The files are kept as Dropbox has them (with their revision) so a sync only
@@ -13,6 +14,15 @@ export function migrateFog(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS fog_sync (
       id INTEGER PRIMARY KEY CHECK (id = 1), last_attempt_at TEXT, last_success_at TEXT, last_change_at TEXT, last_error TEXT
     );
+    -- Earlier revisions, so the public map can show the fog as it was a few
+    -- days ago (src/location/public.ts); pruned to the newest one past the delay.
+    CREATE TABLE IF NOT EXISTS fog_tile_history (
+      name TEXT NOT NULL, synced_at TEXT NOT NULL, rev TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY (name, synced_at)
+    ) WITHOUT ROWID;
+    INSERT OR IGNORE INTO fog_tile_history (name, synced_at, rev, data)
+      SELECT name, synced_at, rev, data FROM fog_tiles WHERE NOT EXISTS (SELECT 1 FROM fog_tile_history h WHERE h.name = fog_tiles.name);
+    -- The public explored area, once a Taipei day, for growth over time.
+    CREATE TABLE IF NOT EXISTS fog_area_daily (day TEXT PRIMARY KEY, km2 REAL NOT NULL) WITHOUT ROWID;
     COMMIT;`);
 }
 
@@ -38,6 +48,8 @@ interface Decoded {
 export class FogStore {
   private decoded: Decoded | null = null;
   private pngCache = new Map<string, Buffer>();
+  private publicDecoded: Decoded | null = null;
+  private publicPngCache = new Map<string, Buffer>();
 
   constructor(private readonly db: DatabaseSync) {}
 
@@ -49,10 +61,74 @@ export class FogStore {
   put(name: string, rev: string, data: Uint8Array, at = new Date().toISOString()): void {
     this.db.prepare(`INSERT INTO fog_tiles (name, rev, data, synced_at) VALUES (?,?,?,?)
       ON CONFLICT(name) DO UPDATE SET rev=excluded.rev, data=excluded.data, synced_at=excluded.synced_at`).run(name, rev, data, at);
+    this.db.prepare('INSERT OR REPLACE INTO fog_tile_history (name, synced_at, rev, data) VALUES (?,?,?,?)').run(name, at, rev, data);
   }
 
   remove(name: string): void {
     this.db.prepare('DELETE FROM fog_tiles WHERE name = ?').run(name);
+    this.db.prepare('DELETE FROM fog_tile_history WHERE name = ?').run(name);
+  }
+
+  /** Drops revisions no public view can need: all but the newest at or before [cutoff], per tile. */
+  pruneHistory(cutoff: string): number {
+    return Number(this.db.prepare(`DELETE FROM fog_tile_history WHERE synced_at < ?
+      AND synced_at < (SELECT MAX(h.synced_at) FROM fog_tile_history h WHERE h.name = fog_tile_history.name AND h.synced_at <= ?)`)
+      .run(cutoff, cutoff).changes);
+  }
+
+  /** The tiles as they were at [cutoff]: each tile's newest revision synced by then. */
+  private loadAt(cutoff: string): Decoded {
+    const chosen = this.db.prepare('SELECT name, MAX(synced_at) at FROM fog_tile_history WHERE synced_at <= ? GROUP BY name ORDER BY name')
+      .all(cutoff) as Array<{ name: string; at: string }>;
+    const version = chosen.map((row) => `${row.name}@${row.at}`).join('|');
+    if (this.publicDecoded?.version === version) return this.publicDecoded;
+    const tiles = new Map<string, FogTile>();
+    let unreadable = 0;
+    const read = this.db.prepare('SELECT data FROM fog_tile_history WHERE name = ? AND synced_at = ?');
+    for (const row of chosen) {
+      try {
+        const tile = parseTile(row.name, (read.get(row.name, row.at) as { data: Uint8Array }).data);
+        tiles.set(`${tile.x},${tile.y}`, tile);
+      } catch {
+        unreadable++;
+      }
+    }
+    let blocks = 0;
+    for (const tile of tiles.values()) blocks += tile.blocks.length;
+    this.publicDecoded = { version, tiles, unreadable, km2: exploredKm2(tiles.values()), blocks };
+    this.publicPngCache.clear();
+    return this.publicDecoded;
+  }
+
+  /** Tiles, blocks and explored area as of [cutoff]; [version] changes whenever they do. */
+  publicState(cutoff: string): { version: string; tiles: ReadonlyMap<string, FogTile>; exploredKm2: number } {
+    const data = this.loadAt(cutoff);
+    return { version: data.version, tiles: data.tiles, exploredKm2: Math.round(data.km2 * 100) / 100 };
+  }
+
+  /** The public overlay as of [cutoff], with every privacy zone cleared. */
+  publicPng(z: number, x: number, y: number, cutoff: string, zones: readonly PrivacyZone[]): Buffer | null {
+    if (!Number.isInteger(z) || z < 0 || z > 20) return null;
+    const n = 2 ** z;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= n || y >= n) return null;
+    const data = this.loadAt(cutoff);
+    const key = `${z}/${x}/${y}`;
+    const cached = this.publicPngCache.get(key);
+    if (cached) return cached;
+    const rgba = renderFogRgba(data.tiles, z, x, y);
+    clearZonesRgba(rgba, z, x, y, zones);
+    const png = encodePng(rgba, 256, 256);
+    if (this.publicPngCache.size >= 600) this.publicPngCache.delete(this.publicPngCache.keys().next().value!);
+    this.publicPngCache.set(key, png);
+    return png;
+  }
+
+  recordArea(day: string, km2: number): void {
+    this.db.prepare('INSERT INTO fog_area_daily (day, km2) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET km2 = excluded.km2').run(day, km2);
+  }
+
+  areaHistory(): Array<{ day: string; km2: number }> {
+    return this.db.prepare('SELECT day, km2 FROM fog_area_daily ORDER BY day').all() as Array<{ day: string; km2: number }>;
   }
 
   recordSync(outcome: { at: string; changed: boolean; error?: string | null }): void {

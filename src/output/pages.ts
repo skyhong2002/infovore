@@ -274,7 +274,11 @@ export interface NowExtras {
   paused?: Activity[];
   queued?: Activity[];
   now?: Date;
+  /** Region of the latest fix outside the privacy zones, at least a day old (src/location/public.ts). */
+  lastSeen?: { region: string; country: string; day: string } | null;
 }
+
+const lastSeenDay = dateFormat('en', { timeZone: 'UTC', month: 'short', day: 'numeric' });
 
 export function nowPage(ownerName: string, current: Activity[], upcoming: Activity[], recent: Activity[], extras: NowExtras = {}): string {
   const now = extras.now ?? new Date();
@@ -284,7 +288,9 @@ export function nowPage(ownerName: string, current: Activity[], upcoming: Activi
   const pausedBlock = paused.length
     ? `<details class="paused" id="paused"><summary class="details-toggle">Paused · ${paused.length} ${paused.length === 1 ? 'title' : 'titles'} still marked in progress but untouched for over ${STALE_AFTER_DAYS} days</summary><div class="grid">${paused.map((activity) => activityCard(activity, 'paused', now)).join('')}</div></details>`
     : '';
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Present view</div><h1>Now</h1><p>A short-term view of what ${html(ownerName)} is in the middle of, what is lined up next, and what just happened.</p></div><div class="page-intro-aside">In progress = touched within ${STALE_AFTER_DAYS} days; games count for ${PLAYING_WINDOW_DAYS} days after a session.</div></section>`;
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Present view</div><h1>Now</h1><p>A short-term view of what ${html(ownerName)} is in the middle of, what is lined up next, and what just happened.</p></div><div class="page-intro-aside">In progress = touched within ${STALE_AFTER_DAYS} days; games count for ${PLAYING_WINDOW_DAYS} days after a session.${extras.lastSeen
+    ? `<br><a href="/platforms/places">Last seen around</a> ${html(extras.lastSeen.region === extras.lastSeen.country ? extras.lastSeen.country : `${extras.lastSeen.region}, ${extras.lastSeen.country}`)} · ${html(lastSeenDay.format(new Date(`${extras.lastSeen.day}T00:00:00Z`)))}, shown at least a day late.`
+    : ''}</div></section>`;
   return shell(`${ownerName} · now`, intro
     + section('In progress', 'Playing, watching and reading right now, newest progress first.', current, 'current', pausedBlock)
     + section('Up next', 'Watchlists, planned anime and manga, and the to-read shelf, newest additions first.', queued, 'queued')

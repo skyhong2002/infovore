@@ -16,6 +16,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Hono, type Context } from 'hono';
 import { locationPage, locationScript } from './output/location.js';
+import { lastSeenRegion, placesSnapshot, publicCutoff, PUBLIC_MAX_ZOOM } from './location/public.js';
 import { compress } from 'hono/compress';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
@@ -241,6 +242,29 @@ app.get('/api/location/day', (c) => {
   }
   return c.json(repository.location.day(day));
 });
+// Public Places (src/location/public.ts): regions, distances and a coarse fog
+// map, days behind and with the privacy zones left out. Off without a zone.
+const placesEnabled = Boolean(config.places) && config.sourceEnabled('places');
+const placesPlatform: PlatformDefinition = {
+  source: 'places', title: 'Places', accent: '#7fd8be', jsonUrl: '/api/places.json', logo: '/logos/places.svg',
+  description: 'Ground explored in Fog of World, regions visited and distance travelled, a few days behind and with private areas left out.',
+};
+const currentPlaces = (now = new Date()) => placesSnapshot(repository.location, repository.fog, config.places!, config.ownerName, now);
+app.get('/api/places.json', (c) => {
+  if (!placesEnabled) return c.notFound();
+  c.header('Cache-Control', 'no-cache');
+  return c.json(currentPlaces().extra);
+});
+app.get('/api/places/fog/:z/:x/:file', (c) => {
+  if (!placesEnabled) return c.notFound();
+  const match = /^(\d+)\.png$/.exec(c.req.param('file'));
+  const z = Number(c.req.param('z'));
+  const cutoff = new Date(publicCutoff(config.places!, new Date())).toISOString();
+  const png = match && z <= PUBLIC_MAX_ZOOM
+    ? repository.fog.publicPng(z, Number(c.req.param('x')), Number(match[1]), cutoff, config.places!.zones) : null;
+  if (!png) return c.json({ error: 'Invalid tile' }, 400);
+  return c.body(new Uint8Array(png), 200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=3600' });
+});
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
 const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
 
@@ -291,6 +315,7 @@ app.get('/sitemap.xml', (c) => {
   if (sitemapCache?.hour !== hour) {
     const platforms = sections.filter((s) => s.source === 'health' || getCache(`data:${s.source}`)?.data).map((s) => s.source);
     if (repository.countBySource().events) platforms.push('events');
+    if (placesEnabled) platforms.push('places');
     sitemapCache = { hour, body: sitemapXml(config.publicBaseUrl, [
       '/', '/now', '/stats', '/platforms', ...platforms.map((source) => `/platforms/${source}`),
       '/profile', '/cards', ...repository.activityYears().map((year) => `/wrapped/${year}`),
@@ -678,7 +703,7 @@ app.get('/', (c) => measureRead('homepage', () => {
   const profileSnapshot = getCache<SourceSnapshot>('data:statsfm')?.data;
   const sourceCounts = repository.countBySource();
   const publicActivityCount = repository.countPublicActivities() + youtubeLifetimeWatches() + ingestedAllTimeCounts().total;
-  const connectedSources = sections.length + (sourceCounts.events ? 1 : 0);
+  const connectedSources = sections.length + (sourceCounts.events ? 1 : 0) + (placesEnabled ? 1 : 0);
   c.header('Cache-Control', 'no-cache');
   return c.html(homePage({
     ownerName: config.ownerName,
@@ -690,6 +715,7 @@ app.get('/', (c) => measureRead('homepage', () => {
       ...sections.map(section => ({ ...platformOverview(section.source, section.logo ?? `/logos/${section.source}.png`,
         section.source === 'health' ? healthSnapshot : getCache<SourceSnapshot<unknown>>(`data:${section.source}`)?.data, now),
         sync: platformSync(sourceSyncedAt(section.source), config.delayAfterHours(section.source), now) })),
+      ...(placesEnabled ? [platformOverview('places', placesPlatform.logo!, currentPlaces(now) as SourceSnapshot<unknown>, now)] : []),
       ...(sourceCounts.events ? [platformOverview('events', '', manualEventsSnapshot(), now)] : []),
     ],
     timeSpent: repository.timeSpent(),
@@ -753,6 +779,7 @@ app.get('/platforms', (c) => {
       fetchedAt: cached ? new Date(cached.fetchedAt).toISOString() : null,
     };
   });
+  if (placesEnabled) connected.push({ definition: placesPlatform, snapshot: currentPlaces() as SourceSnapshot<unknown>, fetchedAt: null });
   connected.push({ definition: manualPlatform, snapshot: manualEventsSnapshot(), fetchedAt: null });
   c.header('Cache-Control', 'no-cache');
   return c.html(platformIndexPage(config.ownerName, connected));
@@ -762,8 +789,13 @@ app.get('/platforms', (c) => {
 app.get('/platforms/goodreads', (c) => c.redirect('/platforms/hardcover', 301));
 app.get('/platforms/:source', (c) => {
   const source = c.req.param('source');
-  const definition = source === 'events' ? manualPlatform : sections.find((section) => section.source === source);
+  const definition = source === 'events' ? manualPlatform : source === 'places' && placesEnabled ? placesPlatform
+    : sections.find((section) => section.source === source);
   if (!definition) return c.text('Platform not found', 404);
+  if (source === 'places') {
+    c.header('Cache-Control', 'no-cache');
+    return c.html(platformPage(config.ownerName, definition, currentPlaces() as SourceSnapshot<unknown>, null));
+  }
   if (source === 'events') {
     c.header('Cache-Control', 'no-cache');
     const eventsTime = repository.timeSpent().sources.find((entry) => entry.source === 'events') ?? null;
@@ -956,7 +988,8 @@ app.get('/now', (c) => {
   const recent = selectHomepageActivities(uniqueItems(activities), 24, 0.15, 0.1, { sources: ['computai', 'dayflow', 'health'], perSource: 3 });
   const queued = selectQueued(repository.activitiesByStatus([...QUEUED_STATUSES]));
   c.header('Cache-Control', 'no-cache');
-  return c.html(nowPage(config.ownerName, current, upcoming, recent, { paused, queued, now }));
+  const lastSeen = placesEnabled ? lastSeenRegion(repository.location, config.places!, now) : null;
+  return c.html(nowPage(config.ownerName, current, upcoming, recent, { paused, queued, now, lastSeen }));
 });
 
 function requestedYear(value: string | undefined): number {

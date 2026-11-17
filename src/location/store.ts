@@ -165,6 +165,28 @@ export class LocationStore {
     };
   }
 
+  /** Every point recorded before [until] (epoch ms), oldest first, for the public Places summary. */
+  pointsBefore(until: number): Array<{ source: LocationSource; time: number; lat: number; lng: number; accuracy: number | null }> {
+    return (this.db.prepare(`SELECT source, recorded_at, lat, lng, accuracy_m FROM location_points
+      WHERE recorded_at < ? ORDER BY recorded_at`).all(until) as unknown as PointRow[])
+      .map((row) => ({ source: row.source, time: row.recorded_at, lat: row.lat, lng: row.lng, accuracy: row.accuracy_m }));
+  }
+
+  /** Every trip that ended before [until]: when, how far and how (no coordinates). */
+  activitiesBefore(until: number): Array<{ start: number; end: number; distanceMeters: number | null; mode: string | null }> {
+    return (this.db.prepare(`SELECT start_at, end_at, distance_m, mode FROM location_activities
+      WHERE end_at < ? ORDER BY start_at`).all(until) as unknown as ActivityRow[])
+      .map((row) => ({ start: row.start_at, end: row.end_at, distanceMeters: row.distance_m, mode: row.mode }));
+  }
+
+  /** The latest point in [from, until), newest first, as a lazy sequence. */
+  *pointsBackwards(from: number, until: number): Generator<{ time: number; lat: number; lng: number; accuracy: number | null }> {
+    for (const row of this.db.prepare(`SELECT recorded_at, lat, lng, accuracy_m FROM location_points
+      WHERE recorded_at >= ? AND recorded_at < ? ORDER BY recorded_at DESC`).iterate(from, until) as Iterable<PointRow>) {
+      yield { time: row.recorded_at, lat: row.lat, lng: row.lng, accuracy: row.accuracy_m };
+    }
+  }
+
   /** One Asia/Taipei calendar day: its track, the places stayed at and the trips between them. */
   day(day: string): LocationDay {
     const { start, end } = locationDayBounds(day);
