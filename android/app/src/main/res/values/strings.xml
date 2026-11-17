@@ -3,13 +3,10 @@
 
     <!-- Header and first-run steps -->
     <string name="header_version">版本 %1$s</string>
-    <string name="header_intro">管理連線、健康資料同步與位置紀錄。</string>
     <string name="setup_title">開始使用</string>
-    <string name="setup_step_row">%1$s  %2$d. %3$s\n%4$s</string>
-    <string name="field_error">⚠ %1$s</string>
     <string name="setup_next_connection">填寫連線設定</string>
     <string name="setup_next_permissions">授權 Health Connect</string>
-    <string name="footer_privacy">隱私：token 以 Android Keystore 加密保存，App 資料不會備份到雲端。健康資料與位置只上傳到上方設定的 Infovore 伺服器，位置不會出現在公開頁面。</string>
+    <string name="footer_privacy">token 加密存在本機，不會備份。\n健康資料與位置只會傳到你的伺服器，不會公開。</string>
 
     <!-- Collapsible sections -->
     <string name="section_connection">連線設定</string>
@@ -20,31 +17,28 @@
     <string name="action_collapse">收合</string>
 
     <!-- Connection settings -->
-    <string name="label_endpoint">Infovore 網址（ingest endpoint）</string>
-    <string name="help_endpoint">需使用 https://；HTTP 只允許預設的 Tailscale 私網位址。</string>
-    <string name="label_health_token">HEALTH_CONNECT_TOKEN</string>
-    <string name="help_health_token">至少 32 字元，與伺服器設定相同；以 Android Keystore 加密保存。</string>
-    <string name="label_history_days">初始同步範圍（最近幾天，1–%1$d）</string>
-    <string name="help_history_days">預設 %1$d 天。第一次同步與每次睡眠同步只讀取這段期間。</string>
+    <string name="label_endpoint">伺服器網址</string>
+    <string name="help_endpoint">請用 https:// 開頭；只有 Tailscale 私網可用 http://</string>
+    <string name="label_health_token">存取 token</string>
+    <string name="help_health_token">與伺服器的 HEALTH_CONNECT_TOKEN 相同</string>
+    <string name="label_history_days">首次同步天數</string>
+    <string name="help_history_days">1–%2$d 天，預設 %1$d 天；睡眠同步也讀取這段期間</string>
     <string name="action_save_connection">儲存連線設定</string>
     <string name="save_state_clean">所有變更皆已儲存</string>
     <string name="save_state_unsaved">有未儲存的變更</string>
     <string name="save_state_saved">已安全儲存</string>
     <string name="save_state_incomplete">尚未完成連線設定</string>
-    <string name="save_state_fix_errors">請修正標示的欄位後再儲存</string>
     <string name="save_state_saved_new_destination">已儲存。同步目的地已變更，下次「立即同步」會重新匯入最近 %1$d 天的歷史資料</string>
     <string name="destination_change_title">變更同步目的地？</string>
     <string name="destination_change_ok">變更並重新匯入</string>
     <string name="destination_change_ok_no_reimport">變更目的地</string>
-    <string name="destination_change_busy">健康同步或畫面記錄上傳進行中，完成後才能變更同步目的地</string>
+    <string name="destination_change_busy">健康同步進行中，完成後才能變更同步目的地</string>
     <string name="connection_summary_ready">已設定 · %1$s</string>
     <string name="connection_summary_unsaved">有未儲存的變更</string>
     <string name="connection_summary_incomplete">尚未完成</string>
 
     <!-- Health Connect sync -->
-    <string name="health_sync_heading">同步</string>
-    <string name="health_sync_explainer">「只同步睡眠」只需要睡眠讀取權限，會先上傳最新的睡眠；「立即同步」需要全部權限，第一次會匯入上方設定的天數，之後只處理變更。</string>
-    <string name="action_sync_sleep">只同步睡眠（優先）</string>
+    <string name="action_sync_sleep">只同步睡眠</string>
     <string name="action_sync_all">立即同步</string>
     <string name="sync_in_progress">同步進行中</string>
     <string name="background_sync_in_progress">背景同步進行中…</string>
@@ -57,25 +51,25 @@
     <string name="action_reverify">重新核實</string>
     <string name="health_summary_unverified">歷史尚未完整核實</string>
     <string name="label_notify_switch">同步失敗時通知我</string>
-    <string name="notify_off">開啟後，背景同步連續失敗 %1$d 次時會發出一則通知（不含健康數值）；使用畫面記錄時，被拒收的畫面紀錄接近或達到上限也會通知（只含筆數）。</string>
-    <string name="notify_on">背景同步連續失敗 %1$d 次（約 %2$d 小時）時通知；同步成功後自動清除。被拒收的畫面紀錄接近或達到上限時也會通知。</string>
-    <string name="notify_denied">未取得通知權限，所以不會通知。如要開啟，請到 Android 設定 → 應用程式 → Infovore → 通知 允許後再開啟此開關。</string>
-    <string name="notify_permission_revoked">通知權限已在系統設定中關閉，因此不會通知；請重新開啟此開關或到系統設定允許通知。</string>
-    <string name="notify_blocked_app">Infovore 的通知已在系統設定中關閉，所以目前不會顯示任何提醒（App 內的狀態照常顯示）。請按「開啟通知設定」允許通知；回到 App 後會補發仍然存在的警告。</string>
-    <string name="notify_blocked_channel">「同步問題」通知類別已在系統設定中關閉，所以目前不會顯示這些提醒（App 內的狀態照常顯示）。請按「開啟通知設定」開啟它；回到 App 後會補發仍然存在的警告。</string>
+    <string name="notify_paused_state">已開啟，但未允許背景讀取</string>
+    <string name="notify_on_needs_background">允許後才會有失敗通知。</string>
+    <string name="notify_off">背景同步連續失敗 %1$d 次時通知你（通知不含健康數值）。</string>
+    <string name="notify_on">背景同步連續失敗 %1$d 次就通知；同步成功後自動清除。</string>
+    <string name="notify_denied">未取得通知權限。請到系統設定 → 應用程式 → Infovore → 通知 允許後再開啟。</string>
+    <string name="notify_permission_revoked">通知權限已在系統設定中關閉，因此不會通知。重新開啟此開關即可再次授權。</string>
+    <string name="notify_blocked_app">Infovore 的通知已在系統設定中關閉，目前不會顯示提醒。回到 App 後會補發仍存在的警告。</string>
+    <string name="notify_blocked_channel">「同步問題」通知類別已在系統設定中關閉，目前不會顯示提醒。回到 App 後會補發仍存在的警告。</string>
     <string name="action_open_notification_settings">開啟通知設定</string>
     <string name="notification_channel_sync">同步問題</string>
-    <string name="notification_channel_sync_description">背景健康資料同步連續失敗，或畫面紀錄上傳因被拒收的紀錄過多而停止時提醒</string>
+    <string name="notification_channel_sync_description">背景健康資料同步連續失敗時提醒</string>
     <string name="sync_blocked_invalid_inputs">連線設定有未修正的錯誤，請先修正後再同步</string>
-    <string name="sync_blocked_no_connection">請先在「連線設定」填寫並儲存網址與 token</string>
+    <string name="sync_blocked_no_connection">請先在「連線設定」儲存網址與 token</string>
     <string name="action_retry">重試</string>
     <string name="health_last_heading">最近結果</string>
-    <string name="last_full_sync">完整同步：%1$s</string>
-    <string name="last_sleep_sync">睡眠：%1$s</string>
     <string name="health_summary_last">上次同步 %1$s</string>
-    <string name="health_background_note">背景同步每 6 小時在有網路時執行一次。使用私網位址時請保持 Tailscale 連線，並在 Garmin Connect → 設定 → Health Connect 開啟資料分享。</string>
+    <string name="health_summary_failed">同步失敗 · %1$s</string>
+    <string name="health_background_note">背景約每 6 小時同步一次。</string>
 
-    <!-- Phone screen recording -->
     <string name="action_cancel">取消</string>
 
     <!-- Dialogs and errors -->
@@ -87,31 +81,30 @@
     <string name="error_no_activity">此裝置找不到可開啟的設定畫面。</string>
     <!-- Location recorder and Google Maps Timeline import -->
     <string name="section_location">位置紀錄</string>
-    <string name="location_intro">記錄這支手機的位置軌跡，並匯入 Google 地圖時間軸的歷史紀錄。資料只存在你的 Infovore 伺服器，不會出現在公開頁面；在網頁上用同一組金鑰解鎖查看。</string>
     <string name="location_track_switch">持續記錄位置</string>
-    <string name="location_accuracy_switch">高精確度（使用 GPS，較耗電）</string>
-    <string name="location_accuracy_note">關閉時以 Wi-Fi 與基地台定位（約 20–100 公尺），較省電。約每分鐘一筆；停留不動時不會重複記錄。</string>
-    <string name="location_background_action">允許「一律允許」位置（重新開機後自動繼續）</string>
-    <string name="location_status_off">未開啟。開啟後會在通知列顯示「正在記錄位置」，隨時可以關閉。</string>
+    <string name="location_accuracy_switch">高精確度 GPS（較耗電）</string>
+    <string name="location_accuracy_note">關閉時改用 Wi-Fi、基\u2060地\u2060台定位，誤差約 20–100 公尺。</string>
+    <string name="location_background_action">允許背景位置</string>
+    <string name="location_status_off">未開啟。開啟後通知列會顯示「正在記錄位置」，隨時可以關閉。</string>
     <string name="location_status_denied">需要「精確位置」權限才能記錄軌跡。若沒有出現權限視窗，請到系統設定 → 應用程式 → Infovore → 權限 開啟位置。</string>
-    <string name="location_status_on">記錄中。定位點先存在手機，約每 15 分鐘上傳一次。</string>
+    <string name="location_status_on">記錄中。每分鐘記一筆，靜止不重複；約每 15 分鐘上傳。</string>
     <string name="location_status_paused">記錄已暫停；打開 Infovore 即可繼續。</string>
     <string name="location_status_no_permission">位置權限已被關閉，記錄已暫停。請關閉再開啟上方開關以重新授權。</string>
-    <string name="location_last_heading">最後定位</string>
-    <string name="location_no_fix">尚無定位。</string>
-    <string name="location_fix_value">%1$s\n%2$s%3$s</string>
-    <string name="location_accuracy_value"> · 誤差約 %1$d 公尺</string>
-    <string name="location_open_map">在地圖上開啟</string>
-    <string name="location_queue_value">等待上傳：%1$s 個定位點</string>
-    <string name="location_needs_connection">請先完成上方的連線設定才能上傳。</string>
+    <string name="location_last_heading">最近紀錄</string>
+    <string name="location_no_fix">尚無定位</string>
+    <string name="location_fix_value">%2$s\n%1$s%3$s</string>
+    <string name="location_accuracy_value">\u0020· 誤差約 %1$d 公尺</string>
+    <string name="location_open_map">在地圖中開啟</string>
+    <string name="location_queue_value">%1$s 個定位點</string>
+    <string name="location_needs_connection">完成「連線設定」後才能上傳。</string>
     <string name="location_upload_now">立即上傳</string>
     <string name="location_uploading">上傳中…</string>
-    <string name="location_open_web">在網頁上查看位置足跡</string>
+    <string name="location_open_web">查看網頁足跡</string>
     <string name="location_import_heading">匯入 Google 地圖時間軸</string>
-    <string name="location_import_help">先在手機的「設定 → 位置 → 定位服務 → 時間軸 → 匯出時間軸資料」存成 JSON 檔（有些手機在 Google 地圖 → 你的時間軸 → 設定裡），再按下方按鈕選擇該檔案。也支援 Google Takeout 的 Records.json 與 Semantic Location History。重複匯入同一個檔案不會產生重複資料。</string>
-    <string name="location_import_action">選擇時間軸檔案並匯入</string>
+    <string name="location_import_help">在 Google 地圖匯出：%1$s。\n重複匯入不會產生重複資料。</string>
+    <string name="location_import_action">選擇時間軸檔案</string>
     <string name="location_import_cancel">取消匯入</string>
-    <string name="location_import_none">尚未匯入。</string>
+    <string name="location_import_none">尚未匯入</string>
     <string name="location_import_busy">已有匯入正在進行。</string>
     <string name="location_channel_name">位置紀錄</string>
     <string name="location_channel_description">記錄位置時常駐顯示，點一下可開啟設定或關閉記錄。</string>
@@ -121,9 +114,9 @@
     <string name="update_check_action">檢查更新</string>
     <string name="update_check_failed">無法連線到 GitHub 檢查更新，請稍後再試。</string>
     <string name="update_latest">已是最新版本（%1$s）。</string>
-    <string name="update_offer_title">有新版本 %1$s</string>
-    <string name="update_offer_message">目前版本 %1$s，可更新到 %2$s。</string>
-    <string name="update_offer_size">（約 %1$s）</string>
+    <string name="update_offer_title">有可用的更新</string>
+    <string name="update_offer_message">%1$s → %2$s</string>
+    <string name="update_offer_size">\u0020· 約 %1$s</string>
     <string name="update_action_install">更新</string>
     <string name="update_action_later">稍後</string>
     <string name="update_permission_title">允許 Infovore 安裝更新</string>
@@ -133,4 +126,30 @@
     <string name="update_downloading">正在下載 %1$s…</string>
     <string name="update_downloading_percent">正在下載 %1$s… %2$d%%</string>
     <string name="update_failed_title">更新沒有完成</string>
+    <!-- Overview (the top card once setup is done) -->
+    <string name="health_sync_sleep_note">「只同步睡眠」只需睡眠權限，可以先用</string>
+    <string name="result_full_sync">完整同步</string>
+    <string name="result_sleep">睡眠</string>
+    <string name="result_failed">失敗</string>
+    <string name="result_failed_count">失敗 · 背景連續 %1$d 次</string>
+    <string name="action_open_connection">開啟連線設定</string>
+    <string name="connection_summary_invalid">%1$d 個欄位需要修正</string>
+    <string name="health_summary_needs_connection">完成連線設定後即可授權</string>
+    <string name="location_summary_no_restart">記錄中 · 需要背景位置</string>
+    <string name="health_manage_permissions">管理權限</string>
+    <string name="health_granted">Health Connect 已授權</string>
+    <string name="location_background_note">未允許背景位置：重新開機後會停止。</string>
+    <string name="update_notes_heading">更新內容</string>
+    <string name="button_disabled_reason">%1$s（無法使用：%2$s）</string>
+    <string name="location_status_on_short">每分鐘記一筆，靜止不重複；約每 15 分鐘上傳。</string>
+    <string name="location_import_path">設定 › 位置 › 時間軸 › 匯出</string>
+    <string name="location_queue_empty">0 個定位點</string>
+    <string name="location_import_needs_connection">完成「連線設定」後才能匯入</string>
+    <string name="health_background_note_not_granted">允許背景讀取後，約每 6 小時自動同步一次。</string>
+    <string name="health_background_note_unsupported">此裝置不支援背景同步，請不時開啟 App 手動同步。</string>
+    <string name="location_label_fix">最後定位</string>
+    <string name="location_label_queue">等待上傳</string>
+    <string name="location_label_upload">上次上傳</string>
+    <string name="location_upload_value">%1$s\n%2$s</string>
+    <string name="location_summary_recording">記錄中 · 最後定位 %1$s</string>
 </resources>

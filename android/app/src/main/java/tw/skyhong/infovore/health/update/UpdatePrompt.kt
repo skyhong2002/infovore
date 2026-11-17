@@ -1,5 +1,6 @@
 package tw.skyhong.infovore.health.update
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.Context
 import android.content.Intent
 import androidx.core.net.toUri
@@ -82,13 +83,39 @@ class UpdatePrompt(private val activity: AppCompatActivity) {
     private fun offer(release: AppRelease) {
         dialog?.dismiss()
         val size = if (release.sizeBytes > 0) Formatter.formatShortFileSize(activity, release.sizeBytes) else null
-        val message = buildString {
-            append(activity.getString(R.string.update_offer_message, BuildConfig.VERSION_NAME, release.versionName))
-            if (size != null) append(activity.getString(R.string.update_offer_size, size))
-            if (release.notes.isNotBlank()) append("\n\n").append(release.notes.take(800))
+        // The version change leads (primary color, medium); the notes follow under their heading.
+        val message = android.text.SpannableStringBuilder()
+        val primary = androidx.core.content.ContextCompat.getColor(activity, R.color.text_primary)
+        fun emphasized(text: String) {
+            val start = message.length
+            message.append(text)
+            message.setSpan(android.text.style.ForegroundColorSpan(primary), start, message.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            message.setSpan(android.text.style.TypefaceSpan(android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 500, false)), start, message.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        dialog = AlertDialog.Builder(activity)
-            .setTitle(activity.getString(R.string.update_offer_title, release.versionName))
+        emphasized(activity.getString(R.string.update_offer_message, BuildConfig.VERSION_NAME, release.versionName))
+        if (size != null) message.append(activity.getString(R.string.update_offer_size, size))
+        if (release.notes.isNotBlank()) {
+            message.append("\n\n")
+            emphasized(activity.getString(R.string.update_notes_heading))
+            message.append("\n")
+            // Notes in the normal text color; a wrapped item hangs under its text, not under the bullet.
+            val bullet = "• "
+            val indent = android.text.TextPaint().apply {
+                textSize = 16f * activity.resources.displayMetrics.scaledDensity
+            }.measureText(bullet).toInt()
+            release.notes.take(800).lines().forEachIndexed { index, raw ->
+                if (index > 0) message.append("\n")
+                val line = raw.trim().replaceFirst(Regex("^[-*] "), bullet)
+                val start = message.length
+                message.append(line)
+                message.setSpan(android.text.style.ForegroundColorSpan(primary), start, message.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                if (line.startsWith(bullet)) {
+                    message.setSpan(android.text.style.LeadingMarginSpan.Standard(0, indent), start, message.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+            }
+        }
+        dialog = MaterialAlertDialogBuilder(activity)
+            .setTitle(activity.getString(R.string.update_offer_title))
             .setMessage(message)
             .setPositiveButton(R.string.update_action_install) { _, _ -> install(release) }
             .setNegativeButton(R.string.update_action_later) { _, _ ->
@@ -104,7 +131,7 @@ class UpdatePrompt(private val activity: AppCompatActivity) {
         if (!UpdateInstaller.canInstall(activity)) {
             // Remember it: coming back from the settings page continues the update.
             pending = release
-            dialog = AlertDialog.Builder(activity)
+            dialog = MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.update_permission_title)
                 .setMessage(R.string.update_permission_message)
                 .setPositiveButton(R.string.update_permission_open) { _, _ ->
@@ -136,7 +163,7 @@ class UpdatePrompt(private val activity: AppCompatActivity) {
             }
             is UpdateInstaller.State.Failed -> {
                 dialog?.dismiss()
-                dialog = AlertDialog.Builder(activity)
+                dialog = MaterialAlertDialogBuilder(activity)
                     .setTitle(R.string.update_failed_title)
                     .setMessage(state.message)
                     .setPositiveButton(android.R.string.ok, null)
@@ -161,7 +188,7 @@ class UpdatePrompt(private val activity: AppCompatActivity) {
             return
         }
         val kit = ViewKit(activity)
-        val bar = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
+        val bar = com.google.android.material.progressindicator.LinearProgressIndicator(activity).apply {
             max = 100
             isIndeterminate = state.percent == null
             progress = state.percent ?: 0
@@ -175,7 +202,7 @@ class UpdatePrompt(private val activity: AppCompatActivity) {
         progressText = label
         progressBar = bar
         current?.dismiss()
-        dialog = AlertDialog.Builder(activity)
+        dialog = MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.update_progress_title)
             .setView(body)
             .setCancelable(false)

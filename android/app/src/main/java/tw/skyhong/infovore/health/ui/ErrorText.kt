@@ -28,6 +28,14 @@ object ErrorText {
         }
     }
 
+    /**
+     * A failure the connection settings can fix (wrong address, unknown host, TLS, refused token,
+     * no sync service at that URL), as opposed to a server that is down or busy.
+     */
+    fun fixableByConnection(message: String): Boolean = listOf(
+        "找不到伺服器", "無法連線到伺服器", "安全連線（HTTPS）失敗", "token", "HTTP 401", "HTTP 403", "HTTP 404", "網址",
+    ).any { message.contains(it) }
+
     private fun transient(raw: String?, retryAfterMs: Long?): String {
         val status = raw?.let { Regex("HTTP (\\d{3})").find(it)?.groupValues?.get(1)?.toIntOrNull() }
         val wait = retryAfterMs?.let { RetryAfter.describe(it) }

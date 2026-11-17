@@ -1,6 +1,6 @@
 # Infovore Health for Android
 
-This private companion (current version 0.9.0) reads selected records from Android Health Connect,
+This private companion (current version 0.10.0) reads selected records from Android Health Connect,
 records the phone's location when asked, and uploads them to infovore's authenticated ingest service. Garmin Connect can
 write its activity and wellness records to Health Connect on Android 14+; this
 app then transports those records to infovore without handling Garmin or
@@ -74,6 +74,18 @@ The app does two jobs: sync Health Connect (Garmin watch data) and record
 location. The settings screen is the launch screen; the Dayflow overview and the
 content browser (`HomeActivity`, 0.5–0.8) were removed, since the website shows
 both. Opening the app still resumes location recording and checks for updates.
+
+## Material 3 screen (0.10.0)
+
+The one screen is built on Material Components (Material 3, DayNight) through `ViewKit`:
+one status surface (each section header carries a tone dot and a one-line summary;
+words are coloured only for warnings and errors), one filled button per page (a fix
+outranks syncing; optional actions are tonal, outlined or text), tinted status boxes
+with a warning/error icon, label/value result rows that are one TalkBack stop, and
+zh-TW line breaking that keeps words, numbers with their units and short clauses
+together at every font scale (label rows and button pairs stack at very large text).
+`ScreenshotCapture` renders the main states headlessly for design review when
+`INFOVORE_SCREENSHOTS=<dir>` is set (skipped otherwise).
 
 ## Data and privacy
 

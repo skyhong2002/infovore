@@ -1,14 +1,78 @@
 <resources>
-    <style name="Theme.InfovoreHealth" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="Theme.InfovoreHealth" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/brand_primary</item>
-        <item name="colorPrimaryDark">@color/screen_background</item>
-        <item name="colorAccent">@color/brand_primary</item>
-        <item name="colorControlActivated">@color/brand_primary</item>
-        <item name="android:fontFamily">sans</item>
+        <item name="colorOnPrimary">@color/on_primary</item>
+        <item name="colorPrimaryContainer">@color/primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/on_primary_container</item>
+        <item name="colorSecondaryContainer">@color/primary_container</item>
+        <item name="colorOnSecondaryContainer">@color/on_primary_container</item>
+        <item name="colorSurface">@color/card_background</item>
+        <item name="colorSurfaceContainerHigh">@color/card_background</item>
+        <item name="colorSurfaceContainerHighest">@color/card_background</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorOutline">@color/outline</item>
+        <item name="colorOutlineVariant">@color/outline_variant</item>
+        <item name="colorError">@color/tone_error</item>
+        <item name="android:colorBackground">@color/screen_background</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
         <item name="android:windowBackground">@color/screen_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">@bool/light_system_bars</item>
         <item name="android:windowLightNavigationBar">@bool/light_system_bars</item>
+        <item name="infovoreFilledButtonStyle">@style/Widget.Infovore.Button</item>
+        <item name="infovoreTonalButtonStyle">@style/Widget.Infovore.Button.Tonal</item>
+        <item name="infovoreTextButtonStyle">@style/Widget.Infovore.Button.Text</item>
+        <item name="infovoreOutlinedButtonStyle">@style/Widget.Infovore.Button.Outlined</item>
+        <item name="infovoreOutlinedFieldStyle">@style/Widget.Material3.TextInputLayout.OutlinedBox</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Infovore.Dialog</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.Infovore.Dialog</item>
+    </style>
+
+    <style name="Widget.Infovore.Button" parent="Widget.Material3.Button">
+        <item name="android:textSize">16sp</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:insetTop">2dp</item>
+        <item name="android:insetBottom">2dp</item>
+    </style>
+
+    <style name="Widget.Infovore.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:textSize">16sp</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:insetTop">2dp</item>
+        <item name="android:insetBottom">2dp</item>
+    </style>
+
+    <style name="Widget.Infovore.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textSize">16sp</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:insetTop">2dp</item>
+        <item name="android:insetBottom">2dp</item>
+    </style>
+
+    <style name="Widget.Infovore.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textSize">16sp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:minWidth">48dp</item>
+    </style>
+
+    <style name="ThemeOverlay.Infovore.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurfaceContainerHigh">@color/card_background</item>
+        <!-- The card surface, not M3's tinted container, so dialogs match the page's palette. -->
+        <item name="colorSurface">@color/card_background</item>
+        <item name="elevationOverlayEnabled">false</item>
+        <item name="alertDialogStyle">@style/Widget.Infovore.Dialog</item>
+        <!-- The confirming action is filled; the other stays a text button. -->
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.Infovore.Dialog.PositiveButton</item>
+    </style>
+
+    <style name="Widget.Infovore.Dialog" parent="MaterialAlertDialog.Material3">
+        <item name="backgroundTint">@color/card_background</item>
+    </style>
+
+    <style name="Widget.Infovore.Dialog.PositiveButton" parent="Widget.Material3.Button">
+        <item name="android:layout_marginStart">8dp</item>
     </style>
 </resources>

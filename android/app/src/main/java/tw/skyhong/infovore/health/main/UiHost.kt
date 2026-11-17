@@ -1,12 +1,12 @@
 package tw.skyhong.infovore.health.main
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.text.format.DateFormat
 import android.view.View
 import android.widget.ScrollView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import tw.skyhong.infovore.health.DestinationChange
 import tw.skyhong.infovore.health.MainViewModel
@@ -64,7 +64,7 @@ class UiHost(
 
     /** A confirmation dialog with a cancel button; [onOk] runs only when confirmed. */
     fun confirm(text: DialogText, onOk: () -> Unit) {
-        AlertDialog.Builder(activity)
+        MaterialAlertDialogBuilder(activity)
             .setTitle(text.title)
             .setMessage(text.message)
             .setPositiveButton(text.ok) { _, _ -> onOk() }

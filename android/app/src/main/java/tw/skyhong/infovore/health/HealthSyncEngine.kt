@@ -1,6 +1,7 @@
 package tw.skyhong.infovore.health
 
 import kotlinx.coroutines.CancellationException
+import tw.skyhong.infovore.health.ui.HealthStatus
 import java.time.Instant
 
 /**
@@ -82,9 +83,9 @@ class HealthSyncEngine(
             )
             val count = result.inserted + result.updated
             store.lastSleepStatus = if (count == 0) {
-                "${now()}：睡眠 0 筆（查詢 $days 天）。請確認 Health Connect 內有睡眠紀錄、Garmin 已獲准寫入睡眠，並完成手錶同步。"
+                "${now()}：${HealthStatus.SLEEP_EMPTY}（查詢 $days 天）"
             } else {
-                "${now()}：睡眠已上傳 $count 筆（新增 ${result.inserted}、更新 ${result.updated}）"
+                "${now()}：睡眠同步完成 · ${ReconcileText.counts(result.inserted, result.updated, 0)}"
             }
             onProgress(store.lastSleepStatus)
             return result

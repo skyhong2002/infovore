@@ -17,15 +17,15 @@ class StaleSyncTest {
         hoursAgo: Long?,
         configured: Boolean = true,
         busy: Boolean = false,
-        syncEnabled: Boolean = true,
         notificationsOn: Boolean = false,
+        lastError: String? = null,
     ) = StaleSync.map(
         lastSuccess = hoursAgo?.let { now.minus(Duration.ofHours(it)) },
         now = now,
         configured = configured,
         busy = busy,
-        syncEnabled = syncEnabled,
         notificationsOn = notificationsOn,
+        lastError = lastError,
     )
 
     @Test
@@ -35,10 +35,8 @@ class StaleSyncTest {
         val stale = map(hoursAgo = 25)
         assertNotNull(stale)
         assertTrue(stale!!.text, stale.text.contains("已超過 24 小時沒有成功同步"))
-        assertTrue(stale.text.contains("背景同步可能根本沒有執行"))
-        assertEquals("超過 24 小時未同步", stale.summary)
-        assertEquals("立即同步", stale.syncLabel)
-        assertTrue(stale.syncEnabled)
+        assertTrue(stale.text.contains("背景活動"))
+        assertEquals("超過 24 小時未同步 · 上次成功 1 天前", stale.summary)
         // Same threshold the server uses to call Health delayed.
         assertEquals(24L, StaleSync.THRESHOLD_HOURS)
     }
@@ -46,12 +44,9 @@ class StaleSyncTest {
     @Test
     fun offersToTurnOnNotificationsOnlyWhenTheyAreOff() {
         val off = map(hoursAgo = 30, notificationsOn = false)!!
-        assertEquals("開啟通知", off.notifyLabel)
-        // Honest about what notifications cannot do.
-        assertTrue(off.text, off.text.contains("App 完全沒有執行時無法發出任何通知"))
+        assertEquals("開啟失敗通知", off.notifyLabel)
         val on = map(hoursAgo = 30, notificationsOn = true)!!
         assertNull(on.notifyLabel)
-        assertFalse(on.text.contains("開啟通知後"))
     }
 
     @Test
@@ -59,8 +54,13 @@ class StaleSyncTest {
         assertNull(map(hoursAgo = 48, configured = false))
         assertNull(map(hoursAgo = 48, busy = true))
         assertNull(map(hoursAgo = null))
-        // Sync not possible right now (e.g. a missing permission): the box shows, its button disabled.
-        assertFalse(map(hoursAgo = 48, syncEnabled = false)!!.syncEnabled)
+    }
+
+    @Test
+    fun aFailedLastSyncPutsItsCauseInTheBoxAndTheSummary() {
+        val failed = map(hoursAgo = 26, lastError = "伺服器回應 502")!!
+        assertEquals("伺服器回應 502", failed.headline)
+        assertEquals("完整同步失敗 · 上次成功 1 天前", failed.summary)
     }
 
     @Test

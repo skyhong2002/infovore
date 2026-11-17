@@ -2,8 +2,8 @@ package tw.skyhong.infovore.health.ui
 
 /** The three first-run steps shown at the top of the screen. */
 enum class SetupStep(val title: String, val doneText: String, val todoText: String) {
-    CONNECTION("設定連線", "Endpoint 與 token 已儲存", "填入 Infovore 網址與 HEALTH_CONNECT_TOKEN 後儲存"),
-    PERMISSIONS("授權 Health Connect", "已授權讀取健康資料", "允許 Infovore 讀取 Health Connect 的健康資料"),
+    CONNECTION("完成連線設定", "網址與 token 已儲存", "在下方填入伺服器網址與 token 後儲存"),
+    PERMISSIONS("授權 Health Connect", "已授權讀取健康資料", "允許讀取健康資料\nGarmin Connect 也要開啟 Health Connect"),
     FIRST_SYNC("完成第一次同步", "已完成首次匯入", "按「立即同步」匯入最近的健康資料"),
 }
 

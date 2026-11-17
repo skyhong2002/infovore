@@ -5,14 +5,17 @@ import java.time.Instant
 
 /** The warning shown at the top of the health section when the last successful full sync is too old. */
 data class StaleSyncUi(
-    val text: String,
+    /** The box's first line: the failure's cause, or what probably happened. */
+    val headline: String,
+    /** What to check. */
+    val detail: String,
     /** The section header's short version. */
     val summary: String,
-    val syncLabel: String,
-    val syncEnabled: Boolean,
-    /** "開啟通知" when notifications are not on (opt-in and permission); null when they are. */
+    /** "開啟失敗通知" when notifications are not on (opt-in and permission); null when they are. */
     val notifyLabel: String?,
-)
+) {
+    val text: String get() = "$headline\n$detail"
+}
 
 /**
  * When the app is opened more than [THRESHOLD_HOURS] after the last successful full sync, the
@@ -41,26 +44,24 @@ object StaleSync {
         now: Instant,
         configured: Boolean,
         busy: Boolean,
-        syncEnabled: Boolean,
         notificationsOn: Boolean,
+        /** Why the last sync failed, when it did. */
+        lastError: String? = null,
     ): StaleSyncUi? {
         if (!configured || busy || lastSuccess == null) return null
         if (Duration.between(lastSuccess, now) <= Duration.ofHours(THRESHOLD_HOURS)) return null
-        val text = buildString {
-            append("已超過 ").append(THRESHOLD_HOURS).append(" 小時沒有成功同步（上次成功：")
-            append(TimeText.relative(lastSuccess, now)).append("）。")
-            append("背景同步可能根本沒有執行：系統可能限制了 Infovore 的背景活動（電池最佳化），或 App 曾被強制停止。")
-            append("公開網站的健康資料會停在上次同步的時間。請按「立即同步」，並確認系統沒有限制 Infovore 在背景執行。")
-            if (!notificationsOn) {
-                append("開啟通知後，背景同步連續失敗時會提醒你；但 App 完全沒有執行時無法發出任何通知，仍請不時開啟 App 確認。")
-            }
-        }
+        val since = TimeText.relative(lastSuccess, now)
         return StaleSyncUi(
-            text = text,
-            summary = "超過 $THRESHOLD_HOURS 小時未同步",
-            syncLabel = "立即同步",
-            syncEnabled = syncEnabled,
-            notifyLabel = if (notificationsOn) null else "開啟通知",
+            headline = lastError ?: "背景同步可能沒有執行",
+            detail = if (lastError != null) {
+                // The header already says how long ago the last success was.
+                "若重試仍失敗，請檢查伺服器。"
+            } else {
+                "已超過 $THRESHOLD_HOURS 小時沒有成功同步。請確認系統沒有限制 Infovore 的背景活動（電池用量）；使用私網位址時需保持 Tailscale 連線。"
+            },
+            // "完整同步": the sleep-only sync may have succeeded since, so the header names which one failed.
+            summary = if (lastError != null) "完整同步失敗 · 上次成功 $since" else "超過 $THRESHOLD_HOURS 小時未同步 · 上次成功 $since",
+            notifyLabel = if (notificationsOn) null else "開啟失敗通知",
         )
     }
 }

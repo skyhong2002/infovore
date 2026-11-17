@@ -1,18 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="brand_primary">#A9BCD8</color>
-    <color name="screen_background">#0E0F12</color>
-    <color name="card_background">#16181D</color>
-    <color name="card_stroke">#262A31</color>
-    <color name="text_secondary">#AAB1BB</color>
     <color name="on_primary">#10161F</color>
-    <color name="disabled_fill">#2A2F38</color>
-    <color name="disabled_text">#9AA1AD</color>
+    <color name="primary_container">#2B3850</color>
+    <color name="on_primary_container">#DCE5F3</color>
+    <color name="screen_background">#0E0F12</color>
+    <color name="card_background">#17191E</color>
+    <color name="card_stroke">#262A31</color>
+    <color name="text_primary">#E7E9ED</color>
+    <color name="text_secondary">#AAB1BB</color>
+    <color name="outline">#8D949F</color>
+    <color name="outline_variant">#3A3F48</color>
     <color name="tone_ok">#8FD6A0</color>
     <color name="tone_warning">#F0C27A</color>
     <color name="tone_error">#F2B8B5</color>
     <color name="tone_ok_background">#1C3324</color>
     <color name="tone_warning_background">#3A2C14</color>
     <color name="tone_error_background">#3E1F1D</color>
-    <color name="tone_neutral_background">#262A31</color>
+    <color name="tone_neutral_background">#232831</color>
 </resources>

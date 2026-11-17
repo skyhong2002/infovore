@@ -57,7 +57,7 @@ class MainActivityUiTest {
         assertTrue(hasVisibleText(root, "Infovore"))
         assertTrue(hasVisibleText(root, activity.getString(R.string.footer_privacy)))
 
-        // Nothing saved yet: the connection and health sections start open.
+        // Nothing saved yet: the connection section starts open, health waits for it.
         val connection = sectionHeader(activity, activity.getString(R.string.section_connection))
         val health = sectionHeader(activity, activity.getString(R.string.section_health))
         for (header in listOf(connection, health)) {
@@ -69,15 +69,15 @@ class MainActivityUiTest {
         // The retired phone screen recorder has no section any more.
         assertFalse(hasVisibleText(root, "手機畫面記錄"))
 
-        // Health Connect (a fake with nothing granted): the status asks for the permission.
-        assertTrue(hasVisibleText(root, activity.getString(R.string.health_sync_heading)))
-        // Nothing saved: no sync can start yet.
-        assertFalse(Robo.button(root, activity.getString(R.string.action_sync_all)).isEnabled)
+        assertEquals(activity.getString(R.string.state_collapsed), ViewCompat.getStateDescription(health))
+        assertTrue(hasVisibleText(root, activity.getString(R.string.health_summary_needs_connection)))
 
-        // Collapsing a section by tapping its header updates its state.
+        // Opening a section by tapping its header updates its state.
         health.performClick()
         Robo.idle()
-        assertEquals(activity.getString(R.string.state_collapsed), ViewCompat.getStateDescription(health))
+        assertEquals(activity.getString(R.string.state_expanded), ViewCompat.getStateDescription(health))
+        // Nothing saved: no sync can start yet.
+        assertFalse(Robo.button(root, activity.getString(R.string.action_sync_all)).isEnabled)
         assertTrue(health.contentDescription.toString().startsWith(activity.getString(R.string.section_health)))
     }
 
@@ -88,6 +88,12 @@ class MainActivityUiTest {
     }
 
     private fun assertTouchTargets(activity: MainActivity) {
+        // Every section open, so every control is measured.
+        for (title in listOf(R.string.section_connection, R.string.section_health, R.string.section_location)) {
+            val header = sectionHeader(activity, activity.getString(title))
+            if (ViewCompat.getStateDescription(header) == activity.getString(R.string.state_collapsed)) header.performClick()
+        }
+        Robo.idle()
         val min = Robo.dp(activity, 48)
         val controls = descendants(activity.root).filter {
             // Selectable status text is focusable for copying, not a control.
@@ -115,8 +121,8 @@ class MainActivityUiTest {
         assertTrue("dark background, red channel $red", red < 0x40)
         // Body text scales with the user's font size (Android 14 scales large text non-linearly):
         // 16sp at xhdpi (2.0) is 32px unscaled.
-        val intro = textView(activity.root, activity.getString(R.string.header_intro))
-        assertTrue("16sp body text is ${intro.textSize}px", intro.textSize > 16f * 2f * 1.2f)
+        val footer = textView(activity.root, activity.getString(R.string.footer_privacy))
+        assertTrue("14sp caption text is ${footer.textSize}px", footer.textSize > 14f * 2f * 1.2f)
         assertTouchTargets(activity)
         assertTrue(hasVisibleText(activity.root, activity.getString(R.string.footer_privacy)))
     }
@@ -130,8 +136,8 @@ class MainActivityUiTest {
         token.setText("too-short")
         Robo.button(activity.root, activity.getString(R.string.action_save_connection)).performClick()
         Robo.idle()
-        assertTrue(hasVisibleText(activity.root, "⚠ 網址需以 https:// 開頭"))
-        assertTrue(hasVisibleText(activity.root, activity.getString(R.string.save_state_fix_errors)))
+        assertTrue(hasVisibleText(activity.root, "網址需以 https:// 開頭"))
+        assertTrue(hasVisibleText(activity.root, activity.getString(R.string.connection_summary_invalid, 2)))
         // TalkBack hears the field as invalid, with the message as its error.
         val info = AccessibilityNodeInfoCompat.wrap(endpoint.createAccessibilityNodeInfo())
         assertTrue(info.isContentInvalid)
@@ -190,7 +196,7 @@ class MainActivityUiTest {
         assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, warning.accessibilityLiveRegion)
         assertTrue(Robo.button(root, "立即同步").isEnabled)
         // Notifications are off: offered, only on tap.
-        assertTrue(Robo.button(root, "開啟通知").isShown)
+        assertTrue(Robo.button(root, "開啟失敗通知").isShown)
         val health = sectionHeader(activity, activity.getString(R.string.section_health))
         assertTrue(health.contentDescription.toString().contains("超過 24 小時未同步"))
     }

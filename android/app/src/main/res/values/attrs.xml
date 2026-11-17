@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Default styles ViewKit builds its Material components with (set in the theme). -->
+    <attr name="infovoreFilledButtonStyle" format="reference" />
+    <attr name="infovoreTonalButtonStyle" format="reference" />
+    <attr name="infovoreTextButtonStyle" format="reference" />
+    <attr name="infovoreOutlinedFieldStyle" format="reference" />
+    <attr name="infovoreOutlinedButtonStyle" format="reference" />
+</resources>

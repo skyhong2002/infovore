@@ -21,7 +21,7 @@ class InputValidationTest {
         val privateHttp = "http://${EndpointPolicy.TAILSCALE_HTTP_HOST}:3001"
         assertEquals(FieldResult.Valid(privateHttp), InputValidation.endpoint(privateHttp))
         val other = InputValidation.endpoint("http://example.com")
-        assertTrue(other.errorOrNull!!.contains("HTTPS"))
+        assertTrue(other.errorOrNull!!.contains("https://"))
     }
 
     @Test

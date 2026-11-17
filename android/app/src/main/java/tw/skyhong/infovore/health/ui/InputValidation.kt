@@ -45,7 +45,7 @@ object InputValidation {
         }
         if (uri.port != -1 && uri.port !in 1..65535) return FieldResult.Invalid("連接埠號碼不正確")
         if (!EndpointPolicy.isAllowed(scheme, host)) {
-            return FieldResult.Invalid("自訂網址必須使用 HTTPS（HTTP 只允許預設的 Tailscale 私網位址）")
+            return FieldResult.Invalid("請用 https:// 開頭；只有 Tailscale 私網可用 http://")
         }
         return FieldResult.Valid(normalized)
     }

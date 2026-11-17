@@ -53,6 +53,41 @@ object TimeText {
     fun friendly(then: Instant, now: Instant, zone: ZoneId, use24Hour: Boolean = true): String =
         "${relative(then, now)}（${absolute(then, now, zone, use24Hour)}）"
 
+    /** [text] with no-break spaces, so "下午 8:56" or "新增 128" never wraps at its space. */
+    fun keepTogether(text: String): String = text.replace(' ', '\u00A0')
+
+    /** "a · b · c" that wraps only between items; the "·" stays at the end of the line it follows. */
+    fun phrases(text: String): String = text.split(" · ").joinToString("\u00A0· ") {
+        if (it.length <= SHORT_PHRASE) unbreakable(it) else keepTogether(it)
+    }
+
+    /**
+     * A saved result as shown: "背景同步完成：新增 128 · 更新 6". When it does not fit one line it
+     * breaks after the "：", never inside the counts or with a dangling "·".
+     */
+    fun result(text: String): String {
+        val parts = text.split(" · ")
+        if (parts.size < 2 || !parts[0].endsWith("完成")) return phrases(text)
+        val counts = parts.drop(1).joinToString(" · ")
+        return keepTogether(parts[0]) + "：" + if (counts.length <= SHORT_PHRASE * 2) unbreakable(counts) else phrases(counts)
+    }
+
+    /** Items up to this length ("新增 128", "睡眠同步完成") never break inside; longer ones may. */
+    private const val SHORT_PHRASE = 12
+
+    /**
+     * [friendly] whose "（今天 下午 8:56）" part never breaks inside (word joiners between its
+     * characters, which CJK text would otherwise allow): it moves to the next line as a whole.
+     */
+    fun friendlyWrapped(then: Instant, now: Instant, zone: ZoneId, use24Hour: Boolean = true): String =
+        relative(then, now) + "（${keepTogether(absolute(then, now, zone, use24Hour).removePrefix("今天 "))}）".toList().joinToString(WORD_JOINER)
+
+    /** [text] that never breaks inside, e.g. a menu path "設定 › 位置 › 時間軸". */
+    fun unbreakable(text: String): String = keepTogether(text).toList().joinToString(WORD_JOINER)
+
+    /** Joins characters without a line break between them; invisible and not spoken. */
+    const val WORD_JOINER = "\u2060"
+
     fun clock(then: Instant, zone: ZoneId, use24Hour: Boolean = true): String =
         DateTimeFormatter.ofPattern(if (use24Hour) "HH:mm" else "a h:mm", locale).format(then.atZone(zone))
 

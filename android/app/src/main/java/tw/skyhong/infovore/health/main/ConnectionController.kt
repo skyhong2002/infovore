@@ -1,8 +1,8 @@
 package tw.skyhong.infovore.health.main
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.View
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.core.net.toUri
 import tw.skyhong.infovore.health.DestinationChange
 import tw.skyhong.infovore.health.R
@@ -55,6 +55,9 @@ class ConnectionController(
 
     private var justSaved = false
 
+    /** Fields the last save attempt found invalid; cleared by the next edit. */
+    private var invalidFields = 0
+
     /** The last save changed the sync destination, so the next full sync re-imports this many days. */
     private var reimportDaysAfterSave: Int? = null
 
@@ -65,24 +68,25 @@ class ConnectionController(
         section = CollapsibleSection(kit, host.string(R.string.section_connection), expanded ?: !savedReady())
         endpointField = kit.field(
             R.id.endpoint_input, host.string(R.string.label_endpoint), ViewKit.InputKind.URL, host.string(R.string.help_endpoint),
-        ).apply { input.hint = SecureSettings.DEFAULT_ENDPOINT }
+        ).apply { layout.placeholderText = SecureSettings.DEFAULT_ENDPOINT }
         tokenField = kit.field(
             R.id.token_input, host.string(R.string.label_health_token), ViewKit.InputKind.SECRET, host.string(R.string.help_health_token),
         )
         historyDaysField = kit.field(
             R.id.history_days_input,
-            host.string(R.string.label_history_days, SecureSettings.MAX_HISTORY_DAYS),
+            host.string(R.string.label_history_days),
             ViewKit.InputKind.NUMBER,
-            host.string(R.string.help_history_days, SecureSettings.DEFAULT_HISTORY_DAYS),
+            host.string(R.string.help_history_days, SecureSettings.DEFAULT_HISTORY_DAYS, SecureSettings.MAX_HISTORY_DAYS),
         )
         endpointField.setValue(settings.endpoint)
         // Unsaved token edits come back from the ViewModel after a rotation; never from the Bundle.
         tokenField.setValue(model.drafts.valueOr(SecretDrafts.Key.HEALTH_TOKEN, savedHealthToken))
         historyDaysField.setValue(settings.historyDays.toString())
         for (field in listOf(endpointField, tokenField, historyDaysField)) {
-            section.add(field.input.parent as View)
+            section.add(field.layout, 12)
             field.onChange {
                 justSaved = false
+                invalidFields = 0
                 reimportDaysAfterSave = null
                 if (field == tokenField) model.drafts.update(SecretDrafts.Key.HEALTH_TOKEN, field.value, savedHealthToken)
                 field.clearErrorIfAny()
@@ -97,14 +101,14 @@ class ConnectionController(
         section.add(kit.primaryButton(host.string(R.string.action_save_connection)).apply {
             setOnClickListener { save(showSuccess = true) }
         }, 16)
-        saveState = kit.liveText(Style.CAPTION).apply { setPadding(kit.dp(4), kit.dp(8), 0, 0) }
+        saveState = kit.liveText(Style.CAPTION).apply { setPadding(0, kit.dp(8), 0, 0) }
         section.add(saveState)
         return section
     }
 
     private fun validate(field: Field): FieldResult<*> = when (field) {
         endpointField -> endpointResult()
-        tokenField -> InputValidation.token(field.value, "HEALTH_CONNECT_TOKEN", required = true)
+        tokenField -> InputValidation.token(field.value, "token", required = true)
         historyDaysField -> InputValidation.historyDays(field.value)
         else -> FieldResult.Valid(field.value)
     }
@@ -147,18 +151,18 @@ class ConnectionController(
      */
     fun save(showSuccess: Boolean, afterConfirmedSave: () -> Unit = {}): SaveResult {
         val endpoint = endpointResult()
-        val token = InputValidation.token(tokenField.value, "HEALTH_CONNECT_TOKEN", required = true)
+        val token = InputValidation.token(tokenField.value, "token", required = true)
         val days = InputValidation.historyDays(historyDaysField.value)
         endpointField.show(endpoint)
         tokenField.show(token)
         historyDaysField.show(days)
         val firstInvalid = listOf(endpointField to endpoint, tokenField to token, historyDaysField to days)
             .firstOrNull { !it.second.isValid }
+        invalidFields = listOf(endpoint, token, days).count { !it.isValid }
         if (firstInvalid != null) {
+            render()
             section.setExpanded(true)
             host.focusField(firstInvalid.first)
-            saveState.text = host.string(R.string.save_state_fix_errors)
-            kit.setTone(saveState, Tone.ERROR, tintBackground = false)
             return SaveResult.INVALID
         }
         val endpointValue = requireNotNull(endpoint.valueOrNull())
@@ -175,7 +179,7 @@ class ConnectionController(
                 }
                 val reimportDays = DestinationChange.reimportDays(daysValue, historyPermissionGranted())
                 val kind = if (ties.hasSyncProgress) ResetKind.REIMPORT else ResetKind.QUIET
-                AlertDialog.Builder(host.activity)
+                MaterialAlertDialogBuilder(host.activity)
                     .setTitle(R.string.destination_change_title)
                     .setMessage(DestinationChange.confirmMessage(hostOf(endpointValue), ties, reimportDays.takeIf { ties.hasSyncProgress }))
                     .setPositiveButton(
@@ -247,15 +251,23 @@ class ConnectionController(
             SaveState.INCOMPLETE -> host.string(R.string.save_state_incomplete)
         }
         if (state.tone == Tone.NEUTRAL) saveState.setTextColor(kit.color(R.color.text_secondary)) else kit.setTone(saveState, state.tone, tintBackground = false)
+        // The header already says "尚未完成"; the line under the button only reports what saving did.
+        // Invalid fields: the header and the fields themselves say so.
+        saveState.visibility = if (state == SaveState.INCOMPLETE || invalidFields > 0) View.GONE else View.VISIBLE
         val summary = ConnectionSummary.of(dirty, savedReady())
-        section.setSummary(
-            when (summary) {
-                ConnectionSummary.UNSAVED -> host.string(R.string.connection_summary_unsaved)
-                ConnectionSummary.READY -> host.string(R.string.connection_summary_ready, hostOf(settings.endpoint))
-                ConnectionSummary.INCOMPLETE -> host.string(R.string.connection_summary_incomplete)
-            },
-            summary.tone,
-        )
+        if (invalidFields > 0) {
+            section.setSummary(host.string(R.string.connection_summary_invalid, invalidFields), Tone.ERROR)
+        } else {
+            section.setSummary(
+                when (summary) {
+                    ConnectionSummary.UNSAVED -> host.string(R.string.connection_summary_unsaved)
+                    ConnectionSummary.READY -> host.string(R.string.connection_summary_ready, hostOf(settings.endpoint))
+                    ConnectionSummary.INCOMPLETE -> host.string(R.string.connection_summary_incomplete)
+                },
+                // Saved settings are not a live status: green stays for the two jobs that run.
+                if (summary == ConnectionSummary.READY) Tone.NEUTRAL else summary.tone,
+            )
+        }
         onDirtyChanged()
     }
 

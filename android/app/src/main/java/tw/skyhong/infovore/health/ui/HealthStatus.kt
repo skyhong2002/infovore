@@ -34,6 +34,10 @@ data class HealthUi(
     val syncEnabled: Boolean,
     /** Why the sync buttons are disabled, or what to do next; null when there is nothing to add. */
     val syncHint: String?,
+    /** All read permissions granted: what else is allowed ("背景約每 6 小時同步 · 可讀取完整歷史"); else null. */
+    val grantedDetail: String? = null,
+    /** The part of [grantedDetail] that names a gap (shown in the warning color), or null. */
+    val grantedDetailGap: String? = null,
 )
 
 data class HealthInputs(
@@ -54,11 +58,22 @@ data class HealthInputs(
     val permissionRequestHadNoEffect: Boolean = false,
     /** Set when reading the granted permissions failed. */
     val permissionError: String? = null,
+    /** Whether this device's Health Connect offers background reading; null when unknown. */
+    val backgroundSupported: Boolean? = null,
+    /** Setup is still running: a permission not granted yet is a to-do, not a problem. */
+    val firstRun: Boolean = false,
 )
 
 object HealthStatus {
+    const val BACKGROUND_NOT_ALLOWED = "未允許背景讀取"
+
     /** A saved sleep status reports failure with this prefix (see HealthConnectSync.runSleep). */
     fun sleepStatusFailed(status: String): Boolean = TimeText.splitStatus(status).second.startsWith("睡眠未完成")
+
+    /** The saved sleep status when the window had no sleep at all (shown as a warning). */
+    const val SLEEP_EMPTY = "沒有找到睡眠紀錄"
+
+    fun sleepStatusEmpty(status: String): Boolean = TimeText.splitStatus(status).second.startsWith(SLEEP_EMPTY)
 
     fun map(input: HealthInputs): HealthUi {
         val availability = input.availability
@@ -101,20 +116,31 @@ object HealthStatus {
         val detail: String?
         val tone: Tone
         val action: HealthAction
+        // What reading can do, then the background state; the history fact leads, as it never needs a fix.
+        val historyText = if (history) "可讀取完整歷史" else "歷史最多 ${InputValidation.HISTORY_WITHOUT_PERMISSION_DAYS} 天"
+        val grantedDetail = if (!allGranted) null else when {
+            background -> "$historyText · 背景約每 6 小時同步"
+            input.backgroundSupported == false -> "$historyText · 此裝置不支援背景讀取，需手動同步"
+            else -> "$historyText · $BACKGROUND_NOT_ALLOWED"
+        }
+        val grantedDetailGap = if (allGranted && !background && input.backgroundSupported != false) BACKGROUND_NOT_ALLOWED else null
         when {
+            allGranted && !background && input.backgroundSupported == true -> {
+                headline = "未允許背景讀取"
+                detail = "背景同步會被略過，新資料要手動同步。"
+                tone = Tone.WARNING
+                action = HealthAction.MANAGE
+            }
             allGranted -> {
                 headline = "Health Connect 已授權"
-                detail = buildString {
-                    append("背景讀取：").append(if (background) "已允許" else "未允許（背景同步可能被略過）")
-                    append("\n完整歷史：").append(if (history) "已允許（最多 10 年）" else "未允許（最多 ${InputValidation.HISTORY_WITHOUT_PERMISSION_DAYS} 天）")
-                }
+                detail = grantedDetail
                 tone = Tone.OK
                 action = HealthAction.MANAGE
             }
             granted.none { it in input.requiredRead } -> {
                 headline = "尚未授權 Health Connect"
                 detail = noEffectHint(input) ?: "需要讀取運動、步數、距離、卡路里、心率、睡眠、體重與體脂（僅讀取，不寫入）。"
-                tone = Tone.WARNING
+                tone = if (input.firstRun && !input.permissionRequestHadNoEffect) Tone.NEUTRAL else Tone.WARNING
                 action = if (input.permissionRequestHadNoEffect) HealthAction.MANAGE else HealthAction.GRANT
             }
             else -> {
@@ -127,7 +153,11 @@ object HealthStatus {
         }
         val actionLabel = when (action) {
             HealthAction.GRANT -> "授權 Health Connect"
-            HealthAction.MANAGE -> if (allGranted) "管理 Health Connect 權限" else "在 Health Connect 設定中授權"
+            HealthAction.MANAGE -> when {
+                allGranted && tone == Tone.WARNING -> "允許背景讀取"
+                allGranted -> "管理權限"
+                else -> "在 Health Connect 設定中授權"
+            }
             else -> null
         }
 
@@ -153,6 +183,8 @@ object HealthStatus {
             sleepEnabled = ready && sleepGranted,
             syncEnabled = ready && allGranted,
             syncHint = syncHint,
+            grantedDetail = grantedDetail,
+            grantedDetailGap = grantedDetailGap,
         )
     }
 

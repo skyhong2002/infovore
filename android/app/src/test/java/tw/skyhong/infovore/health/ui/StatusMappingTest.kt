@@ -23,6 +23,7 @@ class StatusMappingTest {
         backgroundSync: Boolean = false,
         noEffect: Boolean = false,
         permissionError: String? = null,
+        backgroundSupported: Boolean? = null,
     ) = HealthStatus.map(
         HealthInputs(
             availability = availability,
@@ -36,6 +37,7 @@ class StatusMappingTest {
             backgroundSyncRunning = backgroundSync,
             permissionRequestHadNoEffect = noEffect,
             permissionError = permissionError,
+            backgroundSupported = backgroundSupported,
         ),
     )
 
@@ -105,9 +107,24 @@ class StatusMappingTest {
         assertTrue(ui.syncEnabled && ui.sleepEnabled)
         assertEquals(HealthAction.MANAGE, ui.action)
         assertEquals(Tone.OK, ui.tone)
-        assertTrue(ui.detail!!.contains("背景讀取：未允許"))
-        assertTrue(ui.detail!!.contains("完整歷史：已允許"))
+        assertTrue(ui.detail!!.contains("未允許背景讀取"))
+        assertTrue(ui.detail!!.contains("可讀取完整歷史"))
         assertNull(ui.syncHint)
+    }
+
+    @Test
+    fun backgroundReadingThatCouldBeAllowedButIsNotWarns() {
+        val missing = health(granted = required, backgroundSupported = true)
+        assertEquals(Tone.WARNING, missing.tone)
+        assertEquals("未允許背景讀取", missing.headline)
+        assertEquals("允許背景讀取", missing.actionLabel)
+        assertTrue(missing.syncEnabled)
+        val granted = health(granted = required + "perm.BACKGROUND", backgroundSupported = true)
+        assertEquals(Tone.OK, granted.tone)
+        assertTrue(granted.detail!!.contains("背景約每 6 小時同步"))
+        val unsupported = health(granted = required, backgroundSupported = false)
+        assertEquals(Tone.OK, unsupported.tone)
+        assertTrue(unsupported.detail!!.contains("不支援背景讀取"))
     }
 
     @Test

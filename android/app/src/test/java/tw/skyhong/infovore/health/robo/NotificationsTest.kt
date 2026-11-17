@@ -162,7 +162,7 @@ class NotificationsTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         Robo.idle()
         val switch = Robo.descendants(activity.window.decorView).filterIsInstance<SwitchCompat>()
-            .first { it.text == activity.getString(R.string.label_notify_switch) }
+            .first { Robo.asRead(it.text.toString()) == activity.getString(R.string.label_notify_switch) }
         assertFalse(switch.isChecked)
         switch.performClick()
         Robo.waitFor { posted(SyncFailureNotifier.NOTIFICATION_ID) != null }
@@ -203,7 +203,9 @@ class NotificationsTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         Robo.idle()
         val root = activity.window.decorView
+        Robo.sectionHeader(root, activity.getString(R.string.section_health)).performClick()
+        Robo.idle()
         assertFalse(Robo.hasVisibleText(root, activity.getString(R.string.action_open_notification_settings)))
-        assertTrue(Robo.hasVisibleText(root, "背景同步連續失敗 3 次"))
+        assertTrue(Robo.hasVisibleText(root, "背景同步連續失敗 3 次就通知"))
     }
 }

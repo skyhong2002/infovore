@@ -71,7 +71,7 @@ object SyncRunner {
                 SyncKind.CONFIRM_DELETE -> error("started by startConfirmDelete")
             }
             if (kind == SyncKind.FULL) {
-                settings.lastStatus = "${Instant.now()}：同步完成，新增 ${summary.inserted}、更新 ${summary.updated}、刪除 ${summary.deleted}${ReconcileText.note(summary.unverified)}"
+                settings.lastStatus = "${Instant.now()}：同步完成 · ${ReconcileText.counts(summary.inserted, summary.updated, summary.deleted)}${ReconcileText.note(summary.unverified)}"
                 settings.lastSyncFailed = false
                 settings.lastSuccessfulSyncMs = System.currentTimeMillis()
                 settings.initialImportDone = true

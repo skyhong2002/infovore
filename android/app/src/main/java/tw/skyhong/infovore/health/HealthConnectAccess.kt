@@ -3,6 +3,7 @@ package tw.skyhong.infovore.health
 import android.content.Context
 import androidx.annotation.VisibleForTesting
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.HealthConnectFeatures
 
 /**
  * How the app reaches Health Connect: its availability and the client. Always the real
@@ -19,5 +20,14 @@ object HealthConnectAccess {
     fun sdkStatus(context: Context): Int =
         if (testClient != null) HealthConnectClient.SDK_AVAILABLE else HealthConnectClient.getSdkStatus(context)
 
+    /** Test only: what [featureAvailable] reports for every feature (the fake client has no feature switch). */
+    @VisibleForTesting
+    @Volatile
+    internal var testFeaturesAvailable: Boolean? = null
+
     fun client(context: Context): HealthConnectClient = testClient ?: HealthConnectClient.getOrCreate(context)
+
+    /** Whether Health Connect on this device offers [feature] (a HealthConnectFeatures constant). */
+    fun featureAvailable(client: HealthConnectClient, feature: Int): Boolean =
+        testFeaturesAvailable ?: (client.features.getFeatureStatus(feature) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE)
 }

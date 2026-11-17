@@ -1,5 +1,6 @@
 package tw.skyhong.infovore.health
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -10,7 +11,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.activity.OnBackPressedCallback
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -46,6 +46,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var updates: UpdatePrompt
     private var built = false
 
+    /** Whether the health section may still open itself after the first status check (not after a restore). */
+    private var autoExpandHealth = false
+
     private val backCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() = confirmDiscardChanges()
     }
@@ -62,10 +65,17 @@ class MainActivity : AppCompatActivity() {
             onSaved = ::renderAll,
             onDirtyChanged = ::updateBackCallback,
         )
-        health = HealthController(host, connection = { connection }, onRendered = { setup.render() })
+        health = HealthController(
+            host,
+            connection = { connection },
+            onRendered = { setup.render() },
+            fixOfferedElsewhere = { ::location.isInitialized && location.fixOffered },
+            onFixChanged = { if (::location.isInitialized) location.render() },
+        )
         setup = SetupController(host, connection, health)
-        location = LocationController(host, connectionReady = { connection.savedReady() })
+        location = LocationController(host, connectionReady = { connection.savedReady() }, onFixChanged = { health.render() }, fixOfferedElsewhere = { health.fixOffered })
         updates = UpdatePrompt(this)
+        autoExpandHealth = savedInstanceState == null
         setContentView(buildContent(savedInstanceState))
         built = true
         onBackPressedDispatcher.addCallback(this, backCallback)
@@ -100,6 +110,11 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             health.refresh()
             health.render()
+            // Something needs attention (a failure, a missing permission): show the details at once.
+            if (autoExpandHealth) {
+                autoExpandHealth = false
+                if (connection.savedReady() && !health.healthy && !health.section.expanded) health.section.setExpanded(true)
+            }
         }
         // Notifications may have been turned back on in system settings: deliver what was missed.
         health.catchUpNotifications()
@@ -119,15 +134,24 @@ class MainActivity : AppCompatActivity() {
     private fun buildContent(saved: Bundle?): View {
         val kit = host.kit
         val content = MaxWidthColumn(this, kit.dp(640)).apply {
-            setPadding(kit.dp(16), kit.dp(16), kit.dp(16), kit.dp(24))
+            // Takes the initial focus, so no field gets a cursor or the keyboard on its own.
+            isFocusableInTouchMode = true
+            setPadding(kit.dp(16), kit.dp(12), kit.dp(16), kit.dp(24))
         }
         content.addView(buildHeader())
-        content.addView(setup.build(), ViewKit.matchWrap(kit.dp(16)))
-        content.addView(connection.build(saved?.getBoolean(STATE_CONNECTION_OPEN)).root, ViewKit.matchWrap(kit.dp(16)))
-        content.addView(health.build(saved?.getBoolean(STATE_HEALTH_OPEN) ?: true).root, ViewKit.matchWrap(kit.dp(16)))
-        content.addView(location.build(saved?.getBoolean(STATE_LOCATION_OPEN) ?: false).root, ViewKit.matchWrap(kit.dp(16)))
+        val configured = connection.savedReady() && host.settings.initialImportDone
+        content.addView(setup.build(), ViewKit.matchWrap(kit.dp(12)))
+        val connectionCard = connection.build(saved?.getBoolean(STATE_CONNECTION_OPEN)).root
+        // Until set up, the connection comes first; afterwards it is the rarely used last section.
+        if (!configured) content.addView(connectionCard, ViewKit.matchWrap(kit.dp(12)))
+        // Starts collapsed: its header carries the status. Once the connection is saved it opens
+        // itself after the first status check when something needs doing (see onResume).
+        content.addView(health.build(saved?.getBoolean(STATE_HEALTH_OPEN) ?: false).root, ViewKit.matchWrap(kit.dp(12)))
+        content.addView(location.build(saved?.getBoolean(STATE_LOCATION_OPEN) ?: false).root, ViewKit.matchWrap(kit.dp(12)))
+        if (configured) content.addView(connectionCard, ViewKit.matchWrap(kit.dp(12)))
         content.addView(kit.text(Style.CAPTION, getString(R.string.footer_privacy)).apply {
-            setPadding(kit.dp(4), kit.dp(16), kit.dp(4), 0)
+            // On the cards' text edge, like everything else that is read.
+            setPadding(kit.dp(20), kit.dp(16), kit.dp(20), 0)
         })
 
         val scroll = ScrollView(this).apply {
@@ -148,31 +172,28 @@ class MainActivity : AppCompatActivity() {
             WindowInsetsCompat.CONSUMED
         }
         host.scroll = scroll
+        content.requestFocus()
         return scroll
     }
 
     private fun buildHeader(): View {
         val kit = host.kit
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
+        // The logo on the cards' edge; 檢查更新 ends on it too.
+        val row = kit.row().apply { setPadding(0, kit.dp(4), 0, kit.dp(4)) }
         row.addView(ImageView(this).apply {
             setImageResource(R.drawable.infovore_logo)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(kit.dp(56), kit.dp(56)))
-        val titles = kit.column().apply { setPadding(kit.dp(12), 0, 0, 0) }
+        }, LinearLayout.LayoutParams(kit.dp(44), kit.dp(44)))
+        val titles = kit.column().apply { setPadding(kit.dp(12), 0, kit.dp(8), 0) }
         titles.addView(kit.heading(Style.TITLE, getString(R.string.app_name)))
         titles.addView(kit.text(Style.CAPTION, getString(R.string.header_version, BuildConfig.VERSION_NAME)))
-        titles.addView(kit.textButton(getString(R.string.update_check_action)).apply {
-            setPadding(0, 0, kit.dp(8), 0)
+        row.addView(titles, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(kit.textButton(getString(R.string.update_check_action), trailing = true).apply {
+            // A rarely used action: label size, so it does not compete with the app name.
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
             setOnClickListener { updates.checkNow() }
         })
-        row.addView(titles, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        return kit.column().apply {
-            addView(row)
-            addView(kit.text(Style.BODY, getString(R.string.header_intro)), ViewKit.matchWrap(kit.dp(12)))
-        }
+        return row
     }
 
     private fun observeModel() {
@@ -204,7 +225,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmDiscardChanges() {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.unsaved_title)
             .setMessage(R.string.unsaved_message)
             .setPositiveButton(R.string.unsaved_save) { _, _ -> saveAllAndFinish() }

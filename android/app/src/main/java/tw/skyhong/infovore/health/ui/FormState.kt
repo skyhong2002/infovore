@@ -8,7 +8,7 @@ enum class SaveState(val tone: Tone) {
     /** Saved, and the sync destination changed, so history will be imported again. */
     SAVED_NEW_DESTINATION(Tone.WARNING),
     CLEAN(Tone.NEUTRAL),
-    INCOMPLETE(Tone.WARNING),
+    INCOMPLETE(Tone.NEUTRAL),
 }
 
 /** Pure decisions for the settings forms, kept out of the activity so they can be unit tested. */

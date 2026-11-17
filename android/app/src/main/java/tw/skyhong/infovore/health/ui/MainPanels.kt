@@ -12,7 +12,8 @@ import tw.skyhong.infovore.health.SyncState
 enum class ConnectionSummary(val tone: Tone) {
     UNSAVED(Tone.WARNING),
     READY(Tone.OK),
-    INCOMPLETE(Tone.WARNING),
+    /** Not set up yet: a to-do, not a problem. */
+    INCOMPLETE(Tone.NEUTRAL),
     ;
 
     companion object {
@@ -102,21 +103,5 @@ object SyncPanel {
         busy -> Tone.NEUTRAL
         unverified && healthTone == Tone.OK -> Tone.WARNING
         else -> healthTone
-    }
-}
-
-/** The marker and tone of one first-run step row. */
-object SetupRow {
-    fun marker(state: StepState): String = when (state) {
-        StepState.DONE -> "✓"
-        StepState.CURRENT -> "➜"
-        StepState.PENDING -> "○"
-    }
-
-    /** null: the secondary text color (a pending step). */
-    fun tone(state: StepState): Tone? = when (state) {
-        StepState.DONE -> Tone.OK
-        StepState.CURRENT -> Tone.NEUTRAL
-        StepState.PENDING -> null
     }
 }

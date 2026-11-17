@@ -65,12 +65,4 @@ class MainPanelsTest {
         assertEquals(Tone.NEUTRAL, SyncPanel.summaryTone(Tone.OK, unverified = true, busy = true))
     }
 
-    @Test
-    fun setupRowsHaveAMarkerAndTone() {
-        assertEquals("✓", SetupRow.marker(StepState.DONE))
-        assertEquals("➜", SetupRow.marker(StepState.CURRENT))
-        assertEquals("○", SetupRow.marker(StepState.PENDING))
-        assertEquals(Tone.OK, SetupRow.tone(StepState.DONE))
-        assertNull(SetupRow.tone(StepState.PENDING))
-    }
 }

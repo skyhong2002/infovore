@@ -11,8 +11,8 @@ android {
         applicationId = "tw.skyhong.infovore.health"
         minSdk = 34
         targetSdk = 36
-        versionCode = 26
-        versionName = "0.9.0"
+        versionCode = 27
+        versionName = "0.10.0"
 
         // The one private host plain HTTP may reach (see android/README.md, "Private HTTP host").
         // It must match the <domain> in res/xml/network_security_config.xml; a unit test checks it.
@@ -43,6 +43,8 @@ android {
 }
 
 tasks.withType<Test>().configureEach {
+    // Robolectric with native graphics (ScreenshotCapture) needs more than the default 512 MB.
+    maxHeapSize = "2g"
     // The shared fixtures the contract and chain tests compare against: a change re-runs them.
     inputs.files(
         rootProject.file("../tests/fixtures/health-reconcile-contract.json"),
@@ -51,10 +53,14 @@ tasks.withType<Test>().configureEach {
     // INFOVORE_UPDATE_GOLDEN=1 makes SyncFlowUiTest rewrite tests/fixtures/android-sync-golden.json
     // instead of comparing with it (a system property, so switching it re-runs the tests).
     systemProperty("infovore.updateGolden", providers.environmentVariable("INFOVORE_UPDATE_GOLDEN").getOrElse(""))
+    // INFOVORE_SCREENSHOTS=<dir> makes ScreenshotCapture render the main screen there for design review.
+    systemProperty("infovore.screenshots", providers.environmentVariable("INFOVORE_SCREENSHOTS").getOrElse(""))
 }
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
+    // Material 3 components: buttons, outlined text fields, switches, dialogs.
+    implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

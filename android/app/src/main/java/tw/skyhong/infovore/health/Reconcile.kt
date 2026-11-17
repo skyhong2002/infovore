@@ -287,6 +287,13 @@ class ReconcilePlanner(
 
 /** Text for data types whose deletions could not be re-verified after a history rescan. */
 object ReconcileText {
+    /** "新增 128 · 更新 6": the counts that are not zero, or "沒有變更". */
+    fun counts(inserted: Int, updated: Int, deleted: Int): String =
+        listOf("新增" to inserted, "更新" to updated, "刪除" to deleted)
+            .filter { it.second != 0 }
+            .joinToString(" · ") { "${it.first} ${it.second}" }
+            .ifEmpty { "沒有變更" }
+
     /** The suffix appended to a finished sync's status, or "" when every rescanned type was verified. */
     fun note(unverified: List<String>): String =
         if (unverified.isEmpty()) "" else "；未重新核實來源已刪除的資料：${unverified.joinToString("、")}"

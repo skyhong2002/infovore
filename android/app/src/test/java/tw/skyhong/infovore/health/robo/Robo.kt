@@ -71,21 +71,24 @@ object Robo {
 
     /** The visible TextView (or Button) whose text contains [text]; fails when there is none. */
     fun textView(root: View, text: String): TextView =
-        descendants(root).filterIsInstance<TextView>().firstOrNull { it.text?.toString()?.contains(text) == true && it.isShownOnScreen() }
+        descendants(root).filterIsInstance<TextView>().firstOrNull { it.text?.toString()?.let(::asRead)?.contains(text) == true && it.isShownOnScreen() }
             ?: error("no visible view with text containing \"$text\"")
 
     /** The visible Button labelled exactly [label]. */
     fun button(root: View, label: String): android.widget.Button =
-        descendants(root).filterIsInstance<android.widget.Button>().firstOrNull { it.text?.toString() == label && it.isShown }
+        descendants(root).filterIsInstance<android.widget.Button>().firstOrNull { it.text?.toString()?.let(::asRead) == label && it.isShown }
             ?: error("no visible button \"$label\"")
 
     /** The tappable header row of the collapsible section titled [title]. */
     fun sectionHeader(root: View, title: String): View =
-        descendants(root).filterIsInstance<TextView>().firstOrNull { it.text?.toString() == title }?.parent?.parent as? View
+        descendants(root).filterIsInstance<TextView>().firstOrNull { it.text?.toString()?.let(::asRead) == title }?.parent?.parent as? View
             ?: error("no section \"$title\"")
 
     fun hasVisibleText(root: View, text: String): Boolean =
-        descendants(root).filterIsInstance<TextView>().any { it.text?.toString()?.contains(text) == true && it.isShownOnScreen() }
+        descendants(root).filterIsInstance<TextView>().any { it.text?.toString()?.let(::asRead)?.contains(text) == true && it.isShownOnScreen() }
+
+    /** Text as a reader sees it: word joiners dropped, no-break spaces as spaces. */
+    fun asRead(text: String): String = text.replace("\u2060", "").replace("\uFFFC", "").replace('\u00A0', ' ')
 
     /** Visible: this view and all its ancestors are VISIBLE (not scrolled-to; the screen scrolls). */
     fun View.isShownOnScreen(): Boolean = isShown

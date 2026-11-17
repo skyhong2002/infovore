@@ -27,7 +27,7 @@ class LocationScreenTest {
     }
 
     private fun trackSwitch(activity: MainActivity): SwitchCompat =
-        Robo.descendants(activity.window.decorView).filterIsInstance<SwitchCompat>().first { it.text == "持續記錄位置" }
+        Robo.descendants(activity.window.decorView).filterIsInstance<SwitchCompat>().first { Robo.asRead(it.text.toString()) == "持續記錄位置" }
 
     @Test
     fun turningRecordingOnWithPermissionStartsTheForegroundService() {
@@ -41,9 +41,9 @@ class LocationScreenTest {
 
         assertTrue(LocationSettings(Robo.app).trackingEnabled)
         assertEquals(LocationTrackingService::class.java.name, shadowOf(Robo.app).nextStartedService.component?.className)
-        Robo.textView(root, "記錄中。")
+        Robo.textView(root, "記錄中 · 需要背景位置")
         // Without "一律允許" the screen offers it, for restarts after a reboot.
-        Robo.button(root, "允許「一律允許」位置（重新開機後自動繼續）")
+        Robo.button(root, "允許背景位置")
 
         trackSwitch(activity).performClick()
         Robo.idle()

@@ -119,7 +119,7 @@ class SyncFlowUiTest {
 
     /** The health section's own "立即同步" (the setup card's next-step button has the same label and comes first). */
     private fun syncButton(activity: MainActivity): Button =
-        descendants(activity.root).filterIsInstance<Button>().last { it.text.toString() == activity.getString(R.string.action_sync_all) && it.isShown }
+        descendants(activity.root).filterIsInstance<Button>().last { Robo.asRead(it.text.toString()) == activity.getString(R.string.action_sync_all) && it.isShown }
 
     private fun waitForSyncToFinish() {
         Robo.waitFor(timeoutMs = 30_000) { SyncRunner.state.value.running == null && !SyncRunner.coordinator.state.value.busy }
@@ -166,14 +166,14 @@ class SyncFlowUiTest {
         waitForSyncToFinish()
 
         val settings = Robo.settings()
-        assertTrue(settings.lastStatus, settings.lastStatus.contains("同步完成，新增 9、更新 0、刪除 0"))
+        assertTrue(settings.lastStatus, settings.lastStatus.endsWith("同步完成 · 新增 9"))
         assertFalse(settings.lastSyncFailed)
         assertTrue(settings.initialImportDone)
         assertEquals("every rescanned type was verified", emptyList<Any>(), ReconcileGaps.decode(settings.reconcileGapsText))
         // On screen: the sync result, the completed setup, and no error or reminder.
         assertTrue(hasVisibleText(root, "同步完成"))
-        assertTrue(hasVisibleText(root, "設定完成"))
-        assertTrue(hasVisibleText(root, "已完成首次匯入"))
+        // Setup is done: the checklist card is gone; the section headers carry the status.
+        assertFalse(hasVisibleText(root, activity.getString(R.string.setup_title)))
         assertFalse(hasVisibleText(root, "歷史尚未完整核實"))
         assertFalse(hasVisibleText(root, activity.getString(R.string.action_retry)))
 

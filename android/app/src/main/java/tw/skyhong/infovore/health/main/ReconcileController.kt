@@ -69,7 +69,7 @@ class ReconcileController(
             setPadding(kit.dp(4), kit.dp(8), 0, 0)
         }
         section.add(dismissedNote)
-        restoreButton = kit.textButton(host.string(R.string.reconcile_restore)).apply {
+        restoreButton = kit.textButton(host.string(R.string.reconcile_restore), inline = true).apply {
             visibility = View.GONE
             setOnClickListener { restoreAll() }
         }
