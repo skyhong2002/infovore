@@ -1,13 +1,12 @@
-import type { PlacesExtra, PlacesMap, PlacesRegion } from '../location/public.js';
+import { PUBLIC_MAX_ZOOM, type PlacesExtra, type PlacesMap, type PlacesRegion } from '../location/public.js';
 import { dateFormat } from '../data/time.js';
 import { html } from './pages.js';
 import { flagOf } from '../location/regions.js';
+import { placesMapVersion } from './places-map.js';
 
 // The public Places platform: see src/location/public.ts for what is (and is
-// never) published. The maps are plain <img> grids of OpenStreetMap tiles
-// (sent with the browser's default referrer, which OSM's tile policy needs;
-// darkened by a CSS filter in the dark theme) under the delayed explored-
-// ground layer, so no script is needed.
+// never) published. The map is one canvas (src/output/places-map.ts) over a
+// self-hosted Natural Earth basemap, so no third-party tile service is used.
 
 const dayLabel = dateFormat('en', { timeZone: 'UTC', month: 'short', day: 'numeric' });
 const longDay = dateFormat('en', { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' });
@@ -15,16 +14,19 @@ const show = (day: string, format = dayLabel) => format.format(new Date(`${day}T
 const kmText = (value: number) => `${value.toLocaleString('en', { maximumFractionDigits: value < 10 ? 1 : 0 })} km`;
 
 const STYLE = `<style>
-.places-map{display:grid;gap:0;width:100%;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-raised)}
-.places-map div{position:relative;aspect-ratio:1}
-.places-map img{position:absolute;inset:0;width:100%;height:100%;display:block}
-.places-map .base{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.45)}
-:root[data-theme=light] .places-map .base{filter:saturate(.6)}
-@media(prefers-color-scheme:light){:root:not([data-theme=dark]) .places-map .base{filter:saturate(.6)}}
-.places-maps{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
-.places-maps figure{margin:0}
-.places-maps figure.wide{grid-column:1/-1}
-.places-maps figcaption{color:var(--muted);font-size:12px;margin-top:6px}
+.places-atlas{--atlas-sea:#0d1015;--atlas-land:#1c2028;--atlas-border:#3a414d;position:relative;height:min(70vh,560px);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--atlas-sea)}
+:root[data-theme=light] .places-atlas{--atlas-sea:#dfe5ea;--atlas-land:#f7f6f2;--atlas-border:#c4c9cf}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]) .places-atlas{--atlas-sea:#dfe5ea;--atlas-land:#f7f6f2;--atlas-border:#c4c9cf}}
+.places-atlas canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.places-atlas canvas.dragging{cursor:grabbing}
+.atlas-zoom{position:absolute;right:12px;top:12px;display:flex;flex-direction:column;gap:6px}
+.atlas-zoom button{width:36px;height:36px;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface);color:var(--text);font-size:18px;cursor:pointer}
+.atlas-credit{position:absolute;left:10px;bottom:8px;color:var(--quiet);font-size:11px;pointer-events:none}
+.atlas-noscript{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)}
+.atlas-views{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.atlas-views button{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--text);padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.atlas-views button span{color:var(--muted);font-size:12px}
+.atlas-views button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft)}
 .places-regions{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
 .places-regions article{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px}
 .places-regions strong{display:block;font-size:14px}
@@ -35,17 +37,22 @@ const STYLE = `<style>
 .places-country h3 span{color:var(--muted);font-size:12px;font-weight:400}
 </style>`;
 
-function map(entry: PlacesMap, version: string): string {
-  const cells: string[] = [];
-  for (let row = 0; row < entry.rows; row++) {
-    for (let col = 0; col < entry.cols; col++) {
-      const x = entry.x + col;
-      const y = entry.y + row;
-      cells.push(`<div><img class="base" src="https://tile.openstreetmap.org/${entry.z}/${x}/${y}.png" alt="" loading="lazy"><img src="/api/places/fog/${entry.z}/${x}/${y}.png?v=${version}" alt="" loading="lazy"></div>`);
-    }
-  }
-  return `<figure${entry.cols >= 3 ? ' class="wide"' : ''}><div class="places-map" style="grid-template-columns:repeat(${entry.cols},minmax(0,1fr))" role="img" aria-label="Fog of World explored ground in ${html(entry.label)}">${cells.join('')}</div>
-    <figcaption>${flagOf(entry.code)} ${html(entry.label)} · ${kmText(entry.km2).replace(' km', ' km²')} explored · map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</figcaption></figure>`;
+// One interactive map (src/output/places-map.ts); without script, a note.
+function atlas(extra: PlacesExtra, landVersion: string): string {
+  const views = extra.maps.map((entry: PlacesMap) => {
+    const n = 2 ** entry.z;
+    return { label: entry.label, bounds: [entry.x / n, entry.y / n, (entry.x + entry.cols) / n, (entry.y + entry.rows) / n] };
+  });
+  const buttons = extra.maps.map((entry, index) =>
+    `<button type="button" data-view="${index}" aria-pressed="${index === 0}">${flagOf(entry.code)} ${html(entry.label)}<span>${kmText(entry.km2).replace(' km', ' km²')}</span></button>`).join('');
+  return `<div class="places-atlas" data-tiles="/api/places/fog/{z}/{x}/{y}.png?v=${html(extra.layerVersion)}" data-max-zoom="${PUBLIC_MAX_ZOOM}" data-land="/places/land.json?v=${html(landVersion)}" data-views="${html(JSON.stringify(views))}">
+      <canvas role="img" aria-label="Map of the ground explored in Fog of World"></canvas>
+      <div class="atlas-zoom"><button type="button" data-zoom="1" aria-label="Zoom in">+</button><button type="button" data-zoom="-1" aria-label="Zoom out">−</button></div>
+      <div class="atlas-credit">Land: Natural Earth</div>
+      <noscript><div class="atlas-noscript">The map needs JavaScript.</div></noscript>
+    </div>
+    <div class="atlas-views" role="group" aria-label="Fly to">${buttons}<button type="button" data-view="all" aria-pressed="false">🌏 All<span>${kmText(extra.explored.km2).replace(' km', ' km²')}</span></button></div>
+    <script src="/places.js?v=${html(landVersion)}" defer></script>`;
 }
 
 // Lets browsers pick the right CJK glyphs for the local names.
@@ -61,12 +68,12 @@ function regionCard(region: PlacesRegion): string {
   return `<article><strong>${html(region.region)}${region.local ? ` <span${LOCAL_LANG[region.code] ? ` lang="${LOCAL_LANG[region.code]}"` : ''} class="places-local">${html(region.local)}</span>` : ''}</strong><span>${facts.join(' · ')}</span></article>`;
 }
 
-export function placesDetails(extra: PlacesExtra): string {
+export function placesDetails(extra: PlacesExtra, landVersion = placesMapVersion): string {
   const asOf = longDay.format(new Date(+new Date(extra.asOf) - 1 + 8 * 3_600_000));
   const growth = extra.explored.last30DaysKm2 === null ? '' : ` · +${extra.explored.last30DaysKm2.toLocaleString('en')} km² in 30 days`;
   const explored = `<section><div class="platform-section-heading"><h2>Explored</h2><span>Fog of World · as of ${html(asOf)}${html(growth)}</span></div>
     ${extra.maps.length
-      ? `<div class="places-maps">${extra.maps.map((entry) => map(entry, html(extra.layerVersion))).join('')}</div>`
+      ? atlas(extra, landVersion)
       : '<div class="empty">The map appears once the fog is a few days old (it is shown with the same delay as everything here).</div>'}</section>`;
   const peak = Math.max(1, ...extra.travel.days.map((day) => day.km));
   const travel = `<section><div class="platform-section-heading"><h2>Distance per day</h2><span>Last 30 days · ${kmText(extra.travel.last30Km)}</span></div>

@@ -149,6 +149,8 @@ test('the public fog shows each tile as it was before the delay and clears priva
 test('the Places page, JSON and fog tiles are public but capped', async () => {
   const now = new Date();
   seedLocation(repository, now);
+  const kyoto = patch(35.0, 135.76, 60);
+  repository.fog.put(kyoto.name, 'k1', kyoto.data, '2026-01-01T00:00:00.000Z');
   const page = await app.request('/platforms/places');
   assert.equal(page.status, 200);
   const body = await page.text();
@@ -156,10 +158,19 @@ test('the Places page, JSON and fog tiles are public but capped', async () => {
   assert.doesNotMatch(body, /Hsinchu/, 'the zone stays out');
   assert.doesNotMatch(body, /Seoul/, 'too recent');
   const json = await (await app.request('/api/places.json')).json() as { regions: Array<{ region: string }> };
-  assert.deepEqual(json.regions.map((r) => r.region), ['Tainan', 'Taipei City']);
+  assert.deepEqual(json.regions.map((r) => r.region), ['Tainan', 'Taipei City', 'Kyoto'], 'Kyoto from Fog of World');
   assert.equal((await app.request('/api/places/fog/9/428/223.png')).status, 200);
   assert.equal((await app.request('/api/places/fog/10/856/446.png')).status, 400, 'no closer than zoom 9');
   assert.match(await (await app.request('/platforms')).text(), /href="\/platforms\/places"/);
+  // One interactive map: its script and Natural Earth basemap are served from the site itself.
+  const src = /<script src="(\/places\.js\?v=[0-9a-f]+)" defer><\/script>/.exec(body)?.[1];
+  assert.ok(src, 'the map script is linked');
+  const script = await app.request(src!);
+  assert.equal(script.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+  assert.match(await script.text(), /places-atlas/);
+  const land = await (await app.request(/data-land="([^"]+)"/.exec(body)![1])).json() as { land: number[][]; borders: number[][] };
+  assert.ok(land.land.length > 1000 && land.borders.length > 100);
+  assert.match(body, /data-tiles="\/api\/places\/fog\/\{z\}\/\{x\}\/\{y\}\.png\?v=[0-9a-f]+"/);
   assert.match(await (await app.request('/now')).text(), /Last seen around<\/a> 🇹🇼 Tainan 臺南市, Taiwan/);
   assert.match(body, /Tainan <span lang="zh-Hant-TW" class="places-local">臺南市<\/span>/);
   assert.match(await (await app.request('/sitemap.xml')).text(), /\/platforms\/places/);

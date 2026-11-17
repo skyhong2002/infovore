@@ -16,6 +16,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Hono, type Context } from 'hono';
 import { locationPage, locationScript } from './output/location.js';
+import { landJson, placesMapScript, placesMapVersion } from './output/places-map.js';
 import { lastSeenRegion, placesSnapshot, publicCutoff, PUBLIC_MAX_ZOOM } from './location/public.js';
 import { compress } from 'hono/compress';
 import { config } from './config.js';
@@ -250,6 +251,14 @@ const placesPlatform: PlatformDefinition = {
   description: 'Ground explored in Fog of World, regions visited and distance travelled, a few days behind and with private areas left out.',
 };
 const currentPlaces = (now = new Date()) => placesSnapshot(repository.location, repository.fog, config.places!, config.ownerName, now);
+app.get('/places.js', (c) => c.body(placesMapScript, 200, {
+  'Content-Type': 'text/javascript; charset=utf-8',
+  'Cache-Control': c.req.query('v') === placesMapVersion ? 'public, max-age=31536000, immutable' : 'no-cache',
+}));
+app.get('/places/land.json', (c) => c.body(new Uint8Array(landJson), 200, {
+  'Content-Type': 'application/json',
+  'Cache-Control': c.req.query('v') === placesMapVersion ? 'public, max-age=31536000, immutable' : 'no-cache',
+}));
 app.get('/api/places.json', (c) => {
   if (!placesEnabled) return c.notFound();
   c.header('Cache-Control', 'no-cache');
