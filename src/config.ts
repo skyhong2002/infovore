@@ -11,7 +11,7 @@ const sources = [...new Set((process.env.SOURCES ?? '')
   .filter(Boolean)
   .map((s) => (s === 'goodreads' ? 'hardcover' : s)))];
 
-const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'hardcover', 'youtube', 'health', 'dayflow', 'computai', 'places'] as const;
+const knownSources = ['backloggd', 'kitsu', 'statsfm', 'simkl', 'hardcover', 'youtube', 'health', 'dayflow', 'computai', 'places', 'pocketlog'] as const;
 const port = Number(process.env.PORT ?? 3000);
 const maxSourceAgeHours = Number(process.env.MAX_SOURCE_AGE_HOURS ?? 36);
 const refreshIntervalMinutes = Number(process.env.REFRESH_INTERVAL_MINUTES ?? 60);
@@ -57,6 +57,17 @@ const fogDropbox = fogDropboxParts.every(Boolean) ? {
   refreshToken: process.env.FOG_DROPBOX_REFRESH_TOKEN!,
   path: process.env.FOG_DROPBOX_PATH || '/Apps/Fog of World/Sync', intervalMinutes: fogIntervalMinutes,
 } : null;
+// PocketLog (src/pocketlog): phone activity read with a journal device key. Both or neither.
+const pocketlogUrl = (process.env.POCKETLOG_URL ?? '').replace(/\/+$/, '');
+const pocketlogToken = process.env.POCKETLOG_TOKEN ?? '';
+if (Boolean(pocketlogUrl) !== Boolean(pocketlogToken)) throw new Error('POCKETLOG_URL and POCKETLOG_TOKEN must be set together');
+if (pocketlogUrl && !/^https?:\/\/[^/?#@]+$/.test(pocketlogUrl)) throw new Error('POCKETLOG_URL must be an http(s) origin without a path');
+if (pocketlogToken && !/^[0-9a-f]{64}$/i.test(pocketlogToken)) throw new Error('POCKETLOG_TOKEN must be a 64-character hexadecimal device key');
+const pocketlogInterval = Number(process.env.POCKETLOG_SYNC_INTERVAL_MINUTES ?? 15);
+if (!Number.isInteger(pocketlogInterval) || pocketlogInterval < 5 || pocketlogInterval > 1440) {
+  throw new Error('POCKETLOG_SYNC_INTERVAL_MINUTES must be an integer between 5 and 1440');
+}
+const pocketlog = pocketlogUrl ? { baseUrl: pocketlogUrl, token: pocketlogToken, intervalMinutes: pocketlogInterval } : null;
 // The public Places page (src/location/public.ts): on with at least one privacy zone.
 const places = locationToken ? parsePlacesConfig(process.env) : null;
 const publicBaseUrl = basePublicUrl(process.env);
@@ -89,6 +100,7 @@ export const config = {
   location: { token: locationToken },
   fog: { dropbox: fogDropbox },
   places,
+  pocketlog,
   dayflow: { token: dayflowToken, quality: dayflowQuality },
   computai: { token: computaiToken },
   maxSourceAgeHours,

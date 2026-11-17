@@ -216,6 +216,7 @@ function platformNav(active?: string): string {
     ['youtube', 'YouTube'],
     ['health', 'Health'],
     ['dayflow', 'Dayflow'],
+    ['pocketlog', 'PocketLog'],
     ['computai', 'ComputAI'],
     ['places', 'Places'],
     ['events', 'Manual'],
@@ -228,8 +229,9 @@ function platformNav(active?: string): string {
 export function platformIndexPage(ownerName: string, platforms: PlatformSummary[]): string {
   const cards = platforms.map(({ definition, snapshot, fetchedAt }) => {
     const profile = snapshot?.profile;
-    const entryCount = snapshot?.entries.length ?? 0;
-    const entryLabel = 'synced entries';
+    const daysOnly = definition.source === 'pocketlog';
+    const entryCount = daysOnly ? snapshot?.stats.recordedDays ?? 0 : snapshot?.entries.length ?? 0;
+    const entryLabel = daysOnly ? 'recorded days' : 'synced entries';
     const stats = Object.entries(snapshot?.stats ?? {}).slice(0, 3);
     return `<a class="platform-tile" href="/platforms/${html(definition.source)}" style="--platform-accent:${html(definition.accent)}">
       <div class="platform-tile-top">${profile?.avatar
@@ -261,8 +263,8 @@ export function platformPage(
   timeSpent: SourceTimeSpent | null = null,
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
-  const coverage = `${number(snapshot.entries.length)} synced entries`;
-  const waiting = definition.source === 'places' ? 'Updated with every sync, shown days behind' : 'Stored manually';
+  const coverage = definition.source === 'pocketlog' ? `${number(snapshot.stats.recordedDays ?? 0)} recorded days` : `${number(snapshot.entries.length)} synced entries`;
+  const waiting = definition.source === 'places' ? 'Updated with every sync, shown days behind' : definition.source === 'pocketlog' ? 'Waiting for the first sync' : 'Stored manually';
   const stats = Object.entries(snapshot.stats).filter(([key]) => !hiddenStats.has(key)).map(([key, value]) =>
     `<div class="platform-stat"><span>${html(statLabels[key] ?? label(key))}</span><strong>${number(value)}</strong></div>`
   ).join('');
@@ -274,7 +276,7 @@ export function platformPage(
   }).join('');
   const extra = (snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {}) as Record<string, unknown>;
   const extras = [
-    definition.source === 'dayflow' ? dayflowDetails(extra as unknown as DayflowExtra) : '',
+    definition.source === 'dayflow' || definition.source === 'pocketlog' ? dayflowDetails(extra as unknown as DayflowExtra, definition.source) : '',
     definition.source === 'computai' ? computaiDetails(extra as unknown as ComputaiExtra) : '',
     definition.source === 'health' ? healthDetails(extra as unknown as HealthConnectExtra) : '',
     definition.source === 'places' ? placesDetails(extra as unknown as PlacesExtra) : '',
@@ -297,9 +299,9 @@ export function platformPage(
     ['Profile', html(snapshot.profile.name || ownerName)],
     ['Platform', `${html(definition.title)}${definition.via ? ` · via <a href="${html(definition.via.url)}">${html(definition.via.name)}</a>` : ''}`],
     ...(profileUrl ? [['Source', `<a href="${html(profileUrl)}">${html(profileUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))} ↗</a>`] as [string, string]] : []),
-    ['Data', `<a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a>${definition.source === 'places' ? '' : ` · <a href="/search?source=${html(definition.source)}">Search</a>`}`],
+    ['Data', `<a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a>${['places', 'pocketlog'].includes(definition.source) ? '' : ` · <a href="/search?source=${html(definition.source)}">Search</a>`}`],
     ['Synced', fetchedAt ? html(date(fetchedAt)) : waiting],
-    ['Entries', coverage],
+    [definition.source === 'pocketlog' ? 'Coverage' : 'Entries', coverage],
   ];
   const aside = `<aside class="platform-aside">
     <section class="aside-card"><h3>About this mirror</h3><dl class="fact-list">${facts.map(([term, value]) => `<dt>${term}</dt><dd>${value}</dd>`).join('')}</dl></section>
@@ -319,6 +321,6 @@ export function platformPage(
       <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : waiting}</div>
     </section>
-    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || (['dayflow', 'places'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>')}${cards}</div>${aside}</div>`;
+    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || (['dayflow', 'places', 'pocketlog'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>')}${cards}</div>${aside}</div>`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms', '', { path: `/platforms/${definition.source}` });
 }

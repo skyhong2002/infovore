@@ -286,6 +286,20 @@ app.get('/api/places/fog/:z/:x/:file', (c) => {
   return c.body(new Uint8Array(png), 200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=3600' });
 });
 const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('dayflow');
+// PocketLog (src/pocketlog): phone activity the ingest service reads from the
+// owner's PocketLog server. Only daily category time and fixed-vocabulary
+// keywords are public.
+const pocketlogEnabled = Boolean(config.pocketlog) && config.sourceEnabled('pocketlog');
+const pocketlogPlatform: PlatformDefinition = {
+  source: 'pocketlog', title: 'PocketLog', accent: '#7fb59a', jsonUrl: '/api/pocketlog.json', logo: '/logos/pocketlog.png',
+  description: 'Daily phone activity from PocketLog: time by category, active time and recognized topics. Card titles, summaries and apps stay private.',
+};
+const currentPocketlog = (now = new Date()) => repository.pocketlog.snapshot(config.ownerName, now);
+app.get('/api/pocketlog.json', (c) => {
+  if (!pocketlogEnabled) return c.json({ error: 'PocketLog is not configured' }, 404);
+  c.header('Cache-Control', 'no-cache');
+  return c.json(currentPocketlog());
+});
 const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
 
 // Health inspects sync metadata only. Register it before snapshot/card
@@ -320,6 +334,10 @@ app.get('/healthz', (c) => {
     const synced = repository.computai.status().lastSyncedAt;
     sources.push(entry('computai', synced ? now - Date.parse(synced) : null, null));
   }
+  if (pocketlogEnabled) {
+    const status = repository.pocketlog.status();
+    sources.push(entry('pocketlog', status.lastSuccessAt ? now - Date.parse(status.lastSuccessAt) : null, status.lastError ? 'sync failed' : null));
+  }
   const freshCount = sources.filter((source) => source.fresh).length;
   const status = freshCount === 0 ? 'unhealthy' : sources.every((source) => source.fresh && !source.error) ? 'healthy' : 'degraded';
   return c.json({ status, maxSourceAgeHours: config.maxSourceAgeHours, sources }, status === 'unhealthy' ? 503 : 200);
@@ -336,6 +354,7 @@ app.get('/sitemap.xml', (c) => {
     const platforms = sections.filter((s) => s.source === 'health' || getCache(`data:${s.source}`)?.data).map((s) => s.source);
     if (repository.countBySource().events) platforms.push('events');
     if (placesEnabled) platforms.push('places');
+    if (pocketlogEnabled) platforms.push('pocketlog');
     sitemapCache = { hour, body: sitemapXml(config.publicBaseUrl, [
       '/', '/now', '/stats', '/platforms', ...platforms.map((source) => `/platforms/${source}`),
       '/profile', '/cards', ...repository.activityYears().map((year) => `/wrapped/${year}`),
@@ -685,6 +704,7 @@ function sourceSyncedAt(source: string): number | string | null {
   if (source === 'health') return config.healthConnect.token ? repository.healthConnectStatus().lastSyncedAt : null;
   if (source === 'dayflow') return dayflowEnabled ? repository.dayflow.status().lastSyncedAt : null;
   if (source === 'computai') return computaiEnabled ? repository.computai.status().lastSyncedAt : null;
+  if (source === 'pocketlog') return pocketlogEnabled ? repository.pocketlog.status().lastSuccessAt : null;
   return getCache(`data:${source}`)?.fetchedAt ?? null;
 }
 
@@ -723,7 +743,7 @@ app.get('/', (c) => measureRead('homepage', () => {
   const profileSnapshot = getCache<SourceSnapshot>('data:statsfm')?.data;
   const sourceCounts = repository.countBySource();
   const publicActivityCount = repository.countPublicActivities() + youtubeLifetimeWatches() + ingestedAllTimeCounts().total;
-  const connectedSources = sections.length + (sourceCounts.events ? 1 : 0) + (placesEnabled ? 1 : 0);
+  const connectedSources = sections.length + (sourceCounts.events ? 1 : 0) + (placesEnabled ? 1 : 0) + (pocketlogEnabled ? 1 : 0);
   c.header('Cache-Control', 'no-cache');
   return c.html(homePage({
     ownerName: config.ownerName,
@@ -735,6 +755,8 @@ app.get('/', (c) => measureRead('homepage', () => {
       ...sections.map(section => ({ ...platformOverview(section.source, section.logo ?? `/logos/${section.source}.png`,
         section.source === 'health' ? healthSnapshot : getCache<SourceSnapshot<unknown>>(`data:${section.source}`)?.data, now),
         sync: platformSync(sourceSyncedAt(section.source), config.delayAfterHours(section.source), now) })),
+      ...(pocketlogEnabled ? [{ ...platformOverview('pocketlog', pocketlogPlatform.logo!, currentPocketlog(now) as SourceSnapshot<unknown>, now),
+        sync: platformSync(sourceSyncedAt('pocketlog'), config.delayAfterHours('pocketlog'), now) }] : []),
       ...(placesEnabled ? [platformOverview('places', placesPlatform.logo!, currentPlaces(now) as SourceSnapshot<unknown>, now)] : []),
       ...(sourceCounts.events ? [platformOverview('events', '', manualEventsSnapshot(), now)] : []),
     ],
@@ -799,6 +821,7 @@ app.get('/platforms', (c) => {
       fetchedAt: cached ? new Date(cached.fetchedAt).toISOString() : null,
     };
   });
+  if (pocketlogEnabled) connected.push({ definition: pocketlogPlatform, snapshot: currentPocketlog() as SourceSnapshot<unknown>, fetchedAt: repository.pocketlog.status().lastSuccessAt });
   if (placesEnabled) connected.push({ definition: placesPlatform, snapshot: currentPlaces() as SourceSnapshot<unknown>, fetchedAt: null });
   connected.push({ definition: manualPlatform, snapshot: manualEventsSnapshot(), fetchedAt: null });
   c.header('Cache-Control', 'no-cache');
@@ -810,8 +833,13 @@ app.get('/platforms/goodreads', (c) => c.redirect('/platforms/hardcover', 301));
 app.get('/platforms/:source', (c) => {
   const source = c.req.param('source');
   const definition = source === 'events' ? manualPlatform : source === 'places' && placesEnabled ? placesPlatform
+    : source === 'pocketlog' && pocketlogEnabled ? pocketlogPlatform
     : sections.find((section) => section.source === source);
   if (!definition) return c.text('Platform not found', 404);
+  if (source === 'pocketlog') {
+    c.header('Cache-Control', 'no-cache');
+    return c.html(platformPage(config.ownerName, definition, currentPocketlog() as SourceSnapshot<unknown>, repository.pocketlog.status().lastSuccessAt));
+  }
   if (source === 'places') {
     c.header('Cache-Control', 'no-cache');
     return c.html(platformPage(config.ownerName, definition, currentPlaces() as SourceSnapshot<unknown>, null));
@@ -889,6 +917,10 @@ function statusSources(now = Date.now()): StatusSource[] {
   if (config.healthConnect.token) sources.push(source('health', repository.healthConnectStatus().lastSyncedAt, null, '/api/health.json'));
   if (dayflowEnabled) sources.push(source('dayflow', repository.dayflow.status().lastSyncedAt, null, '/api/dayflow.json'));
   if (computaiEnabled) sources.push(source('computai', repository.computai.status().lastSyncedAt, null, '/api/computai.json'));
+  if (pocketlogEnabled) {
+    const status = repository.pocketlog.status();
+    sources.push(source('pocketlog', status.lastSuccessAt, publicError(status.lastError), '/api/pocketlog.json'));
+  }
   return sources;
 }
 

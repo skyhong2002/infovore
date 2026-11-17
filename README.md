@@ -70,6 +70,7 @@ change.
 | Service | Method |
 |---|---|
 | Dayflow | macOS companion reads bundled MCP and pushes daily snapshots |
+| [PocketLog](https://github.com/skyhong2002/PocketLog) | The ingest service reads derived phone activity cards from the owner's PocketLog server with a journal device key (`/platforms/pocketlog`) |
 | [ComputAI](https://github.com/Sean-Hawks/computai) | macOS companion pushes a rolling 30-day report of AI agent usage (aggregates only) |
 | [Backloggd](https://backloggd.com/u/skychopath/) | HTML scrape (no public API) |
 | [Kitsu](https://kitsu.app/users/skyhong2002) | Official JSON:API |
@@ -178,6 +179,22 @@ the `/phone` private timeline and the 手機足跡 platform were removed in favo
 [PocketLog](https://github.com/skyhong2002/PocketLog), a separate self-hosted
 activity journal. `DAYFLOW_PHONE_TOKEN` is ignored. Existing
 `dayflow_phone_*` tables (screen text, thumbnails, cards) are dropped on boot.
+
+PocketLog's phone activity comes back as the **PocketLog** platform. With
+`POCKETLOG_URL` (an origin such as `http://pocketlog-production-server-1:8080`)
+and `POCKETLOG_TOKEN` (a 64-hex **journal** device key issued in PocketLog under
+設定 → 連線與裝置) set, the ingest service reads `GET /v1/workspace` and the
+paged `GET /v1/activities` every `POCKETLOG_SYNC_INTERVAL_MINUTES` (default 15):
+the last 3 days on each run, 35 days once a day, and up to 400 days the first
+time or after the PocketLog journal is deleted. Of each card it keeps only the
+interval, the effective category and the labels from the fixed keyword vocabulary
+(`src/dayflow/keywords.ts`); titles, summaries, apps and screen content stay in
+PocketLog. The public page shows daily phone time by PocketLog category, this
+week's categories and recurring labels, using the Dayflow layout. Device keys
+last at most 90 days, so reissue the key before it expires; a refused key shows on
+`/status` and `/healthz`. In production the `ingest` service joins the
+`pocketlog-production_default` network to reach PocketLog, which listens only on
+localhost and its own network.
 
 ## macOS ComputAI sync
 

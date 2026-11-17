@@ -28,6 +28,11 @@ export function platformOverview(source: string, image: string, snapshot: Source
     const topics = pools?.distinctive.slice(0, 3).map(k => k.name).join(' · ');
     return result(`${count('weeklyActiveHours')}h active this week`, topics ? `Distinctive lately: ${topics}` : `${count('recordedDays')} recorded days`);
   }
+  if (source === 'pocketlog') {
+    const pools = (snapshot as DayflowSnapshot).extra.keywordPools;
+    const topics = pools?.distinctive.slice(0, 3).map(k => k.name).join(' · ');
+    return result(`${count('weeklyHours')}h on the phone this week`, topics ? `Distinctive lately: ${topics}` : `${count('recordedDays')} recorded days`);
+  }
   if (source === 'computai') {
     const report = (snapshot as ComputaiSnapshot).extra.report;
     return report ? result(`${compactNumber(report.tokens)} tokens in 30 days`,
