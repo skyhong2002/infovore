@@ -17,7 +17,8 @@ import { readFileSync } from 'node:fs';
 import { Hono, type Context } from 'hono';
 import { locationPage, locationScript } from './output/location.js';
 import { landJson, placesMapScript, placesMapVersion } from './output/places-map.js';
-import { lastSeenRegion, placesSnapshot, publicCutoff, PUBLIC_MAX_ZOOM } from './location/public.js';
+import { lastSeenRegion, placesRecentPng, placesSnapshot, publicCutoff, PUBLIC_MAX_ZOOM } from './location/public.js';
+import { RECENT_BANDS, RECENT_MAX_ZOOM, type RecentBand } from './location/recent.js';
 import { compress } from 'hono/compress';
 import { config } from './config.js';
 import { getCache, restoreCache, setCache, setCacheError } from './data/cache.js';
@@ -247,7 +248,7 @@ app.get('/api/location/day', (c) => {
 // map, days behind and with the privacy zones left out. Off without a zone.
 const placesEnabled = Boolean(config.places) && config.sourceEnabled('places');
 const placesPlatform: PlatformDefinition = {
-  source: 'places', title: 'Places', accent: '#7fd8be', jsonUrl: '/api/places.json', logo: '/logos/places.svg',
+  source: 'places', title: 'Places', accent: '#7fd8be', jsonUrl: '/api/places.json', logo: '/logos/places.png',
   description: 'Ground explored in Fog of World, regions visited and distance travelled, a few days behind and with private areas left out.',
 };
 const currentPlaces = (now = new Date()) => placesSnapshot(repository.location, repository.fog, config.places!, config.ownerName, now);
@@ -263,6 +264,16 @@ app.get('/api/places.json', (c) => {
   if (!placesEnabled) return c.notFound();
   c.header('Cache-Control', 'no-cache');
   return c.json(currentPlaces().extra);
+});
+app.get('/api/places/recent/:band/:z/:x/:file', (c) => {
+  if (!placesEnabled) return c.notFound();
+  const band = c.req.param('band') as RecentBand;
+  const match = /^(\d+)\.png$/.exec(c.req.param('file'));
+  const z = Number(c.req.param('z'));
+  const png = match && RECENT_BANDS.includes(band) && z <= RECENT_MAX_ZOOM
+    ? placesRecentPng(repository.location, repository.fog, config.places!, config.ownerName, band, z, Number(c.req.param('x')), Number(match[1])) : null;
+  if (!png) return c.json({ error: 'Invalid tile' }, 400);
+  return c.body(new Uint8Array(png), 200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=3600' });
 });
 app.get('/api/places/fog/:z/:x/:file', (c) => {
   if (!placesEnabled) return c.notFound();

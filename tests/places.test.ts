@@ -170,7 +170,12 @@ test('the Places page, JSON and fog tiles are public but capped', async () => {
   assert.match(await script.text(), /places-atlas/);
   const land = await (await app.request(/data-land="([^"]+)"/.exec(body)![1])).json() as { land: number[][]; borders: number[][] };
   assert.ok(land.land.length > 1000 && land.borders.length > 100);
-  assert.match(body, /data-tiles="\/api\/places\/fog\/\{z\}\/\{x\}\/\{y\}\.png\?v=[0-9a-f]+"/);
+  const layers = JSON.parse(/data-layers="([^"]+)"/.exec(body)![1].replace(/&quot;/g, '"')) as Array<{ key: string; url: string; max: number }>;
+  assert.deepEqual(layers.map((l) => `${l.key}:${l.max}`), ['fog:9', 'year:7', 'month:7', 'week:7']);
+  assert.equal((await app.request(layers[3].url.replace('{z}', '7').replace('{x}', '106').replace('{y}', '55'))).status, 200);
+  assert.equal((await app.request('/api/places/recent/week/8/213/110.png')).status, 400, 'recent tracks stop at zoom 7');
+  assert.equal((await app.request('/api/places/recent/decade/7/106/55.png')).status, 400);
+  assert.match(body, /class="recent-week"><strong><i class="places-dot"/, 'a region stayed in this week glows');
   assert.match(await (await app.request('/now')).text(), /Last seen around<\/a> 🇹🇼 Tainan 臺南市, Taiwan/);
   assert.match(body, /Tainan <span lang="zh-Hant-TW" class="places-local">臺南市<\/span>/);
   assert.match(await (await app.request('/sitemap.xml')).text(), /\/platforms\/places/);
@@ -184,7 +189,7 @@ function patch(lat: number, lng: number, side: number) {
   return encodeTile(Math.floor(gx / 8192), Math.floor(gy / 8192), pixels);
 }
 
-test('Fog of World and hand-added trips add undated regions, minus thin and ignored ones', () => {
+test('Fog of World adds undated regions, minus thin and ignored ones', () => {
   const repo = new Repository(':memory:');
   const now = new Date('2026-11-17T04:00:00Z');
   seedLocation(repo, now);
@@ -192,16 +197,39 @@ test('Fog of World and hand-added trips add undated regions, minus thin and igno
     repo.fog.put(tile.name, name, tile.data, '2026-11-01T00:00:00.000Z');
   }
   const places = parsePlacesConfig({
-    LOCATION_PRIVACY_ZONES: '24.787,120.997,1500', PLACES_FOG_IGNORE_REGIONS: 'Changhua, Nowhere', PLACES_EXTRA: '41.39,2.17',
+    LOCATION_PRIVACY_ZONES: '24.787,120.997,1500', PLACES_FOG_IGNORE_REGIONS: 'Changhua, Nowhere',
   })!;
   const extra = placesSnapshot(repo.location, repo.fog, places, 'Owner', now).extra;
-  const named = extra.regions.map((r) => `${r.region}/${r.days}/${r.exploredKm2 === null ? '-' : 'fog'}/${r.manual ? 'manual' : '-'}`);
-  assert.deepEqual(named, ['Tainan/1/-/-', 'Taipei City/1/-/-', 'Kyoto/0/fog/-', 'Catalonia/0/-/manual'],
+  const named = extra.regions.map((r) => `${r.region}/${r.days}/${r.exploredKm2 === null ? '-' : 'fog'}`);
+  assert.deepEqual(named, ['Tainan/1/-', 'Taipei City/1/-', 'Kyoto/0/fog'],
     'Changhua is ignored for Fog of World alone; the Osaka patch is too thin');
   const kyoto = extra.regions.find((r) => r.region === 'Kyoto')!;
   assert.ok(kyoto.exploredKm2! > 0.2 && kyoto.exploredKm2! < 0.35, String(kyoto.exploredKm2));
   assert.equal(kyoto.local, '京都府');
-  assert.deepEqual(extra.countries.map((c) => `${c.code}:${c.regions}:${c.days}`), ['TW:2:2', 'JP:1:0', 'ES:1:0']);
+  assert.deepEqual(extra.countries.map((c) => `${c.code}:${c.regions}:${c.days}`), ['TW:2:2', 'JP:1:0']);
   assert.deepEqual(extra.maps.map((m) => m.code).sort(), ['JP', 'TW'], 'a map per country with enough fog');
   repo.close();
+});
+
+test('recency layers band recorded tracks by age and leave zones and jumps out', async () => {
+  const { recentLayers, renderRecentRgba, BAND_COLORS } = await import('../src/location/recent.js');
+  const zones = parsePrivacyZones('24.787,120.997,1500');
+  const until = Date.parse('2026-11-14T00:00:00Z');
+  const at = (days: number, minutes = 0) => until - days * 86_400_000 + minutes * 60_000;
+  const layers = recentLayers([
+    { time: at(2), lat: 23.0, lng: 120.2, accuracy: 10 }, { time: at(2, 10), lat: 23.01, lng: 120.2, accuracy: 10 },
+    { time: at(10), lat: 25.03, lng: 121.56, accuracy: 10 },
+    { time: at(10, 5), lat: 24.787, lng: 120.997, accuracy: 10 }, // in the zone
+    { time: at(10, 9), lat: 25.04, lng: 121.56, accuracy: 10 }, // after the zone: a dot, not a segment through it
+    { time: at(100), lat: 35.0, lng: 135.7, accuracy: 10 }, { time: at(100, 20), lat: 37.5, lng: 127.0, accuracy: 10 }, // a flight
+    { time: at(400), lat: 23.0, lng: 120.2, accuracy: 10 }, // older than a year
+    { time: at(-1), lat: 23.0, lng: 120.2, accuracy: 10 }, // after the cutoff
+  ], zones, until);
+  assert.equal(layers.bands.week.length, 8, 'a dot and one segment');
+  assert.equal(layers.bands.month.length, 8, 'two dots, nothing into the zone');
+  assert.equal(layers.bands.year.length, 8, 'the flight is two dots');
+  const rgba = renderRecentRgba(layers.bands.week, BAND_COLORS.week, 7, 106, 55);
+  const lit = [...Array(256 * 256).keys()].filter((i) => rgba[i * 4 + 3] === 255);
+  assert.ok(lit.length >= 4, String(lit.length));
+  assert.deepEqual([...rgba.subarray(lit[0] * 4, lit[0] * 4 + 3)], [...BAND_COLORS.week]);
 });

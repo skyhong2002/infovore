@@ -1,4 +1,6 @@
 import { PUBLIC_MAX_ZOOM, type PlacesExtra, type PlacesMap, type PlacesRegion } from '../location/public.js';
+import { BAND_COLORS, BAND_DAYS, RECENT_MAX_ZOOM, type RecentBand } from '../location/recent.js';
+import { EXPLORED_COLOR } from '../fog/tiles.js';
 import { dateFormat } from '../data/time.js';
 import { html } from './pages.js';
 import { flagOf } from '../location/regions.js';
@@ -24,6 +26,17 @@ const STYLE = `<style>
 .atlas-credit{position:absolute;left:10px;bottom:8px;color:var(--quiet);font-size:11px;pointer-events:none}
 .atlas-noscript{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)}
 .atlas-views{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.atlas-legend{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.atlas-legend button{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--text);padding:5px 11px;font:inherit;font-size:12px;cursor:pointer}
+.atlas-legend button i{width:10px;height:10px;border-radius:50%;box-shadow:0 0 8px currentColor}
+.atlas-legend button[aria-pressed=false]{opacity:.45}
+.atlas-legend button[aria-pressed=false] i{box-shadow:none;filter:grayscale(1)}
+.places-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.recent-week .places-dot{background:rgb(${BAND_COLORS.week.join(',')});box-shadow:0 0 8px rgb(${BAND_COLORS.week.join(',')})}
+.recent-month .places-dot{background:rgb(${BAND_COLORS.month.join(',')});box-shadow:0 0 6px rgb(${BAND_COLORS.month.join(',')})}
+.recent-year .places-dot{background:rgb(${BAND_COLORS.year.join(',')})}
+.places-regions article.recent-week{border-color:rgba(${BAND_COLORS.week.join(',')},.55);box-shadow:0 0 0 1px rgba(${BAND_COLORS.week.join(',')},.25),0 0 18px -6px rgba(${BAND_COLORS.week.join(',')},.6)}
+.places-regions article.recent-month{border-color:rgba(${BAND_COLORS.month.join(',')},.45)}
 .atlas-views button{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--text);padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
 .atlas-views button span{color:var(--muted);font-size:12px}
 .atlas-views button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft)}
@@ -45,7 +58,19 @@ function atlas(extra: PlacesExtra, landVersion: string): string {
   });
   const buttons = extra.maps.map((entry, index) =>
     `<button type="button" data-view="${index}" aria-pressed="${index === 0}">${flagOf(entry.code)} ${html(entry.label)}<span>${kmText(entry.km2).replace(' km', ' km²')}</span></button>`).join('');
-  return `<div class="places-atlas" data-tiles="/api/places/fog/{z}/{x}/{y}.png?v=${html(extra.layerVersion)}" data-max-zoom="${PUBLIC_MAX_ZOOM}" data-land="/places/land.json?v=${html(landVersion)}" data-views="${html(JSON.stringify(views))}">
+  // Drawn in this order: all-time ground under the year, 28 days and 7 days.
+  const recent = (band: RecentBand) => ({ key: band, url: `/api/places/recent/${band}/{z}/{x}/{y}.png?v=${extra.recentVersion}`, max: RECENT_MAX_ZOOM, glow: 1.4 });
+  const layers = [
+    { key: 'fog', url: `/api/places/fog/{z}/{x}/{y}.png?v=${extra.layerVersion}`, max: PUBLIC_MAX_ZOOM, glow: 0.8 },
+    recent('year'), recent('month'), recent('week'),
+  ];
+  const swatch = (rgb: readonly number[]) => `<i style="background:rgb(${rgb.join(',')})"></i>`;
+  const legend = [
+    ['week', 'Last 7 days', BAND_COLORS.week], ['month', '28 days', BAND_COLORS.month], ['year', '1 year', BAND_COLORS.year],
+    ['fog', 'All time · Fog of World', EXPLORED_COLOR],
+  ].map(([key, label, rgb]) => `<button type="button" data-layer="${key}" aria-pressed="true">${swatch(rgb as readonly number[])}${html(label as string)}</button>`).join('');
+  return `<div class="atlas-legend" role="group" aria-label="Layers">${legend}</div>
+    <div class="places-atlas" data-layers="${html(JSON.stringify(layers))}" data-land="/places/land.json?v=${html(landVersion)}" data-views="${html(JSON.stringify(views))}">
       <canvas role="img" aria-label="Map of the ground explored in Fog of World"></canvas>
       <div class="atlas-zoom"><button type="button" data-zoom="1" aria-label="Zoom in">+</button><button type="button" data-zoom="-1" aria-label="Zoom out">−</button></div>
       <div class="atlas-credit">Land: Natural Earth</div>
@@ -58,18 +83,26 @@ function atlas(extra: PlacesExtra, landVersion: string): string {
 // Lets browsers pick the right CJK glyphs for the local names.
 const LOCAL_LANG: Record<string, string> = { TW: 'zh-Hant-TW', HK: 'zh-Hant-HK', CN: 'zh-Hans', JP: 'ja', KR: 'ko' };
 
-function regionCard(region: PlacesRegion): string {
+// How recently a region had a recorded stay, against the public cutoff.
+function recency(region: PlacesRegion, asOfDay: string): RecentBand | null {
+  if (!region.lastDay) return null;
+  const age = (Date.parse(`${asOfDay}T00:00:00Z`) - Date.parse(`${region.lastDay}T00:00:00Z`)) / 86_400_000;
+  return age < BAND_DAYS.week ? 'week' : age < BAND_DAYS.month ? 'month' : age < BAND_DAYS.year ? 'year' : null;
+}
+
+function regionCard(region: PlacesRegion, asOfDay: string): string {
+  const band = recency(region, asOfDay);
   const facts: string[] = [];
   if (region.days && region.firstDay && region.lastDay) {
     facts.push(`${region.days} ${region.days === 1 ? 'day' : 'days'} · ${html(region.firstDay === region.lastDay ? show(region.lastDay, longDay) : `${show(region.firstDay)} – ${show(region.lastDay, longDay)}`)}`);
   }
   if (region.exploredKm2 !== null) facts.push(`${region.exploredKm2.toLocaleString('en', { maximumFractionDigits: region.exploredKm2 < 1 ? 2 : 1 })} km² explored`);
-  if (!facts.length && region.manual) facts.push('Visited before recording');
-  return `<article><strong>${html(region.region)}${region.local ? ` <span${LOCAL_LANG[region.code] ? ` lang="${LOCAL_LANG[region.code]}"` : ''} class="places-local">${html(region.local)}</span>` : ''}</strong><span>${facts.join(' · ')}</span></article>`;
+  return `<article${band ? ` class="recent-${band}"` : ''}><strong>${band ? `<i class="places-dot" title="${band === 'week' ? 'Last 7 days' : band === 'month' ? 'Last 28 days' : 'This year'}"></i>` : ''}${html(region.region)}${region.local ? ` <span${LOCAL_LANG[region.code] ? ` lang="${LOCAL_LANG[region.code]}"` : ''} class="places-local">${html(region.local)}</span>` : ''}</strong><span>${facts.join(' · ')}</span></article>`;
 }
 
 export function placesDetails(extra: PlacesExtra, landVersion = placesMapVersion): string {
   const asOf = longDay.format(new Date(+new Date(extra.asOf) - 1 + 8 * 3_600_000));
+  const asOfDay = new Date(+new Date(extra.asOf) - 1 + 8 * 3_600_000).toISOString().slice(0, 10);
   const growth = extra.explored.last30DaysKm2 === null ? '' : ` · +${extra.explored.last30DaysKm2.toLocaleString('en')} km² in 30 days`;
   const explored = `<section><div class="platform-section-heading"><h2>Explored</h2><span>Fog of World · as of ${html(asOf)}${html(growth)}</span></div>
     ${extra.maps.length
@@ -89,8 +122,8 @@ export function placesDetails(extra: PlacesExtra, landVersion = placesMapVersion
     ${extra.countries.map((country) => {
       const list = extra.regions.filter((region) => region.country === country.country);
       return `<div class="places-country"><h3>${flagOf(country.code)} ${html(country.country)}<span>${list.length} ${list.length === 1 ? 'region' : 'regions'}${country.days ? ` · ${country.days} ${country.days === 1 ? 'day' : 'days'} recorded` : ''}</span></h3>
-        <div class="places-regions">${list.map(regionCard).join('')}</div></div>`;
+        <div class="places-regions">${list.map((region) => regionCard(region, asOfDay)).join('')}</div></div>`;
     }).join('') || '<div class="empty">No regions yet.</div>'}
-    <div class="platform-note">Everything here is ${Math.round(extra.delayHours / 24)} days behind and stops at whole days. A region counts on a recorded day after a stay of an hour or more (passing through does not count); Fog of World adds the regions its history explored, which carry no dates; a few older trips are added by hand. Regions are counties, cities or first-level divisions, named offline from GeoNames. Nothing recorded inside private areas counts towards them, and the map shows those areas as plain explored ground. Coordinates, places, visits and times of day stay private.</div></section>`;
+    </section>`;
   return STYLE + explored + regions + travel + modes;
 }

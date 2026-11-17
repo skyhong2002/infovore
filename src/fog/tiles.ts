@@ -183,7 +183,7 @@ export function renderFogRgba(tiles: ReadonlyMap<string, FogTile>, z: number, tx
   return rgba;
 }
 
-export const EXPLORED_COLOR = [255, 107, 53] as const;
+export const EXPLORED_COLOR = [72, 196, 176] as const;
 const HALO_ALPHA = 90;
 
 // Deterministic per-pixel noise in [0, 1), so a tile renders the same each time.

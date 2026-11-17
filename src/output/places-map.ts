@@ -6,8 +6,10 @@ import { readFileSync } from 'node:fs';
 // - land and country borders from assets/land.json (Natural Earth), drawn as
 //   Path2D in its 0…2^20 coordinates under a transform, coloured from CSS
 //   variables so it follows the light and dark themes;
-// - the public explored-ground tiles (/api/places/fog, zoom ≤ data-max-zoom,
-//   scaled past that) on top, with a soft glow;
+// - tile layers from data-layers, drawn in order with a soft glow, each up to
+//   its own zoom (scaled past that): the all-time explored ground
+//   (/api/places/fog), then the last year, 28 days and 7 days of recorded
+//   tracks (/api/places/recent); .atlas-legend buttons switch them;
 // - drag, wheel, pinch, double-click and +/− to move; buttons in
 //   .atlas-views fly to a country's explored area, or to all of them.
 // Data comes from data-* attributes on .places-atlas.
@@ -16,8 +18,9 @@ export const placesMapScript = String.raw`(() => {
   if (!root) return;
   const canvas = root.querySelector('canvas');
   const ctx = canvas.getContext('2d');
-  const tileUrl = root.dataset.tiles;
-  const maxTile = Number(root.dataset.maxZoom);
+  const layers = JSON.parse(root.dataset.layers || '[]');
+  const hidden = new Set();
+  const maxTile = Math.max(...layers.map((l) => l.max));
   const views = JSON.parse(root.dataset.views || '[]');
   const MIN_Z = 1, MAX_Z = maxTile + 1.5;
   let width = 0, height = 0, dpr = 1;
@@ -55,26 +58,26 @@ export const placesMapScript = String.raw`(() => {
     request();
   }).catch(() => {});
 
-  function tile(tz, x, y) {
-    const key = tz + '/' + x + '/' + y;
+  function tile(layer, tz, x, y) {
+    const key = layer.key + '/' + tz + '/' + x + '/' + y;
     let entry = tiles.get(key);
     if (!entry) {
       const img = new Image();
       entry = { img, ready: false };
       img.onload = () => { entry.ready = true; request(); };
-      img.src = tileUrl.replace('{z}', tz).replace('{x}', x).replace('{y}', y);
+      img.src = layer.url.replace('{z}', tz).replace('{x}', x).replace('{y}', y);
       tiles.set(key, entry);
-      if (tiles.size > 400) tiles.delete(tiles.keys().next().value);
+      if (tiles.size > 800) tiles.delete(tiles.keys().next().value);
     }
     return entry;
   }
 
   // A loaded tile covering (tz, x, y): itself, else the nearest loaded ancestor and the part of it to draw.
-  function covering(tz, x, y) {
+  function covering(layer, tz, x, y) {
     for (let up = 0; up <= tz; up++) {
       const pz = tz - up, f = 2 ** up;
       const px = Math.floor(x / f), py = Math.floor(y / f);
-      const entry = up === 0 ? tile(pz, px, py) : tiles.get(pz + '/' + px + '/' + py);
+      const entry = up === 0 ? tile(layer, pz, px, py) : tiles.get(layer.key + '/' + pz + '/' + px + '/' + py);
       if (entry && entry.ready) {
         const s = 256 / f;
         return { img: entry.img, sx: (x - px * f) * s, sy: (y - py * f) * s, s };
@@ -106,28 +109,31 @@ export const placesMapScript = String.raw`(() => {
       }
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const tz = clamp(Math.round(z), 0, maxTile);
-    const n = 2 ** tz;
-    const size = W / n;
-    const x0 = Math.floor(-left / size), x1 = Math.floor((width - left) / size);
-    const y0 = Math.max(0, Math.floor(-top / size)), y1 = Math.min(n - 1, Math.floor((height - top) / size));
-    const pieces = [];
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const piece = covering(tz, ((x % n) + n) % n, y);
-        if (piece) pieces.push([piece, left + x * size, top + y * size]);
+    for (const layer of layers) {
+      if (hidden.has(layer.key)) continue;
+      const tz = clamp(Math.round(z), 0, layer.max);
+      const n = 2 ** tz;
+      const size = W / n;
+      const x0 = Math.floor(-left / size), x1 = Math.floor((width - left) / size);
+      const y0 = Math.max(0, Math.floor(-top / size)), y1 = Math.min(n - 1, Math.floor((height - top) / size));
+      const pieces = [];
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const piece = covering(layer, tz, ((x % n) + n) % n, y);
+          if (piece) pieces.push([piece, left + x * size, top + y * size]);
+        }
       }
-    }
-    ctx.imageSmoothingEnabled = size <= 256;
-    const paint = () => { for (const [p, dx, dy] of pieces) ctx.drawImage(p.img, p.sx, p.sy, p.s, p.s, dx, dy, size + 0.5, size + 0.5); };
-    if ('filter' in ctx) {
-      ctx.save();
-      ctx.filter = 'blur(' + Math.round(3 + Math.min(4, z / 2)) + 'px)';
-      ctx.globalAlpha = c.glow;
+      ctx.imageSmoothingEnabled = true;
+      const paint = () => { for (const [p, dx, dy] of pieces) ctx.drawImage(p.img, p.sx, p.sy, p.s, p.s, dx, dy, size + 0.5, size + 0.5); };
+      if ('filter' in ctx) {
+        ctx.save();
+        ctx.filter = 'blur(' + Math.round((layer.glow || 1) * (3 + Math.min(4, z / 2))) + 'px)';
+        ctx.globalAlpha = Math.min(1, c.glow * (layer.glow || 1));
+        paint();
+        ctx.restore();
+      }
       paint();
-      ctx.restore();
     }
-    paint();
   }
 
   function resize() {
@@ -211,6 +217,12 @@ export const placesMapScript = String.raw`(() => {
     const rect = canvas.getBoundingClientRect();
     zoomAt(e.shiftKey ? -1 : 1, e.clientX - rect.left, e.clientY - rect.top);
   });
+  document.querySelectorAll('.atlas-legend [data-layer]').forEach((button) => button.addEventListener('click', () => {
+    const key = button.dataset.layer;
+    if (hidden.has(key)) hidden.delete(key); else hidden.add(key);
+    button.setAttribute('aria-pressed', String(!hidden.has(key)));
+    request();
+  }));
   root.querySelectorAll('[data-zoom]').forEach((button) => button.addEventListener('click', () => zoomAt(Number(button.dataset.zoom), width / 2, height / 2)));
   document.querySelectorAll('.atlas-views [data-view]').forEach((button) => button.addEventListener('click', () => {
     document.querySelectorAll('.atlas-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));

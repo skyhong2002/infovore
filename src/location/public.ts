@@ -6,6 +6,8 @@ import { TAIPEI_OFFSET_MS, taipeiDay } from '../data/time.js';
 import { regionOf, type Region } from './regions.js';
 import { distanceBetween, type LocationStore } from './store.js';
 import { inPrivacyZone, type PlacesConfig } from './zones.js';
+import { BAND_COLORS, recentLayers, renderRecentRgba, type RecentBand, type RecentLayers } from './recent.js';
+import { encodePng } from '../fog/tiles.js';
 
 // The public Places projection: what the location history and Fog of World
 // say at the scale of regions and kilometres, never where. Rules:
@@ -20,7 +22,7 @@ import { inPrivacyZone, type PlacesConfig } from './zones.js';
 
 export const PUBLIC_MAX_ZOOM = 9;
 // Bump when renderExploredRgba draws differently, so cached tiles are not reused.
-const LAYER_STYLE = 'explored-v1';
+const LAYER_STYLE = 'explored-v2';
 const DAY_MS = 86_400_000;
 // Fixes vaguer than this say nothing about the region.
 const REGION_ACCURACY_LIMIT_M = 2_000;
@@ -28,7 +30,7 @@ const DISTANCE_ACCURACY_LIMIT_M = 100;
 
 /**
  * A region and the evidence for it: stays on dated days (Timeline and the
- * phone), ground explored in Fog of World (undated), or an entry added by hand.
+ * phone) or ground explored in Fog of World (undated).
  */
 export interface PlacesRegion {
   region: string;
@@ -40,13 +42,14 @@ export interface PlacesRegion {
   firstDay: string | null;
   lastDay: string | null;
   exploredKm2: number | null;
-  manual: boolean;
 }
 export interface PlacesMap { label: string; code: string; z: number; x: number; y: number; cols: number; rows: number; km2: number }
 export interface PlacesExtra {
   asOf: string;
   /** Changes with the public fog or its drawing, for cache-safe tile URLs. */
   layerVersion: string;
+  /** Changes with the recorded tracks behind the recency layers. */
+  recentVersion: string;
   delayHours: number;
   explored: { km2: number; tiles: number; last30DaysKm2: number | null };
   regions: PlacesRegion[];
@@ -167,7 +170,7 @@ function mergeRegions(stayed: ReturnType<typeof regionsVisited>['stayed'], fogge
   const ignored = new Set(places.fogIgnoreRegions.map((name) => name.toLowerCase()));
   const merged = new Map<string, PlacesRegion>();
   const blank = (region: Region): PlacesRegion =>
-    ({ ...region, days: 0, firstDay: null, lastDay: null, exploredKm2: null, manual: false });
+    ({ ...region, days: 0, firstDay: null, lastDay: null, exploredKm2: null });
   for (const [key, { region, days }] of stayed) {
     const sorted = [...days].sort();
     merged.set(key, { ...blank(region), days: sorted.length, firstDay: sorted[0], lastDay: sorted.at(-1)! });
@@ -178,14 +181,6 @@ function mergeRegions(stayed: ReturnType<typeof regionsVisited>['stayed'], fogge
     else if (km2 >= FOG_REGION_MIN_KM2 && !ignored.has(region.region.toLowerCase())) {
       merged.set(key, { ...blank(region), exploredKm2: Math.round(km2 * 100) / 100 });
     }
-  }
-  for (const place of places.extraPlaces) {
-    const region = regionOf(place.lat, place.lng);
-    if (!region) continue;
-    const key = `${region.region}\u001f${region.country}`;
-    const known = merged.get(key);
-    if (known) known.manual = true;
-    else merged.set(key, { ...blank(region), manual: true });
   }
   const regions = [...merged.values()].sort((a, b) =>
     (b.lastDay ?? '').localeCompare(a.lastDay ?? '') || (b.exploredKm2 ?? 0) - (a.exploredKm2 ?? 0) || a.region.localeCompare(b.region));
@@ -294,7 +289,7 @@ function maps(fog: FogStore, cutoff: string): PlacesMap[] {
   });
 }
 
-let memo: { key: string; snapshot: PlacesSnapshot } | null = null;
+let memo: { key: string; snapshot: PlacesSnapshot; recent: RecentLayers; pngs: Map<string, Buffer> } | null = null;
 
 export function placesSnapshot(location: LocationStore, fog: FogStore, places: PlacesConfig, ownerName: string, now = new Date()): PlacesSnapshot {
   const until = publicCutoff(places, now);
@@ -312,6 +307,7 @@ export function placesSnapshot(location: LocationStore, fog: FogStore, places: P
   const extra: PlacesExtra = {
     asOf: cutoff,
     layerVersion: createHash('sha1').update(`${LAYER_STYLE}|${fogState.version}`).digest('hex').slice(0, 10),
+    recentVersion: createHash('sha1').update(`recent-v1|${until}|${location.status().lastReceivedAt}`).digest('hex').slice(0, 10),
     delayHours: places.delayHours,
     explored: {
       km2: fogState.exploredKm2,
@@ -335,8 +331,25 @@ export function placesSnapshot(location: LocationStore, fog: FogStore, places: P
     entries: [],
     extra,
   };
-  memo = { key, snapshot };
+  memo = { key, snapshot, recent: recentLayers(points, places.zones, until), pngs: new Map() };
   return snapshot;
+}
+
+/** One tile of a recency band (src/location/recent.ts), from the current snapshot. */
+export function placesRecentPng(location: LocationStore, fog: FogStore, places: PlacesConfig, ownerName: string,
+  band: RecentBand, z: number, x: number, y: number, now = new Date()): Buffer | null {
+  const n = 2 ** z;
+  if (!Number.isInteger(z) || z < 0 || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= n || y >= n) return null;
+  placesSnapshot(location, fog, places, ownerName, now);
+  const state = memo!;
+  const key = `${band}/${z}/${x}/${y}`;
+  let png = state.pngs.get(key);
+  if (!png) {
+    png = encodePng(renderRecentRgba(state.recent.bands[band], BAND_COLORS[band], z, x, y), 256, 256);
+    if (state.pngs.size >= 600) state.pngs.delete(state.pngs.keys().next().value!);
+    state.pngs.set(key, png);
+  }
+  return png;
 }
 
 /** "Last seen around" for Now: the region of the latest fix outside every zone, [nowDelayHours] old or older. */
