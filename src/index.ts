@@ -447,7 +447,7 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'GET' && (c.req.path === '/cards' || /^\/card\/activity-rhythm\.(svg|png|webp)$/.test(c.req.path))) {
     if (rhythmRender) await rhythmRender;
     const now = roundedNow(QUARTER_HOUR);
-    const days = repository.activityCoverage(now, { dayflow: dayflowEnabled, computai: computaiEnabled,
+    const days = repository.activityCoverage(now, { dayflow: dayflowEnabled, computai: computaiEnabled, pocketlog: pocketlogEnabled,
       health: Boolean(config.healthConnect.token) && config.sourceEnabled('health') });
     const key = JSON.stringify(days);
     if (key !== rhythmKey) {
@@ -738,7 +738,7 @@ const HOME_COVERAGE_DAYS = 28;
 app.get('/', (c) => measureRead('homepage', () => {
   const now = new Date();
   const { healthSnapshot, activities: combined } = dashboardView(now);
-  const coverage = repository.activityCoverage(now, { dayflow: dayflowEnabled, health: Boolean(healthSnapshot), computai: computaiEnabled }, HOME_COVERAGE_DAYS);
+  const coverage = repository.activityCoverage(now, { dayflow: dayflowEnabled, health: Boolean(healthSnapshot), computai: computaiEnabled, pocketlog: pocketlogEnabled }, HOME_COVERAGE_DAYS);
   const recent = latestSourceActivities(combined);
   const profileSnapshot = getCache<SourceSnapshot>('data:statsfm')?.data;
   const sourceCounts = repository.countBySource();
@@ -764,6 +764,7 @@ app.get('/', (c) => measureRead('homepage', () => {
     publicActivityCount,
     connectedSources,
     dayflow: dayflowEnabled ? getCache<DayflowSnapshot>('data:dayflow')?.data : null,
+    pocketlog: pocketlogEnabled ? currentPocketlog(now) : null,
     coverage,
     recordedShare: recordedShare(coverage, now),
     healthSleepTime: healthSnapshot ? repository.healthConnectSleepTime(now) : null,

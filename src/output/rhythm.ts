@@ -4,6 +4,7 @@ import { timeAmount } from './pages.js';
 
 export const coverageSources: Record<string, { label: string; color: string }> = {
   dayflow: { label: 'Dayflow', color: '#f59b45' },
+  pocketlog: { label: 'Phone', color: '#f4a6c6' },
   'health-sleep': { label: 'Sleep', color: '#a8c7fa' },
   health: { label: 'Exercise', color: '#67d5c3' },
   statsfm: { label: 'Music', color: '#1ed760' },

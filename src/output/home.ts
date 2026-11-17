@@ -23,6 +23,8 @@ export interface HomepageData {
   // Fraction of the last 28 days with any recording, overlaps counted once.
   recordedShare?: number | null;
   dayflow?: DayflowSnapshot | null;
+  // PocketLog phone activity, in the same shape as Dayflow.
+  pocketlog?: DayflowSnapshot | null;
   healthSleepTime?: TimeWindows | null;
   agentTime?: TimeWindows | null;
   // Seconds per day for the last 28 days per source, for trends.
@@ -273,21 +275,23 @@ function cloudSection(terms: CloudTerm[]): string {
 interface TimeEntry { source: string; method: TimeMethod; windows: { last28d: number; allTime: number } }
 
 function timeLabel(source: string): string {
-  return source === 'dayflow' ? 'Dayflow · active' : source === 'health-sleep' ? 'Health · sleep' : source === 'health' ? 'Health · exercise' : source === 'computai' ? 'AI agents · working' : sourceLabel(source);
+  return source === 'dayflow' ? 'Dayflow · active' : source === 'pocketlog' ? 'Phone · active' : source === 'health-sleep' ? 'Health · sleep' : source === 'health' ? 'Health · exercise' : source === 'computai' ? 'AI agents · working' : sourceLabel(source);
 }
 
-function timeEntries(window: { key: 'last28d' | 'allTime' }, timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null, agentTime?: TimeWindows | null): { entries: TimeEntry[]; computerSeconds: number } {
+function timeEntries(window: { key: 'last28d' | 'allTime' }, timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null, agentTime?: TimeWindows | null, pocketlog?: DayflowSnapshot | null): { entries: TimeEntry[]; computerSeconds: number; phoneSeconds: number } {
   const today = dayflowDay();
-  const computerSeconds = dayflow?.extra.daily.filter(day => day.day <= today && (window.key === 'allTime' || day.day >= last28Days())).reduce((sum, day) => sum + day.activeMinutes * 60, 0) ?? 0;
-  const entries: TimeEntry[] = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { last28d: computerSeconds, allTime: computerSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : []), ...(agentTime ? [{ source: 'computai', method: 'measured' as const, windows: agentTime }] : [])]
+  const active = (snapshot?: DayflowSnapshot | null) => snapshot?.extra.daily.filter(day => day.day <= today && (window.key === 'allTime' || day.day >= last28Days())).reduce((sum, day) => sum + day.activeMinutes * 60, 0) ?? 0;
+  const computerSeconds = active(dayflow), phoneSeconds = active(pocketlog);
+  const entries: TimeEntry[] = [...(timeSpent?.sources ?? []), ...(computerSeconds ? [{ source: 'dayflow', method: 'measured' as const, windows: { last28d: computerSeconds, allTime: computerSeconds } }] : []),
+    ...(phoneSeconds ? [{ source: 'pocketlog', method: 'measured' as const, windows: { last28d: phoneSeconds, allTime: phoneSeconds } }] : []), ...(sleepTime ? [{ source: 'health-sleep', method: 'measured' as const, windows: sleepTime }] : []), ...(agentTime ? [{ source: 'computai', method: 'measured' as const, windows: agentTime }] : [])]
     .filter((entry) => entry.windows[window.key] > 0)
     .sort((a, b) => b.windows[window.key] - a.windows[window.key]);
-  return { entries, computerSeconds };
+  return { entries, computerSeconds, phoneSeconds };
 }
 
-function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null, agentTime?: TimeWindows | null, daily?: DailyTimeSeries | null): string {
+function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows | null, dayflow?: DayflowSnapshot | null, agentTime?: TimeWindows | null, daily?: DailyTimeSeries | null, pocketlog?: DayflowSnapshot | null): string {
   const window = homeTimeWindow(timeSpent);
-  const { entries, computerSeconds } = timeEntries(window, timeSpent, sleepTime, dayflow, agentTime);
+  const { entries, computerSeconds, phoneSeconds } = timeEntries(window, timeSpent, sleepTime, dayflow, agentTime, pocketlog);
   if (!entries.length) return `<div class="home-panel"><h2>Time by platform</h2><p class="home-panel-intro">No time records are available yet.</p><div class="home-empty">Time appears after the first platform sync.</div></div>`;
   const max = Math.max(1, ...entries.map((entry) => entry.windows[window.key]));
   const rows = entries.map((entry) => {
@@ -300,6 +304,7 @@ function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows |
   }).join('');
   const notes = [
     computerSeconds ? 'Dayflow shows active computer time by recorded day and can overlap other platforms; the recorded-time share counts overlaps once.' : '',
+    phoneSeconds ? 'Phone is non-idle app time recorded by PocketLog; it can overlap the computer and media, which the recorded-time share counts once.' : '',
     entries.some((entry) => entry.source === 'health-sleep') ? 'Sleep is recorded sessions including awake time, shown separately from exercise.' : '',
     entries.some((entry) => entry.source === 'computai') ? 'AI agents is wall-clock time with any Claude Code or Codex session producing output, parallel sessions counted once.' : '',
     '~ marks estimates.',
@@ -345,10 +350,10 @@ export function homePage(data: HomepageData): string {
       ${inProgressTile(data.inProgress ?? [])}
       ${metric('Public entries', data.publicActivityCount.toLocaleString('en'), 'in the archive', { tip: 'Public activities from every source: synced media, lifetime YouTube watches from urtube, each Health sleep, workout and day of steps, each Dayflow day, and each AI agent work block. The change is media entries first collected in the last 7 days versus the 7 before.', change: data.newEntries ? delta(data.newEntries.week, data.newEntries.previous, (value) => `${value} new`) : undefined })}
     </section>
-    ${shareBar(timeEntries(window, data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime).entries, window.key, window.key === 'last28d' ? 'Last 28 days' : 'All time')}
+    ${shareBar(timeEntries(window, data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime, data.pocketlog).entries, window.key, window.key === 'last28d' ? 'Last 28 days' : 'All time')}
     <section class="home-section"><div class="home-section-head"><div><h2>Platforms</h2></div><a href="/platforms">All platforms →</a></div>${highlights}</section>
     ${cloudSection(data.cloudTerms ?? [])}
-    <section class="home-section home-dashboard-grid">${rhythmPanel(data.coverage ?? recordedCoverage([]))}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime, data.daily)}</section>
+    <section class="home-section home-dashboard-grid">${rhythmPanel(data.coverage ?? recordedCoverage([]))}${timePanel(data.timeSpent, data.healthSleepTime, data.dayflow, data.agentTime, data.daily, data.pocketlog)}</section>
     <section class="home-section" id="recent"><div class="home-section-head"><div><h2>Latest from each platform</h2></div><a href="/now">Just happened →</a></div>${recent}</section>
   </div>`;
   return shell(`${data.ownerName} · overview`, body, 'home', homeStyles, { path: '/' });

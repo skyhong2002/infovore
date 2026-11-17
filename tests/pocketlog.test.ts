@@ -131,7 +131,12 @@ test('the PocketLog platform page, JSON and listings', async () => {
   assert.equal(json.source, 'pocketlog');
   assert.ok(json.stats.recordedDays >= 1);
   assert.match(await (await app.request('/platforms')).text(), /href="\/platforms\/pocketlog"/);
-  assert.match(await (await app.request('/')).text(), /on the phone this week/);
+  const home = await (await app.request('/')).text();
+  assert.match(home, /on the phone this week/);
+  assert.match(home, /data-source="pocketlog"/, 'phone time is listed by platform');
+  assert.match(home, /Phone · active/);
+  const coverage = repository.activityCoverage(now, { dayflow: false, health: false, pocketlog: true });
+  assert.ok(coverage.some((day) => day.lanes.some((lane) => lane.source === 'pocketlog')), 'phone lanes in the rhythm');
   assert.match(await (await app.request('/sitemap.xml')).text(), /\/platforms\/pocketlog/);
   const health = await (await app.request('/healthz')).json() as { sources: Array<{ source: string }> };
   assert.ok(health.sources.some((s) => s.source === 'pocketlog'));

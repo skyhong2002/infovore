@@ -98,6 +98,14 @@ export class PocketlogStore {
       .map((r) => ({ id: String(r.id), start: Number(r.start_ms), end: Number(r.end_ms), category: String(r.category), keywords: JSON.parse(String(r.keywords_json)) as string[] }));
   }
 
+  /** Non-idle phone activity overlapping [since, now), for the rhythm timeline. */
+  recordedIntervals(since: string, now = new Date()): Array<{ source: string; start: number; end: number }> {
+    const from = Date.parse(since);
+    return (this.db.prepare(`SELECT start_ms, end_ms FROM pocketlog_activities WHERE category != 'idle' AND end_ms > ? AND start_ms < ?`)
+      .all(from, +now) as Array<{ start_ms: number; end_ms: number }>)
+      .map((r) => ({ source: 'pocketlog', start: Math.max(from, Number(r.start_ms)), end: Math.min(+now, Number(r.end_ms)) }));
+  }
+
   private memo: { key: string; snapshot: DayflowSnapshot } | null = null;
 
   /** The public projection, in Dayflow's shape so the platform page can share its rendering. */

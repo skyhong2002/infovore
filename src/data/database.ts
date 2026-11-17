@@ -1039,13 +1039,15 @@ export class Repository {
     });
   }
 
-  activityCoverage(now = new Date(), enabled: { dayflow: boolean; health: boolean; computai?: boolean } = { dayflow: true, health: true, computai: true }, days = 7) {
+  activityCoverage(now = new Date(), enabled: { dayflow: boolean; health: boolean; computai?: boolean; pocketlog?: boolean } = { dayflow: true, health: true, computai: true }, days = 7) {
     return this.cached(`coverage:${JSON.stringify(enabled)}:${days}:${minute(now)}`, () => {
       const since = new Date(+taipeiWindowStarts(now).day - (days - 1) * 86400000).toISOString();
       const intervals: RecordedInterval[] = [];
       if (enabled.dayflow) intervals.push(...this.dayflow.recordedIntervals(taipeiDay(new Date(Date.parse(since) - 86400000)), now));
       // Agent work counts as recorded time; overlaps with the rest count once.
       if (enabled.computai) intervals.push(...this.computai.recordedIntervals(since));
+      // Phone time can overlap the computer; overlaps count once here too.
+      if (enabled.pocketlog) intervals.push(...this.pocketlog.recordedIntervals(since, now));
       if (enabled.health) {
         const rows = this.db.prepare(`SELECT data_type, start_at, end_at FROM (${preferredHealthRecords(['sleep_session', 'exercise_session'])}) health_connect_records
           WHERE data_type IN ('sleep_session', 'exercise_session') AND end_at >= ? AND start_at <= ?`)
