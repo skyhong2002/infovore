@@ -11,7 +11,8 @@ import { inPrivacyZone, type PlacesConfig } from './zones.js';
 // - everything lags config.delayHours (the Now line config.nowDelayHours);
 // - nothing is derived from a point inside a privacy zone, and the fog map
 //   draws zones as plain explored ground (FogStore.publicPng);
-// - regions are first-level divisions (counties and cities in Taiwan);
+// - regions are first-level divisions (counties and cities in Taiwan), and
+//   count only where there was a stay, not a pass-through;
 // - distances and trip modes are daily or all-time totals;
 // - the fog map stops at zoom PUBLIC_MAX_ZOOM (≈ 300 m a pixel).
 // No coordinate, place name, visit or time of day is published.
@@ -67,21 +68,53 @@ function regionCache() {
 
 type Point = ReturnType<LocationStore['pointsBefore']>[number];
 
-function regionsVisited(points: readonly Point[], places: PlacesConfig) {
+type Visit = ReturnType<LocationStore['visitsBefore']>[number];
+
+// A region counts as visited on a day only after a real stay there, so a
+// train or a drive through it does not: at least STAY_MS between consecutive
+// fixes in that region (gaps up to MAX_GAP_MS), or a Timeline visit of at
+// least VISIT_MS.
+const STAY_MS = 60 * 60_000;
+const MAX_GAP_MS = 3 * 60 * 60_000;
+const VISIT_MS = 30 * 60_000;
+
+function regionsVisited(points: readonly Point[], visits: readonly Visit[], places: PlacesConfig) {
   const lookup = regionCache();
-  const seen = new Map<string, { region: Region; days: Set<string> }>();
+  const regionAt = (lat: number, lng: number) => (inPrivacyZone(places.zones, lat, lng) ? null : lookup(lat, lng));
+  const keyOf = (region: Region) => `${region.region}\u001f${region.country}`;
+  const dwell = new Map<string, number>(); // key \u001e day → ms
+  const regionByKey = new Map<string, Region>();
+  const stayed = new Map<string, { region: Region; days: Set<string> }>();
+  const stay = (region: Region, day: string) => {
+    const key = keyOf(region);
+    const entry = stayed.get(key) ?? { region, days: new Set<string>() };
+    entry.days.add(day);
+    stayed.set(key, entry);
+  };
   let first: number | null = null;
+  let previous: { time: number; region: Region | null } | null = null;
   for (const point of points) {
     first ??= point.time;
     if (point.accuracy !== null && point.accuracy > REGION_ACCURACY_LIMIT_M) continue;
-    if (inPrivacyZone(places.zones, point.lat, point.lng)) continue;
-    const region = lookup(point.lat, point.lng);
-    if (!region) continue;
-    const key = `${region.region}\u001f${region.country}`;
-    const entry = seen.get(key) ?? { region, days: new Set<string>() };
-    entry.days.add(dayOf(point.time));
-    seen.set(key, entry);
+    const region = regionAt(point.lat, point.lng);
+    if (previous?.region && region && keyOf(previous.region) === keyOf(region) && point.time - previous.time <= MAX_GAP_MS) {
+      const slot = `${keyOf(region)}\u001e${dayOf(previous.time)}`;
+      dwell.set(slot, (dwell.get(slot) ?? 0) + point.time - previous.time);
+      regionByKey.set(keyOf(region), region);
+    }
+    previous = { time: point.time, region };
   }
+  for (const [slot, ms] of dwell) {
+    if (ms < STAY_MS) continue;
+    const [key, day] = slot.split('\u001e');
+    stay(regionByKey.get(key)!, day);
+  }
+  for (const visit of visits) {
+    if (visit.end - visit.start < VISIT_MS) continue;
+    const region = regionAt(visit.lat, visit.lng);
+    if (region) stay(region, dayOf(visit.start));
+  }
+  const seen = stayed;
   const regions: PlacesRegion[] = [...seen.values()].map(({ region, days }) => {
     const sorted = [...days].sort();
     return { ...region, firstDay: sorted[0], lastDay: sorted.at(-1)!, days: sorted.length };
@@ -197,7 +230,7 @@ export function placesSnapshot(location: LocationStore, fog: FogStore, places: P
   const key = `${until}|${fogState.version}|${location.status().lastReceivedAt}|${ownerName}`;
   if (memo?.key === key) return memo.snapshot;
   const points = location.pointsBefore(until);
-  const visited = regionsVisited(points, places);
+  const visited = regionsVisited(points, location.visitsBefore(until), places);
   const moved = travel(location, points, until, visited.since);
   const history = fog.areaHistory();
   const monthAgo = dayOf(until - 30 * DAY_MS);

@@ -45,15 +45,21 @@ function seedLocation(repo: InstanceType<typeof Repository>, now: Date) {
       // Inside the Hsinchu zone: never counts towards regions.
       { time: at(10), lat: 24.7875, lng: 120.9975, accuracy: 10 },
       { time: at(10, 30), lat: 24.788, lng: 120.998, accuracy: 10 },
-      // Tainan five days ago, two fixes 1 km apart.
+      // Through Miaoli by train for 15 minutes, five days ago: not a visit.
+      { time: at(5, -60), lat: 24.56, lng: 120.82, accuracy: 10 },
+      { time: at(5, -45), lat: 24.45, lng: 120.75, accuracy: 10 },
+      // Then two hours in Tainan, 1 km in all.
       { time: at(5), lat: 22.99, lng: 120.21, accuracy: 10 },
-      { time: at(5, 20), lat: 22.999, lng: 120.21, accuracy: 10 },
+      { time: at(5, 60), lat: 22.999, lng: 120.21, accuracy: 10 },
+      { time: at(5, 120), lat: 22.999, lng: 120.21, accuracy: 10 },
       // Seoul 23 h ago: within both delays, so not yet public anywhere.
       { time: at(1, 60), lat: 37.556, lng: 126.922, accuracy: 10 },
     ],
   });
   repo.location.ingest({
-    deviceId: 'phone', source: 'timeline', points: [{ time: at(20), lat: 25.034, lng: 121.561, accuracy: 30 }], visits: [],
+    deviceId: 'phone', source: 'timeline', points: [{ time: at(20), lat: 25.034, lng: 121.561, accuracy: 30 }],
+    // A Timeline stay of 45 minutes counts on its own; a 10-minute one does not.
+    visits: [{ start: at(20, 40), end: at(20, 85), lat: 25.034, lng: 121.561 }, { start: at(19), end: at(19, 10), lat: 24.95, lng: 121.2 }],
     activities: [{ start: at(20), end: at(20, 40), distanceMeters: 12_000, mode: 'IN_SUBWAY' }],
   });
 }
@@ -65,13 +71,14 @@ test('the public projection is delayed, leaves zones out and carries no coordina
   const places = parsePlacesConfig({ LOCATION_PRIVACY_ZONES: '24.787,120.997,1500' })!;
   const snapshot = placesSnapshot(repo.location, repo.fog, places, 'Owner', now);
   const extra = snapshot.extra;
-  assert.deepEqual(extra.regions.map((r) => r.region), ['Tainan', 'Taipei City'], 'Seoul is too recent; Hsinchu is a zone');
+  assert.deepEqual(extra.regions.map((r) => r.region), ['Tainan', 'Taipei City'],
+    'Seoul is too recent; Hsinchu is a zone; Miaoli was passed through; Taoyuan only a short stop');
   assert.equal(extra.regions[0].days, 1);
   assert.equal(snapshot.stats.countries, 1);
   assert.ok(Date.parse(extra.asOf) <= +now - 72 * 3_600_000, 'at least the delay behind');
   assert.equal(extra.asOf.slice(11), '16:00:00.000Z', 'a whole Taipei day boundary');
-  const tainan = extra.travel.days.find((d) => d.km >= 0.9 && d.km <= 1.1);
-  assert.ok(tainan, 'Tainan day ≈ 1 km');
+  const tainan = extra.travel.days.find((d) => d.km >= 170 && d.km <= 200);
+  assert.ok(tainan, 'the Tainan day: ≈ 185 km by train, then 1 km there');
   assert.equal(extra.travel.modes[0].label, 'Metro');
   assert.equal(extra.travel.modes[0].km, 12);
   const json = JSON.stringify(snapshot);

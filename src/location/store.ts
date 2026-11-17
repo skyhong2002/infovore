@@ -172,6 +172,13 @@ export class LocationStore {
       .map((row) => ({ source: row.source, time: row.recorded_at, lat: row.lat, lng: row.lng, accuracy: row.accuracy_m }));
   }
 
+  /** Every stay that began before [until]: when and where (for region names only). */
+  visitsBefore(until: number): Array<{ start: number; end: number; lat: number; lng: number }> {
+    return (this.db.prepare('SELECT start_at, end_at, lat, lng FROM location_visits WHERE start_at < ? ORDER BY start_at')
+      .all(until) as unknown as VisitRow[])
+      .map((row) => ({ start: row.start_at, end: Math.min(row.end_at, until), lat: row.lat, lng: row.lng }));
+  }
+
   /** Every trip that ended before [until]: when, how far and how (no coordinates). */
   activitiesBefore(until: number): Array<{ start: number; end: number; distanceMeters: number | null; mode: string | null }> {
     return (this.db.prepare(`SELECT start_at, end_at, distance_m, mode FROM location_activities
