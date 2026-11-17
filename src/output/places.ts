@@ -4,9 +4,9 @@ import { html } from './pages.js';
 import { flagOf } from '../location/regions.js';
 
 // The public Places platform: see src/location/public.ts for what is (and is
-// never) published. The maps are plain <img> grids: CARTO's light or dark
-// basemap (whichever matches the page theme; CSS hides the other, and lazy
-// images that are not displayed are not fetched) under the delayed explored-
+// never) published. The maps are plain <img> grids of OpenStreetMap tiles
+// (sent with the browser's default referrer, which OSM's tile policy needs;
+// darkened by a CSS filter in the dark theme) under the delayed explored-
 // ground layer, so no script is needed.
 
 const dayLabel = dateFormat('en', { timeZone: 'UTC', month: 'short', day: 'numeric' });
@@ -18,9 +18,9 @@ const STYLE = `<style>
 .places-map{display:grid;gap:0;width:100%;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-raised)}
 .places-map div{position:relative;aspect-ratio:1}
 .places-map img{position:absolute;inset:0;width:100%;height:100%;display:block}
-.places-map .base-light{display:none}
-:root[data-theme=light] .places-map .base-light{display:block}:root[data-theme=light] .places-map .base-dark{display:none}
-@media(prefers-color-scheme:light){:root:not([data-theme=dark]) .places-map .base-light{display:block}:root:not([data-theme=dark]) .places-map .base-dark{display:none}}
+.places-map .base{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.45)}
+:root[data-theme=light] .places-map .base{filter:saturate(.6)}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]) .places-map .base{filter:saturate(.6)}}
 .places-maps{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
 .places-maps figure{margin:0}
 .places-maps figure.wide{grid-column:1/-1}
@@ -35,21 +35,17 @@ const STYLE = `<style>
 .places-country h3 span{color:var(--muted);font-size:12px;font-weight:400}
 </style>`;
 
-function map(entry: PlacesMap): string {
+function map(entry: PlacesMap, version: string): string {
   const cells: string[] = [];
   for (let row = 0; row < entry.rows; row++) {
     for (let col = 0; col < entry.cols; col++) {
       const x = entry.x + col;
       const y = entry.y + row;
-      const base = (style: string) => {
-        const url = `https://basemaps.cartocdn.com/${style}_all/${entry.z}/${x}/${y}`;
-        return `<img class="base-${style}" src="${url}.png" srcset="${url}.png 1x, ${url}@2x.png 2x" alt="" loading="lazy">`;
-      };
-      cells.push(`<div>${base('dark')}${base('light')}<img src="/api/places/fog/${entry.z}/${x}/${y}.png" alt="" loading="lazy"></div>`);
+      cells.push(`<div><img class="base" src="https://tile.openstreetmap.org/${entry.z}/${x}/${y}.png" alt="" loading="lazy"><img src="/api/places/fog/${entry.z}/${x}/${y}.png?v=${version}" alt="" loading="lazy"></div>`);
     }
   }
   return `<figure${entry.cols >= 3 ? ' class="wide"' : ''}><div class="places-map" style="grid-template-columns:repeat(${entry.cols},minmax(0,1fr))" role="img" aria-label="Fog of World explored ground in ${html(entry.label)}">${cells.join('')}</div>
-    <figcaption>${flagOf(entry.code)} ${html(entry.label)} · ${kmText(entry.km2).replace(' km', ' km²')} explored · map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a></figcaption></figure>`;
+    <figcaption>${flagOf(entry.code)} ${html(entry.label)} · ${kmText(entry.km2).replace(' km', ' km²')} explored · map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</figcaption></figure>`;
 }
 
 // Lets browsers pick the right CJK glyphs for the local names.
@@ -70,7 +66,7 @@ export function placesDetails(extra: PlacesExtra): string {
   const growth = extra.explored.last30DaysKm2 === null ? '' : ` · +${extra.explored.last30DaysKm2.toLocaleString('en')} km² in 30 days`;
   const explored = `<section><div class="platform-section-heading"><h2>Explored</h2><span>Fog of World · as of ${html(asOf)}${html(growth)}</span></div>
     ${extra.maps.length
-      ? `<div class="places-maps">${extra.maps.map(map).join('')}</div>`
+      ? `<div class="places-maps">${extra.maps.map((entry) => map(entry, html(extra.layerVersion))).join('')}</div>`
       : '<div class="empty">The map appears once the fog is a few days old (it is shown with the same delay as everything here).</div>'}</section>`;
   const peak = Math.max(1, ...extra.travel.days.map((day) => day.km));
   const travel = `<section><div class="platform-section-heading"><h2>Distance per day</h2><span>Last 30 days · ${kmText(extra.travel.last30Km)}</span></div>

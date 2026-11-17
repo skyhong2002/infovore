@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { FogStore } from '../fog/store.js';
 import { BLOCK_PIXELS, TILE_BLOCKS, WORLD_PIXELS } from '../fog/tiles.js';
 import type { SourceSnapshot } from '../data/types.js';
@@ -18,6 +19,8 @@ import { inPrivacyZone, type PlacesConfig } from './zones.js';
 // No coordinate, place name, visit or time of day is published.
 
 export const PUBLIC_MAX_ZOOM = 9;
+// Bump when renderExploredRgba draws differently, so cached tiles are not reused.
+const LAYER_STYLE = 'explored-v1';
 const DAY_MS = 86_400_000;
 // Fixes vaguer than this say nothing about the region.
 const REGION_ACCURACY_LIMIT_M = 2_000;
@@ -42,6 +45,8 @@ export interface PlacesRegion {
 export interface PlacesMap { label: string; code: string; z: number; x: number; y: number; cols: number; rows: number; km2: number }
 export interface PlacesExtra {
   asOf: string;
+  /** Changes with the public fog or its drawing, for cache-safe tile URLs. */
+  layerVersion: string;
   delayHours: number;
   explored: { km2: number; tiles: number; last30DaysKm2: number | null };
   regions: PlacesRegion[];
@@ -306,6 +311,7 @@ export function placesSnapshot(location: LocationStore, fog: FogStore, places: P
   const baseline = [...history].reverse().find((entry) => entry.day <= monthAgo) ?? null;
   const extra: PlacesExtra = {
     asOf: cutoff,
+    layerVersion: createHash('sha1').update(`${LAYER_STYLE}|${fogState.version}`).digest('hex').slice(0, 10),
     delayHours: places.delayHours,
     explored: {
       km2: fogState.exploredKm2,
