@@ -79,6 +79,27 @@ change.
 | [Hardcover](https://hardcover.app/@skyhong.tw) | Official GraphQL API (personal token). Replaced Goodreads, whose RSS feeds shut down in 2026; `/card/goodreads.*` redirects |
 | [YouTube](https://urtube.observe.tw/skyhong.tw) | Mirrored from [urtube](https://urtube.observe.tw)'s public per-handle summary (stats, top channels, topics, per-day time) |
 
+### Backloggd full-history backfill
+
+The hourly Backloggd refresh only reads the ten newest journal games. To load
+the whole account once (every played/playing/backlog/wishlist game, each game's
+log with per-day playtime, reviews, lists and journal), crawl it into a JSON
+archive and import that:
+
+```sh
+npx tsx src/backloggd-backfill.ts crawl  ~/backloggd-archive/<user>.json   # read-only, resumable, ~10 min
+npx tsx src/backloggd-backfill.ts import ~/backloggd-archive/<user>.json --dry-run
+npx tsx src/backloggd-backfill.ts import ~/backloggd-archive/<user>.json   # run where DATABASE_PATH lives
+```
+
+The archive holds review text, so keep it out of the repo. Import is
+idempotent: games upsert as the same activities the hourly source writes (one
+per game, dated by its last-played day) and per-day playtime keeps the ledger's
+(game, day) watermark. It never touches the cached source snapshot, so cards
+are unaffected. Backlog/wishlist/playing lists and games with no dates on
+Backloggd stay in the archive only. List pages include extras (DLC, updates)
+that the profile's headline counts leave out.
+
 ## Cards
 
 Twenty-six cards in total — cross-source, combined and single-medium variants:

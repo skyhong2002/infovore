@@ -43,7 +43,7 @@ const MONTHS: Record<string, string> = {
 
 // Fetch a Backloggd page, transparently solving the Anubis proof-of-work
 // challenge (and caching its cookie) if the journal/log pages are gated.
-async function getHtml(path: string): Promise<cheerio.CheerioAPI> {
+export async function getHtml(path: string): Promise<cheerio.CheerioAPI> {
   // On datacenter IPs the pass-challenge can still hand back a fresh
   // challenge (Bunny CDN edge propagation / stricter policy), so solve in a
   // loop rather than once.
@@ -67,13 +67,13 @@ async function getHtml(path: string): Promise<cheerio.CheerioAPI> {
   throw new Error(`backloggd: exhausted attempts for ${path}`);
 }
 
-function shortDate(full: string): string {
+export function shortDate(full: string): string {
   // "July  7, 2026" -> "Jul 7"
   const m = full.match(/([A-Z][a-z]+)\s+(\d{1,2})/);
   return m ? `${MONTHS[m[1]] ?? m[1]} ${m[2]}` : full;
 }
 
-function isoDate(full: string): string {
+export function isoDate(full: string): string {
   const m = full.match(/([A-Z][a-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
   if (!m) return '';
   const month = Object.keys(MONTHS).indexOf(m[1]) + 1;
@@ -97,7 +97,7 @@ function sumSessions(times: string[]): string {
 // rows that follow (day number + stopwatch time like "0h 5m"). Rows without
 // a logged time are status-only and skipped; a date range's last number is
 // its end day.
-function parseLogSessions($: cheerio.CheerioAPI): Array<{ day: string; minutes: number }> {
+export function parseLogSessions($: cheerio.CheerioAPI): Array<{ day: string; minutes: number }> {
   const sessions: Array<{ day: string; minutes: number }> = [];
   let year = '';
   let month = '';
