@@ -2,6 +2,7 @@
 //
 //   crawl  <archive.json> [--delay=ms] [--fresh]   walk the whole account into a JSON archive (read-only, resumable)
 //   import <archive.json> [--dry-run]              write played games + per-day playtime into the database
+//   sync   <archive.json>                          run the daily incremental update now (what the hourly refresh does once a day)
 //   summary <archive.json>                         print what an archive holds
 //
 // Crawling only needs network access to backloggd.com. Importing opens the
@@ -13,7 +14,7 @@
 import { existsSync } from 'node:fs';
 import { config } from './config.js';
 import { Repository } from './data/database.js';
-import { importArchive, readArchive, writeArchive } from './backloggd/sync.js';
+import { importArchive, readArchive, syncBackloggdLibrary, writeArchive } from './backloggd/sync.js';
 import {
   LIST_NAMES, archiveToImport, crawlBackloggd, type BackloggdArchive,
 } from './sources/backloggd-archive.js';
@@ -102,6 +103,20 @@ async function main(): Promise<void> {
       console.log(`playtime ledger: ${(before.seconds / 3600).toFixed(1)}h → ${(after.seconds / 3600).toFixed(1)}h`);
       const library = repository.backloggdLibrary.read();
       console.log(`library: ${LIST_NAMES.map((n) => `${library?.games[n].length ?? 0} ${n}`).join(', ')}; ${library?.reviews.length ?? 0} reviews, ${library?.lists.length ?? 0} lists, ${library?.journal.length ?? 0} journal entries`);
+    } finally {
+      repository.close();
+    }
+    return;
+  }
+
+  if (command === 'sync') {
+    const repository = new Repository(config.databasePath);
+    try {
+      const before = repository.countActivities();
+      const result = await syncBackloggdLibrary(repository, {
+        archivePath: file, username: config.backloggd.username, force: true, log: (message) => console.log(`[sync] ${message}`),
+      });
+      console.log(result ? `synced: ${result.datedGames} dated games, ${result.sessions} sessions, activities ${before} → ${repository.countActivities()} (${result.inserted} new)` : 'nothing to do (no archive)');
     } finally {
       repository.close();
     }

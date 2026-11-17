@@ -207,6 +207,7 @@ const reviewHtml = `
 test('importing writes the browsable library, and the page escapes it', async () => {
   const site = fakeSite({ ...sitePages(), '/u/sky/reviews/': reviewHtml });
   const archive = await crawlBackloggd({ username: 'sky', load: site.load, delayMs: 0 });
+  archive.games.backlog[0].adult = true; // adult covers are shown too (hotlinked, never stored)
   const repository = new Repository(':memory:');
   assert.equal(repository.backloggdLibrary.read(), null);
 
@@ -224,6 +225,9 @@ test('importing writes the browsable library, and the page escapes it', async ()
   assert.equal(library.journal.length, 1);
 
   const page = backloggdLibrarySection(library);
+  assert.equal(library.games.backlog[0].adult, true);
+  assert.equal(library.games.backlog[0].cover, 'https://img/celeste.jpg');
+  assert.match(page, /src="https:\/\/img\/celeste\.jpg"/);
   assert.match(page, /Played library/);
   assert.match(page, /Hades &lt;3/);
   assert.doesNotMatch(page, /<script>alert/);

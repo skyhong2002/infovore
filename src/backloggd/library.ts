@@ -70,7 +70,7 @@ export class BackloggdLibraryStore {
         archive.games[list].forEach((g, position) => {
           const log = archive.logs[g.slug] ?? null;
           game.run(
-            list, g.slug, position, g.title, g.adult ? '' : g.cover, g.adult ? 1 : 0, log?.rating ?? g.rating, g.reviewed ? 1 : 0,
+            list, g.slug, position, g.title, g.cover, g.adult ? 1 : 0, log?.rating ?? g.rating, g.reviewed ? 1 : 0,
             log?.status ?? '', log ? parseDuration(log.timePlayed) : 0, log?.firstPlayed ?? '', log?.lastPlayed ?? '',
             JSON.stringify(log?.platforms ?? []),
           );

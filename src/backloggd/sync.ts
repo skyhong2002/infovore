@@ -9,8 +9,10 @@ export function readArchive(path: string): BackloggdArchive {
 }
 
 export function writeArchive(path: string, archive: BackloggdArchive): void {
-  writeFileSync(`${path}.tmp`, JSON.stringify(archive), { mode: 0o600 });
-  renameSync(`${path}.tmp`, path);
+  // A per-process temp name keeps two writers (a CLI run and the daily sync) from interleaving.
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(archive), { mode: 0o600 });
+  renameSync(tmp, path);
 }
 
 export interface ImportResult {
@@ -42,16 +44,16 @@ export const LIBRARY_SYNC_INTERVAL_MS = 20 * 3600_000;
 // because a first full crawl is far too long for a refresh.
 export async function syncBackloggdLibrary(
   repository: Repository,
-  options: { archivePath: string; username: string; load?: PageLoader; delayMs?: number; now?: Date },
+  options: { archivePath: string; username: string; load?: PageLoader; delayMs?: number; now?: Date; force?: boolean; log?: (message: string) => void },
 ): Promise<ImportResult | null> {
   const now = options.now ?? new Date();
   if (!existsSync(options.archivePath)) return null;
   const last = repository.backloggdLibrary.syncedAt();
-  if (last && now.getTime() - new Date(last).getTime() < LIBRARY_SYNC_INTERVAL_MS) return null;
+  if (!options.force && last && now.getTime() - new Date(last).getTime() < LIBRARY_SYNC_INTERVAL_MS) return null;
   const existing = readArchive(options.archivePath);
   if (existing.username !== options.username) throw new Error(`archive belongs to ${existing.username}, not ${options.username}`);
   const archive = await crawlBackloggd({
-    username: options.username, existing, load: options.load, delayMs: options.delayMs ?? 600, refreshRecent: true,
+    username: options.username, existing, load: options.load, delayMs: options.delayMs ?? 600, refreshRecent: true, log: options.log,
   });
   writeArchive(options.archivePath, archive);
   return importArchive(repository, archive);
