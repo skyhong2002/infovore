@@ -1,12 +1,14 @@
 import { dayflowDetails } from './dayflow.js';
 import { computaiDetails } from './computai.js';
 import { placesDetails } from './places.js';
+import { kitsuShowboard } from './kitsu-library.js';
 import type { PlacesExtra } from '../location/public.js';
 import type { ComputaiExtra } from '../computai/types.js';
 import type { DayflowExtra } from '../dayflow/types.js';
 import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 import type { HealthConnectExtra, HealthDailySummary } from '../health/types.js';
+import type { KitsuExtra } from '../sources/kitsu.js';
 import { html, info, shell, timeAmount } from './pages.js';
 import { platformColors } from './rhythm.js';
 import { sleepSection } from './sleep.js';
@@ -267,17 +269,24 @@ export function platformPage(
   libraryHtml = '',
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
-  const coverage = definition.source === 'pocketlog' ? `${number(snapshot.stats.recordedDays ?? 0)} recorded days` : `${number(snapshot.entries.length)} synced entries`;
+  const kitsuLibrary = definition.source === 'kitsu' ? (snapshot.extra as Partial<KitsuExtra> | null)?.library : null;
+  const coverage = kitsuLibrary ? `${number(kitsuLibrary.anime.length + kitsuLibrary.manga.length)} library entries`
+    : definition.source === 'pocketlog' ? `${number(snapshot.stats.recordedDays ?? 0)} recorded days`
+    : `${number(snapshot.entries.length)} synced entries`;
   const waiting = definition.source === 'places' ? 'Updated with every sync, shown days behind' : definition.source === 'pocketlog' ? 'Waiting for the first sync' : 'Stored manually';
   const stats = Object.entries(snapshot.stats).filter(([key]) => !hiddenStats.has(key)).map(([key, value]) =>
     `<div class="platform-stat"><span>${html(statLabels[key] ?? label(key))}</span><strong>${number(value)}</strong></div>`
   ).join('');
-  const groups = [...new Set(snapshot.entries.map((entry) => entry.kind))];
+  const recent = kitsuLibrary ? snapshot.entries.filter((entry) => entry.status !== 'planned') : snapshot.entries;
+  const groups = [...new Set(recent.map((entry) => entry.kind))];
   const entries = groups.map((kind) => {
-    const items = snapshot.entries.filter((entry) => entry.kind === kind);
-    return `<section><div class="platform-section-heading"><h2>${html(kindLabels[kind] ?? kind)}</h2><span>${items.length} entries</span></div>
+    const items = recent.filter((entry) => entry.kind === kind);
+    const title = kindLabels[kind] ?? kind;
+    return `<section><div class="platform-section-heading"><h2>${html(kitsuLibrary ? `Recent ${title.toLowerCase()}` : title)}</h2><span>${items.length} entries</span></div>
       <div class="platform-entry-grid">${items.map(entryCard).join('')}</div></section>`;
   }).join('');
+  const platformEntries = kitsuLibrary ? kitsuShowboard(kitsuLibrary, entries)
+    : entries || (['dayflow', 'places', 'pocketlog'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>');
   const extra = (snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {}) as Record<string, unknown>;
   const extras = [
     definition.source === 'dayflow' || definition.source === 'pocketlog' ? dayflowDetails(extra as unknown as DayflowExtra, definition.source) : '',
@@ -325,6 +334,6 @@ export function platformPage(
       <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : waiting}</div>
     </section>
-    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${entries || (['dayflow', 'places', 'pocketlog'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>')}${libraryHtml}${cards}</div>${aside}</div>`;
+    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${platformEntries}${libraryHtml}${cards}</div>${aside}</div>`;
   return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms', '', { path: `/platforms/${definition.source}` });
 }

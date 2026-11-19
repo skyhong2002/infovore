@@ -6,6 +6,7 @@ import { createIngestApp } from '../src/ingest.js';
 import { setCache } from '../src/data/cache.js';
 import { normalizeYoutube } from '../src/sources/youtube.js';
 import type { SourceSnapshot } from '../src/data/types.js';
+import type { KitsuLibraryEntry } from '../src/sources/kitsu.js';
 
 const ingestApp = createIngestApp(repository);
 
@@ -543,4 +544,37 @@ test('responses are compressed when the client accepts it', async () => {
   assert.ok((await gzipped.arrayBuffer()).byteLength < (await plain.text()).length / 3);
   const png = await app.request('/favicon.png', { headers: { 'accept-encoding': 'gzip' } });
   assert.equal(png.headers.get('content-encoding'), null, 'already-compressed images are left alone');
+});
+
+test('the Kitsu platform shows library shelves after sync and supports older snapshots', async () => {
+  const snapshot: SourceSnapshot = {
+    source: 'kitsu',
+    profile: { id: 'sky', name: 'Sky', avatar: '', url: 'https://kitsu.app/users/sky' },
+    stats: {},
+    entries: [{
+      source: 'kitsu', kind: 'anime', status: 'current', title: 'Recent title',
+      image: '', activityAt: '2026-07-11T00:00:00Z', rating: null, extra: { progress: 2 },
+    }],
+    extra: {},
+  };
+  setCache('data:kitsu', snapshot);
+  const legacy = await app.request('/platforms/kitsu');
+  assert.equal(legacy.status, 200);
+  assert.match(await legacy.text(), /<h2>Anime<\/h2>[\s\S]*Recent title/);
+
+  const current: KitsuLibraryEntry = {
+    id: '1', title: 'Recent title', image: '', thumbnail: '', url: 'https://kitsu.app/anime/recent-title',
+    status: 'current', rating: null, progress: 2, total: 12, progressedAt: '2026-07-11T00:00:00Z', addedAt: null,
+  };
+  const planned = { ...current, id: '2', title: 'A & B', status: 'planned', progress: 0 };
+  setCache('data:kitsu', { ...snapshot, extra: { library: { anime: [current], manga: [planned] } } });
+  const $ = load(await (await app.request('/platforms/kitsu')).text());
+  assert.equal($('.library-tile').attr('href'), current.url);
+  assert.equal($('.kitsu-tile-meta').text(), '2/12 episodes');
+  assert.equal($('#manga-library summary').text(), 'Plan to read · 1');
+  assert.equal($('#manga-library details').attr('open'), undefined);
+  assert.equal($('#manga-library tbody td').first().text(), 'A & B');
+  assert.match($('.platform-main').text(), /Recent anime/);
+  assert.match($('.platform-aside').text(), /2 library entries/);
+  assert.equal($('a[href="/api/kitsu.json"]').length, 1);
 });

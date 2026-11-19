@@ -3,7 +3,7 @@ import test from 'node:test';
 import { parseBackloggdLogFixture, parseBackloggdRecentFixture } from '../src/sources/backloggd.js';
 import { parseHardcoverBooks, webImage, type HardcoverUserBook } from '../src/sources/hardcover.js';
 import { starString } from '../src/output/hardcover.js';
-import { parseKitsuEntries } from '../src/sources/kitsu.js';
+import { fetchKitsu } from '../src/sources/kitsu.js';
 import { parseSimklEntries } from '../src/sources/simkl.js';
 import { normalizeStatsfm } from '../src/sources/statsfm.js';
 import { fetchYoutube, normalizeYoutube } from '../src/sources/youtube.js';
@@ -198,14 +198,55 @@ test('a cover browsers cannot display (a TIFF edition scan) falls back to the bo
   assert.equal(webImage(null), '');
 });
 
-test('Kitsu JSON fixture resolves included media and stable library id', () => {
-  const entries = parseKitsuEntries({
-    data: [{ id: 'le-1', attributes: { status: 'current', progressedAt: '2026-07-11T00:00:00Z', ratingTwenty: 18, progress: 4 }, relationships: { anime: { data: { id: 'a-1' } } } }],
-    included: [{ id: 'a-1', attributes: { titles: { en: 'English title' }, canonicalTitle: 'Canonical', posterImage: { small: 'cover.jpg' } } }],
-  }, 'anime');
-  assert.equal(entries[0].sourceItemId, 'le-1');
-  assert.equal(entries[0].title, 'English title');
-  assert.deepEqual(entries[0].rating, { value: 9, scale: 10 });
+test('Kitsu pages the public library and keeps archival entries out of the recent snapshot', async (t) => {
+  let changedDuringSync = false;
+  const offsets: number[] = [];
+  const anime = Array.from({ length: 102 }, (_, index) => ({
+    id: `library-${index}`,
+    attributes: {
+      status: index === 101 ? 'planned' : 'current',
+      progressedAt: index === 101 ? null : new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      createdAt: '2026-07-11T00:00:00Z',
+      ratingTwenty: 18,
+      progress: 4,
+      private: index === 100,
+      notes: 'a private note',
+    },
+    relationships: { anime: { data: { id: 'media-1' } } },
+  }));
+  t.mock.method(globalThis, 'fetch', async (input: string) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith('/stats')) return Response.json({ data: [] });
+    if (!url.pathname.endsWith('/library-entries')) return Response.json({ data: { attributes: { name: 'Sky' } } });
+    if (url.searchParams.get('filter[kind]') === 'manga') return Response.json({ data: [], meta: { count: 0 } });
+    const offset = Number(url.searchParams.get('page[offset]'));
+    const size = Number(url.searchParams.get('page[limit]'));
+    offsets.push(offset);
+    return Response.json({
+      data: anime.slice(offset, offset + size),
+      meta: { count: changedDuringSync && offset ? anime.length - 1 : anime.length },
+      included: [{ id: 'media-1', attributes: {
+        titles: { en: 'English title' }, canonicalTitle: 'Canonical', slug: 'english-title',
+        posterImage: { small: 'cover.jpg' }, episodeCount: 12,
+      } }],
+    });
+  });
+  const snapshot = await fetchKitsu();
+  const library = snapshot.extra.library;
+  assert.deepEqual(offsets, [0, 100]);
+  assert.equal(library.anime.length, 101);
+  assert.equal(library.manga.length, 0);
+  assert.equal(library.anime[0].id, 'library-0');
+  assert.equal(library.anime[0].total, 12);
+  assert.equal(library.anime[0].url, 'https://kitsu.app/anime/english-title');
+  assert.doesNotMatch(JSON.stringify(snapshot), /library-100|a private note/);
+  assert.equal(snapshot.entries.length, 11);
+  assert.equal(snapshot.entries[0].sourceItemId, 'library-99');
+  assert.equal(snapshot.entries[0].title, 'English title');
+  assert.deepEqual(snapshot.entries[0].rating, { value: 9, scale: 10 });
+  assert.equal(snapshot.entries[10].sourceItemId, 'library-101');
+  changedDuringSync = true;
+  await assert.rejects(fetchKitsu(), /anime library changed during pagination/);
 });
 
 test('Simkl fixture normalizes movie, TV, and anime ids', () => {
