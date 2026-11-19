@@ -8,6 +8,7 @@ import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 import type { HealthConnectExtra, HealthDailySummary } from '../health/types.js';
 import { html, info, shell, timeAmount } from './pages.js';
+import { platformColors } from './rhythm.js';
 import { sleepSection } from './sleep.js';
 import { dateFormat } from '../data/time.js';
 
@@ -19,8 +20,10 @@ export interface PlatformDefinition {
   url?: string;
   jsonUrl?: string;
   cards?: string[];
-  // Brand mark shown when the platform has no user avatar to mirror.
+  // Brand mark for the index and for detail pages without a profile avatar.
   logo?: string;
+  // Platform mark for the index when the detail page shows the mirror's mark.
+  indexLogo?: string;
   // The service the data is mirrored through, when it is not the platform itself.
   via?: { name: string; url: string };
 }
@@ -229,16 +232,16 @@ function platformNav(active?: string): string {
 export function platformIndexPage(ownerName: string, platforms: PlatformSummary[]): string {
   const cards = platforms.map(({ definition, snapshot, fetchedAt }) => {
     const profile = snapshot?.profile;
+    const logo = definition.indexLogo ?? definition.logo;
+    const accent = platformColors[definition.source] ?? definition.accent;
     const daysOnly = definition.source === 'pocketlog';
     const entryCount = daysOnly ? snapshot?.stats.recordedDays ?? 0 : snapshot?.entries.length ?? 0;
     const entryLabel = daysOnly ? 'recorded days' : 'synced entries';
     const stats = Object.entries(snapshot?.stats ?? {}).slice(0, 3);
-    return `<a class="platform-tile" href="/platforms/${html(definition.source)}" style="--platform-accent:${html(definition.accent)}">
-      <div class="platform-tile-top">${profile?.avatar
-        ? `<img src="${html(profile.avatar)}" alt="" loading="lazy">`
-        : definition.logo
-          ? `<img src="${html(definition.logo)}" alt="${html(definition.via?.name ?? definition.title)} logo" loading="lazy">`
-          : `<span class="platform-monogram">${html(definition.title.slice(0, 1))}</span>`}
+    return `<a class="platform-tile" href="/platforms/${html(definition.source)}" style="--platform-accent:${html(accent)}">
+      <div class="platform-tile-top">${logo
+        ? `<img src="${html(logo)}" alt="" width="42" height="42" loading="lazy">`
+        : `<span class="platform-monogram" aria-hidden="true">${html(definition.title.slice(0, 1))}</span>`}
         <div><div class="platform-eyebrow">Platform mirror${definition.via ? ` · via ${html(definition.via.name)}` : ''}</div><h2>${html(definition.title)}</h2>
         <p>${html(profile?.name ?? 'Waiting for first sync')}</p></div></div>
       <p class="platform-description">${html(definition.description)}</p>

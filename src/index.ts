@@ -661,15 +661,15 @@ app.get('/og.png', (c) => {
 // only sections whose source is enabled are shown.
 const allSections: PlatformDefinition[] = [
   { source: 'dayflow', title: 'Dayflow', description: 'Daily computer activity, category breakdowns and active time from Dayflow.', accent: '#b5adff', cards: ['dayflow', 'dayflow-keywords', 'dayflow-categories'], jsonUrl: '/api/dayflow.json', logo: '/logos/dayflow.png' },
-  { source: 'backloggd', title: 'Backloggd', description: 'Games played, backlog totals, platforms and recent sessions.', accent: '#8dd3a8', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'] },
-  { source: 'kitsu', title: 'Kitsu', description: 'Anime and manga progress, ratings and library status.', accent: '#f779a1', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'] },
-  { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'] },
-  { source: 'simkl', title: 'Simkl', description: 'Movies, TV and anime collected into one watch history.', accent: '#7bb8ff', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'] },
-  { source: 'hardcover', title: 'Hardcover', description: 'Reading shelf, completed books, authors and ratings.', accent: '#d6b98c', url: `https://hardcover.app/@${config.hardcover.username}`, cards: ['hardcover'] },
+  { source: 'backloggd', title: 'Backloggd', description: 'Games played, backlog totals, platforms and recent sessions.', accent: '#8dd3a8', url: `https://backloggd.com/u/${config.backloggd.username}/`, cards: ['backloggd'], logo: '/logos/backloggd.png' },
+  { source: 'kitsu', title: 'Kitsu', description: 'Anime and manga progress, ratings and library status.', accent: '#f779a1', url: `https://kitsu.app/users/${config.kitsu.slug}`, cards: ['kitsu', 'kitsu-anime', 'kitsu-manga'], logo: '/logos/kitsu.png' },
+  { source: 'statsfm', title: 'stats.fm', description: 'Recent listens, weekly totals, top albums and top artists.', accent: '#1ed760', url: `https://stats.fm/${config.statsfm.username}`, cards: ['statsfm', 'statsfm-albums', 'statsfm-artists'], logo: '/logos/statsfm.png' },
+  { source: 'simkl', title: 'Simkl', description: 'Movies, TV and anime collected into one watch history.', accent: '#7bb8ff', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'], logo: '/logos/simkl.png' },
+  { source: 'hardcover', title: 'Hardcover', description: 'Reading shelf, completed books, authors and ratings.', accent: '#d6b98c', url: `https://hardcover.app/@${config.hardcover.username}`, cards: ['hardcover'], logo: '/logos/hardcover.png' },
   {
     source: 'youtube', title: 'YouTube', description: 'Viewing volume, top channels, topics and most-watched videos, mirrored from urtube.',
     accent: '#ff453a', url: `${config.urtube.baseUrl}/${config.urtube.handle}`, cards: ['youtube', 'youtube-channels', 'youtube-topics'],
-    logo: '/logos/urtube.svg', via: { name: 'urtube', url: config.urtube.baseUrl },
+    logo: '/logos/urtube.svg', indexLogo: '/logos/youtube.png', via: { name: 'urtube', url: config.urtube.baseUrl },
   },
   {
     source: 'computai', title: 'ComputAI', description: 'AI agent tokens, hours and models across Claude Code and Codex on every machine, as a rolling 30-day report.',
@@ -686,7 +686,7 @@ const sections = allSections.filter((s) =>
 );
 const manualPlatform: PlatformDefinition = {
   source: 'events', title: 'Manual events', description: 'Concerts, performances and real-world activities recorded by hand.',
-  accent: '#c39bff',
+  accent: '#c39bff', logo: '/logos/events.svg',
 };
 
 // YouTube watches live in urtube; the mirrored snapshot carries the lifetime

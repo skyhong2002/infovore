@@ -250,18 +250,20 @@ test('the daily library sync refetches recent logs, is throttled, and does nothi
     const changed = sitePages();
     changed['/u/sky/logs/hades/'] = logHtml.replace('<p>Completed</p>', '<p>Playing</p>');
     const site = fakeSite(changed);
-    const now = new Date('2026-11-18T00:00:00Z');
-    const result = await syncBackloggdLibrary(repository, { ...options, load: site.load, now });
+    const result = await syncBackloggdLibrary(repository, { ...options, load: site.load });
     assert.equal(result?.datedGames, 1);
     assert.deepEqual(site.requested.filter((p) => p.includes('/logs/')), ['/u/sky/logs/hades/']);
     assert.equal(repository.backloggdLibrary.read()!.games.played.find((g) => g.slug === 'hades')!.status, 'Playing');
     assert.equal(readArchive(archivePath).logs.hades?.status, 'Playing');
 
     // A second run within the interval is skipped; a day later it runs again.
+    const syncedAt = repository.backloggdLibrary.syncedAt();
+    assert.ok(syncedAt);
+    const afterHours = (hours: number) => new Date(Date.parse(syncedAt) + hours * 3_600_000);
     const again = fakeSite(changed);
-    assert.equal(await syncBackloggdLibrary(repository, { ...options, load: again.load, now: new Date('2026-11-18T05:00:00Z') }), null);
+    assert.equal(await syncBackloggdLibrary(repository, { ...options, load: again.load, now: afterHours(5) }), null);
     assert.equal(again.requested.length, 0);
-    assert.notEqual(await syncBackloggdLibrary(repository, { ...options, load: again.load, now: new Date('2026-11-19T01:00:00Z') }), null);
+    assert.notEqual(await syncBackloggdLibrary(repository, { ...options, load: again.load, now: afterHours(25) }), null);
     repository.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

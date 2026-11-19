@@ -12,3 +12,5 @@ shareable card. The page is an infovore mirror, not an official Google app.
 
 - `dayflow.png`: Dayflow macOS app icon, converted from the installed app’s `Contents/Resources/AppIcon.icns` at 256px for source identification.
 - `computai.svg`: drawn for infovore (ComputAI has no logo): three rising bars in the AI agents card's GitHub palette. Not an official ComputAI mark.
+- `youtube.png`: [official YouTube Brand favicon](https://www.gstatic.com/marketing-cms/assets/images/98/c6/59f93f6f4ac1a8e63612c5370193/favicon-1.png=s180), used on the YouTube tile in the platform index.
+- `events.svg`: infovore's calendar icon for manually logged events.

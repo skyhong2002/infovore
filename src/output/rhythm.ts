@@ -3,22 +3,22 @@ import { h, renderCard, textFont, truncate } from './render.js';
 import { timeAmount } from './pages.js';
 
 export const coverageSources: Record<string, { label: string; color: string }> = {
-  dayflow: { label: 'Dayflow', color: '#f59b45' },
-  pocketlog: { label: 'Phone', color: '#f4a6c6' },
-  'health-sleep': { label: 'Sleep', color: '#a8c7fa' },
-  health: { label: 'Exercise', color: '#67d5c3' },
-  statsfm: { label: 'Music', color: '#1ed760' },
-  youtube: { label: 'YouTube', color: '#ff5c5c' },
+  dayflow: { label: 'Dayflow', color: '#ff8133' },
+  pocketlog: { label: 'Phone', color: '#6f997e' },
+  'health-sleep': { label: 'Sleep', color: '#8ab4f8' },
+  health: { label: 'Exercise', color: '#4285f4' },
+  statsfm: { label: 'Music', color: '#1ed761' },
+  youtube: { label: 'YouTube', color: '#ff0033' },
   computai: { label: 'AI agents', color: '#b48cff' },
 };
 // Home's time-by-platform bars use the rhythm colors, plus distinct hues for
 // platforms that only report totals and never appear as rhythm lanes.
 export const platformColors: Record<string, string> = {
   ...Object.fromEntries(Object.entries(coverageSources).map(([source, { color }]) => [source, color])),
-  backloggd: '#f2d45c',
-  simkl: '#5b8def',
-  kitsu: '#f779a1',
-  hardcover: '#c8a27a',
+  backloggd: 'light-dark(#497b9c,#badefc)',
+  simkl: 'var(--text)',
+  kitsu: '#fd755c',
+  hardcover: '#6366f1',
 };
 const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div', { style: { display: 'flex', ...style } }, ...children);
 const text = (value: string, style: Record<string, unknown> = {}) => h('span', { style: { display: 'flex', fontFamily: textFont(value, 'Inter'), ...style } }, value);

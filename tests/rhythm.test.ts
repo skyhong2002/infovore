@@ -11,7 +11,7 @@ test('rhythm card renders seven days, Dayflow orange, and an empty week', async 
   const days = recordedCoverage([{ source: 'dayflow', start: +now - 3600000, end: +now }], now);
   const svg = await buildRhythmCard('Sky', days);
   assert.match(svg, /width="520"/);
-  assert.match(svg, /#f59b45/);
+  assert.match(svg, /#ff8133/);
   const png = await rasterize(svg, 'png', 1);
   assert.equal(png.readUInt32BE(16), 520);
   assert.ok(png.readUInt32BE(20) > 450);

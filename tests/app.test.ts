@@ -354,7 +354,11 @@ test('YouTube platform pages render only the urtube mirror', async () => {
   assert.match(platformIndex, /href="\/platforms\/youtube"/);
   assert.match(platformIndex, /watch events 403/);
   assert.match(platformIndex, /Platform mirror · via urtube/);
-  assert.match(platformIndex, /src="\/logos\/urtube\.svg"/);
+  const indexPage = load(platformIndex);
+  assert.equal(indexPage('.platform-tile[href="/platforms/youtube"] img').attr('src'), '/logos/youtube.png');
+  const youtubeLogo = await app.request('/logos/youtube.png');
+  assert.equal(youtubeLogo.status, 200);
+  assert.equal(youtubeLogo.headers.get('content-type'), 'image/png');
   const logoResponse = await app.request('/logos/urtube.svg');
   assert.equal(logoResponse.status, 200);
   assert.equal(logoResponse.headers.get('content-type'), 'image/svg+xml');
@@ -420,10 +424,21 @@ test('platform index and dedicated mirrors render source-native content', async 
   assert.match(indexHtml, /Manual events/);
   assert.match(indexHtml, /href="\/platforms" aria-current="page">Platforms/);
   assert.match(indexHtml, /href="\/">Home/);
+  const indexPage = load(indexHtml);
+  for (const [source, logo] of Object.entries({
+    backloggd: 'backloggd.png', kitsu: 'kitsu.png', statsfm: 'statsfm.png',
+    simkl: 'simkl.png', hardcover: 'hardcover.png', events: 'events.svg',
+  })) {
+    const src = `/logos/${logo}`;
+    assert.equal(indexPage(`.platform-tile[href="/platforms/${source}"] img`).attr('src'), src);
+    assert.equal((await app.request(src)).status, 200, src);
+  }
+  assert.doesNotMatch(indexHtml, /example\.test\/avatar\.jpg/);
 
   const mirror = await app.request('/platforms/statsfm');
   const mirrorHtml = await mirror.text();
   assert.equal(mirror.status, 200);
+  assert.match(mirrorHtml, /class="platform-avatar" src="https:\/\/example\.test\/avatar\.jpg"/);
   assert.match(mirrorHtml, /Mirror Song/);
   assert.match(mirrorHtml, /Mirror Album/);
   assert.match(mirrorHtml, /Top albums this week/);
