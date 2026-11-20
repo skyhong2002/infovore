@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 //   (/api/places/fog), then the last year, 28 days and 7 days of recorded
 //   tracks (/api/places/recent); .atlas-legend buttons switch them;
 // - drag, wheel, pinch, double-click and +/− to move; buttons in
-//   .atlas-views fly to a country's explored area, or to all of them.
+//   .atlas-views fly to a country overview, or to all explored areas.
 // Data comes from data-* attributes on .places-atlas.
 export const placesMapScript = String.raw`(() => {
   const root = document.querySelector('.places-atlas');
@@ -242,12 +242,15 @@ export const placesMapScript = String.raw`(() => {
     if (index === 'all') {
       const xs = views.flatMap((v) => [v.bounds[0], v.bounds[2]]), ys = views.flatMap((v) => [v.bounds[1], v.bounds[3]]);
       fit([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
-    } else fit(views[Number(index)].bounds);
+    } else {
+      const view = views[Number(index)];
+      fit(view.overview || view.bounds);
+    }
   }));
 
   new ResizeObserver(resize).observe(canvas);
   resize();
-  if (views.length) fit(views[0].bounds, false);
+  if (views.length) fit(views[0].overview || views[0].bounds, false);
   // Repaint when the theme changes.
   new MutationObserver(request).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', request);
@@ -256,5 +259,9 @@ export const placesMapScript = String.raw`(() => {
 
 /** assets/land.json, served at /places/land.json. */
 export const landJson = readFileSync(new URL('../../assets/land.json', import.meta.url));
+export type MapBounds = [number, number, number, number];
+export const countryMapBounds = new Map(Object.entries(
+  (JSON.parse(landJson.toString()) as { countryBounds: Record<string, MapBounds> }).countryBounds,
+));
 /** Changes with the basemap or the script, for cache-safe URLs. */
 export const placesMapVersion = createHash('sha1').update(landJson).update(placesMapScript).digest('hex').slice(0, 10);

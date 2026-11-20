@@ -4,7 +4,7 @@ import { EXPLORED_COLOR } from '../fog/tiles.js';
 import { dateFormat } from '../data/time.js';
 import { html } from './pages.js';
 import { flagOf } from '../location/regions.js';
-import { placesMapVersion } from './places-map.js';
+import { countryMapBounds, placesMapVersion, type MapBounds } from './places-map.js';
 
 // The public Places platform: see src/location/public.ts for what is (and is
 // never) published. The map is one canvas (src/output/places-map.ts) over a
@@ -54,7 +54,14 @@ const STYLE = `<style>
 function atlas(extra: PlacesExtra, landVersion: string): string {
   const views = extra.maps.map((entry: PlacesMap) => {
     const n = 2 ** entry.z;
-    return { label: entry.label, bounds: [entry.x / n, entry.y / n, (entry.x + entry.cols) / n, (entry.y + entry.rows) / n] };
+    const bounds: MapBounds = [entry.x / n, entry.y / n, (entry.x + entry.cols) / n, (entry.y + entry.rows) / n];
+    const country = countryMapBounds.get(entry.code === 'US' ? 'United States of America' : entry.label);
+    if (!country) return { label: entry.label, bounds };
+    const [west, north, east, south] = country;
+    const offset = Math.round((bounds[0] + bounds[2] - west - east) / 2);
+    const overview = [Math.min(bounds[0], west + offset), Math.min(bounds[1], north),
+      Math.max(bounds[2], east + offset), Math.max(bounds[3], south)];
+    return { label: entry.label, bounds, overview };
   });
   const buttons = extra.maps.map((entry, index) =>
     `<button type="button" data-view="${index}" aria-pressed="${index === 0}">${flagOf(entry.code)} ${html(entry.label)}<span>${kmText(entry.km2).replace(' km', ' km²')}</span></button>`).join('');

@@ -11,6 +11,7 @@ const { EXPLORED_COLOR, renderExploredRgba, parseTile } = await import('../src/f
 const { afterFogSync, lastSeenRegion, placesSnapshot, publicCutoff } = await import('../src/location/public.js');
 const { flagOf, regionOf } = await import('../src/location/regions.js');
 const { inPrivacyZone, parsePlacesConfig, parsePrivacyZones } = await import('../src/location/zones.js');
+const { placesDetails } = await import('../src/output/places.js');
 
 const WORLD = 2 ** 22;
 const fogPixel = (lat: number, lng: number) => [
@@ -188,6 +189,32 @@ function patch(lat: number, lng: number, side: number) {
   for (let dy = 0; dy < side; dy++) for (let dx = 0; dx < side; dx++) pixels.push([gx + dx, gy + dy]);
   return encodeTile(Math.floor(gx / 8192), Math.floor(gy / 8192), pixels);
 }
+
+test('France overview frames metropolitan France while retaining the separate explored bounds', () => {
+  const repo = new Repository(':memory:');
+  try {
+    const paris = patch(48.86, 2.35, 120);
+    repo.fog.put(paris.name, 'paris', paris.data, '2026-11-01T00:00:00.000Z');
+    const places = parsePlacesConfig({ LOCATION_PRIVACY_ZONES: '24.787,120.997,1500' })!;
+    const { extra } = placesSnapshot(repo.location, repo.fog, places, 'France test', new Date('2026-11-17T04:00:00Z'));
+    const markup = placesDetails(extra);
+    const encoded = /data-views="([^"]+)"/.exec(markup)?.[1];
+    assert.ok(encoded);
+    const [{ label, bounds, overview }] = JSON.parse(encoded.replaceAll('&quot;', '"'));
+    assert.equal(label, 'France');
+    assert.ok(bounds[2] - bounds[0] < 2 / 360, 'explored bounds are still local to Paris');
+    const contains = (lat: number, lng: number) => {
+      const [pointX, pointY] = fogPixel(lat, lng).map((value) => value / WORLD);
+      return pointX >= overview[0] && pointX <= overview[2] && pointY >= overview[1] && pointY <= overview[3];
+    };
+    for (const [lat, lng] of [[48.39, -4.49], [50.63, 3.06], [43.7, 7.26], [41.92, 8.74], [48.86, 2.35]]) {
+      assert.ok(contains(lat, lng), `${lat}, ${lng} should be in the overview`);
+    }
+    assert.ok(!contains(4.94, -52.33), 'overseas territories do not shrink metropolitan France into a dot');
+  } finally {
+    repo.close();
+  }
+});
 
 test('Fog of World adds undated regions, minus thin and ignored ones', () => {
   const repo = new Repository(':memory:');
