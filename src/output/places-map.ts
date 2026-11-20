@@ -26,12 +26,13 @@ export const placesMapScript = String.raw`(() => {
   let width = 0, height = 0, dpr = 1;
   let cx = 0.5, cy = 0.5, z = 2;
   let land = null, borders = null, scale = 1;
-  let frame = 0;
+  let frame = 0, animation = 0;
   const tiles = new Map();
 
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const world = () => 256 * 2 ** z;
-  const request = () => { if (!frame) frame = requestAnimationFrame(draw); };
+  const request = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; draw(); }); };
+  const stopFlight = () => { cancelAnimationFrame(animation); animation = 0; };
 
   function colors() {
     const style = getComputedStyle(root);
@@ -58,18 +59,31 @@ export const placesMapScript = String.raw`(() => {
     request();
   }).catch(() => {});
 
-  function tile(layer, tz, x, y) {
-    const key = layer.key + '/' + tz + '/' + x + '/' + y;
-    let entry = tiles.get(key);
-    if (!entry) {
+  const tileKey = (layer, tz, x, y) => layer.key + '/' + tz + '/' + x + '/' + y;
+
+  function loadTile(layer, tz, x, y) {
+    const key = tileKey(layer, tz, x, y);
+    if (!tiles.has(key)) {
       const img = new Image();
-      entry = { img, ready: false };
+      const entry = { img, ready: false };
       img.onload = () => { entry.ready = true; request(); };
-      img.src = layer.url.replace('{z}', tz).replace('{x}', x).replace('{y}', y);
       tiles.set(key, entry);
+      img.src = layer.url.replace('{z}', tz).replace('{x}', x).replace('{y}', y);
       if (tiles.size > 800) tiles.delete(tiles.keys().next().value);
     }
-    return entry;
+  }
+
+  function eachTile(layer, viewX, viewY, zoom, visit) {
+    const tz = clamp(Math.round(zoom), 0, layer.max);
+    const n = 2 ** tz, W = 256 * 2 ** zoom, size = W / n;
+    const left = width / 2 - viewX * W, top = height / 2 - viewY * W;
+    const x0 = Math.floor(-left / size), x1 = Math.ceil((width - left) / size);
+    const y0 = Math.max(0, Math.floor(-top / size)), y1 = Math.min(n, Math.ceil((height - top) / size));
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        visit(tz, ((x % n) + n) % n, y, left + x * size, top + y * size, size);
+      }
+    }
   }
 
   // A loaded tile covering (tz, x, y): itself, else the nearest loaded ancestor and the part of it to draw.
@@ -77,7 +91,7 @@ export const placesMapScript = String.raw`(() => {
     for (let up = 0; up <= tz; up++) {
       const pz = tz - up, f = 2 ** up;
       const px = Math.floor(x / f), py = Math.floor(y / f);
-      const entry = up === 0 ? tile(layer, pz, px, py) : tiles.get(layer.key + '/' + pz + '/' + px + '/' + py);
+      const entry = tiles.get(tileKey(layer, pz, px, py));
       if (entry && entry.ready) {
         const s = 256 / f;
         return { img: entry.img, sx: (x - px * f) * s, sy: (y - py * f) * s, s };
@@ -87,7 +101,6 @@ export const placesMapScript = String.raw`(() => {
   }
 
   function draw() {
-    frame = 0;
     const c = colors();
     const W = world();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -95,11 +108,9 @@ export const placesMapScript = String.raw`(() => {
     ctx.fillRect(0, 0, width, height);
     const left = width / 2 - cx * W, top = height / 2 - cy * W;
     // The world repeats east and west.
-    const copies = [];
-    for (let k = Math.floor(-left / W) - 1; k <= Math.ceil((width - left) / W); k++) copies.push(k);
     if (land) {
-      for (const k of copies) {
-        const s = W / scale;
+      const s = W / scale;
+      for (let k = Math.floor(-left / W); k < Math.ceil((width - left) / W); k++) {
         ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * (left + k * W), dpr * top);
         ctx.fillStyle = c.land;
         ctx.fill(land, 'evenodd');
@@ -111,20 +122,15 @@ export const placesMapScript = String.raw`(() => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     for (const layer of layers) {
       if (hidden.has(layer.key)) continue;
-      const tz = clamp(Math.round(z), 0, layer.max);
-      const n = 2 ** tz;
-      const size = W / n;
-      const x0 = Math.floor(-left / size), x1 = Math.floor((width - left) / size);
-      const y0 = Math.max(0, Math.floor(-top / size)), y1 = Math.min(n - 1, Math.floor((height - top) / size));
       const pieces = [];
-      for (let y = y0; y <= y1; y++) {
-        for (let x = x0; x <= x1; x++) {
-          const piece = covering(layer, tz, ((x % n) + n) % n, y);
-          if (piece) pieces.push([piece, left + x * size, top + y * size]);
-        }
-      }
+      eachTile(layer, cx, cy, z, (tz, x, y, dx, dy, size) => {
+        if (!animation) loadTile(layer, tz, x, y);
+        const piece = covering(layer, tz, x, y);
+        if (piece) pieces.push([piece, dx, dy, size]);
+      });
+      if (!pieces.length) continue;
       ctx.imageSmoothingEnabled = true;
-      const paint = () => { for (const [p, dx, dy] of pieces) ctx.drawImage(p.img, p.sx, p.sy, p.s, p.s, dx, dy, size + 0.5, size + 0.5); };
+      const paint = () => { for (const [p, dx, dy, size] of pieces) ctx.drawImage(p.img, p.sx, p.sy, p.s, p.s, dx, dy, size + 0.5, size + 0.5); };
       if ('filter' in ctx) {
         ctx.save();
         ctx.filter = 'blur(' + Math.round((layer.glow || 1) * (3 + Math.min(4, z / 2))) + 'px)';
@@ -147,6 +153,7 @@ export const placesMapScript = String.raw`(() => {
 
   // Zoom by dz keeping the point under (sx, sy) in place.
   function zoomAt(dz, sx, sy) {
+    stopFlight();
     const next = clamp(z + dz, MIN_Z, MAX_Z);
     const W = world();
     const wx = cx + (sx - width / 2) / W, wy = cy + (sy - height / 2) / W;
@@ -157,24 +164,28 @@ export const placesMapScript = String.raw`(() => {
     request();
   }
 
-  let animation = 0;
   function fit(bounds, animate = true) {
     const [bx0, by0, bx1, by1] = bounds;
     const pad = 0.12;
     const target = clamp(Math.log2(Math.min(width / ((bx1 - bx0) * (1 + pad * 2) * 256), height / ((by1 - by0) * (1 + pad * 2) * 256))), MIN_Z, maxTile);
     const tx = (bx0 + bx1) / 2, ty = (by0 + by1) / 2;
-    cancelAnimationFrame(animation);
+    stopFlight();
     if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) { cx = tx; cy = ty; z = target; request(); return; }
+    for (const layer of layers) {
+      if (!hidden.has(layer.key)) eachTile(layer, tx, ty, target, (tz, x, y) => loadTile(layer, tz, x, y));
+    }
     const from = { cx, cy, z }, start = performance.now(), duration = 700;
+    const dist = Math.hypot(tx - from.cx, ty - from.cy) * 256 * 2 ** Math.min(from.z, target) / Math.max(width, 1);
     const step = (now) => {
-      const t = Math.min(1, (now - start) / duration), e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+      const t = (now - start) / duration;
+      if (t >= 1) { cx = tx; cy = ty; z = target; animation = 0; request(); return; }
+      const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
       // Pull out a little in the middle of long moves.
-      const dist = Math.hypot(tx - from.cx, ty - from.cy) * 256 * 2 ** Math.min(from.z, target) / Math.max(width, 1);
       const lift = Math.min(3, Math.log2(1 + dist)) * Math.sin(Math.PI * e);
       cx = from.cx + (tx - from.cx) * e; cy = from.cy + (ty - from.cy) * e;
       z = from.z + (target - from.z) * e - lift;
-      draw();
-      if (t < 1) animation = requestAnimationFrame(step);
+      animation = requestAnimationFrame(step);
+      request();
     };
     animation = requestAnimationFrame(step);
   }
@@ -184,8 +195,9 @@ export const placesMapScript = String.raw`(() => {
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    cancelAnimationFrame(animation);
+    stopFlight();
     canvas.classList.add('dragging');
+    request();
   });
   canvas.addEventListener('pointermove', (e) => {
     const previous = pointers.get(e.pointerId);
