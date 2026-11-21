@@ -34,7 +34,7 @@ test('semantic provider sends only sanitized titles and validates per-title resu
     assert.equal(body.model, 'sky-quality');
     assert.equal(body.response_format.json_schema.strict, true);
     assert.deepEqual(JSON.parse(body.messages[1].content).activities, [{ id: 0, title: '修改樂譜' }]);
-    return reply([{ id: 0, labels: [label('樂譜整理'), label('零散'), label('person@example.com')] }]);
+    return reply([{ id: 0, labels: [label('樂譜整理'), label('零散'), label('person@example.com'), label('琴')] }]);
   };
   const result = await classifyQualityTitles([{ hash: qualityHash(title), title }], [], config, fetchImpl);
   assert.deepEqual(result, { labels: [[label('樂譜整理')]], model: 'resolved-quality-model' });
