@@ -8,6 +8,7 @@ const { app, repository } = await import('../src/index.js');
 const { Repository } = await import('../src/data/database.js');
 const { buildSnapshot } = await import('../src/pocketlog/store.js');
 const { syncPocketlog, PocketlogHttpError } = await import('../src/pocketlog/sync.js');
+const { DayflowQualityWorker } = await import('../src/dayflow/quality-worker.js');
 
 const H = 3_600_000;
 const at = (iso: string) => Date.parse(iso);
@@ -135,6 +136,56 @@ test('a full sync removes rebuilt activity IDs and updates shortened intervals',
 
   await syncPocketlog(repo.pocketlog, config, new Date(+later + H), fetcher, true);
   assert.deepEqual(repo.pocketlog.activities().map((a) => a.id), ['new', 'same']);
+  repo.close();
+});
+
+test('PocketLog backfills sanitized titles and shares Dayflow topic classification and publishing rules', async () => {
+  const repo = new Repository(':memory:', { dayflowQuality: true });
+  const now = new Date('2026-11-22T12:00:00+08:00');
+  const journal: Stored[] = [
+    { id: 'old', start_ms: +now - 60 * 24 * H, end_ms: +now - 60 * 24 * H + H,
+      category: 'work', app: 'private.app', title: '整理樂譜', summary: '' },
+    { id: 'first', start_ms: +now - 27 * H, end_ms: +now - 26 * H,
+      category: 'work', app: 'private.app', title: '透過 YouTube 查找樂譜 Alice@example.com', summary: 'private summary' },
+    { id: 'second', start_ms: +now - 4 * H, end_ms: +now - 3 * H,
+      category: 'work', app: 'private.app', title: '在 Discord 討論樂譜 https://example.com/private', summary: '', source: 'user' },
+    { id: 'app-only', start_ms: +now - 2 * H, end_ms: +now - H,
+      category: 'work', app: 'private.app', title: 'Discord', summary: '', source: 'app_only' },
+  ];
+  const { fetcher, calls } = fakePocketlog(journal);
+  await syncPocketlog(repo.pocketlog, config, new Date(+now - H), fetcher);
+  assert.equal(repo.pocketlog.activities()[0].qualityTitle, undefined);
+
+  const aiConfig = { ...config, classifyTitles: true };
+  calls.length = 0;
+  await syncPocketlog(repo.pocketlog, aiConfig, now, fetcher);
+  assert.ok(calls.filter((url) => url.startsWith('/v1/activities')).length > 13);
+  assert.equal(repo.pocketlog.status().qualityBackfilled, true);
+  assert.equal(repo.pocketlog.activities()[0].qualityTitle, '整理樂譜');
+  const before = repo.pocketlog.snapshot('Sky', now);
+  assert.deepEqual(before.extra.keywordPools?.all, []);
+  assert.equal(before.extra.keywordQuality?.mode, 'local');
+
+  const worker = new DayflowQualityWorker(repo.pocketlog, { baseUrl: 'http://model.test', apiKey: 'key', model: 'test' },
+    async (inputs, known) => {
+      assert.deepEqual(known, []);
+      assert.deepEqual(inputs.map((input) => input.title).sort(), ['在 Discord 討論樂譜', '整理樂譜', '透過 YouTube 查找樂譜'].sort());
+      return { model: 'test', labels: inputs.map(() => [
+        { name: '樂譜整理', kind: 'topic', confidence: 0.95 },
+        { name: 'Discord', kind: 'tool', confidence: 1 },
+        { name: 'Low confidence', kind: 'topic', confidence: 0.6 },
+      ]) };
+    }, 'pocketlog');
+  assert.equal(await worker.tick(now), 3);
+  const after = repo.pocketlog.snapshot('Sky', now);
+  assert.deepEqual(after.extra.keywordPools?.all, [{ name: '樂譜整理', mentions: 2 }]);
+  assert.deepEqual(after.extra.keywordQuality, { mode: 'ai', classifiedActivities: 3, eligibleActivities: 3, model: 'test' });
+  assert.equal(repo.dayflow.quality.revision(), 0);
+  assert.doesNotMatch(JSON.stringify(after), /Discord|YouTube|Low confidence|example\.com|private summary|查找樂譜/);
+
+  calls.length = 0;
+  await syncPocketlog(repo.pocketlog, aiConfig, new Date(+now + H), fetcher);
+  assert.ok(calls.filter((url) => url.startsWith('/v1/activities')).length < 10);
   repo.close();
 });
 

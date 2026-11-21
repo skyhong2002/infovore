@@ -1,13 +1,14 @@
 import { narrativeKeywords } from '../dayflow/keywords.js';
+import { cleanQualityTitle } from '../dayflow/quality.js';
 import type { PocketlogActivity, PocketlogCategory, PocketlogStore } from './store.js';
 
 // Pulls PocketLog's derived activity cards with a revocable journal device key
 // (GET /v1/workspace and the paged GET /v1/activities, PocketLog docs/API.md).
 // Every run re-reads the last few days for late uploads and category edits;
-// once a day, and on the first run, a longer window. Titles and summaries are
-// reduced to fixed-vocabulary keywords here and never stored.
+// once a day, and on the first run, a longer window. Titles are sanitized
+// for classification when enabled. Summaries are only used for local matching.
 
-export interface PocketlogConfig { baseUrl: string; token: string; intervalMinutes: number }
+export interface PocketlogConfig { baseUrl: string; token: string; intervalMinutes: number; classifyTitles?: boolean }
 
 const DAY_MS = 86_400_000;
 const WINDOW_MS = 30 * DAY_MS; // the API's largest range per read
@@ -71,8 +72,10 @@ export async function readActivities(config: PocketlogConfig, from: number, to: 
       const cards = new Map(page.cards.map((card) => [card.id, card]));
       for (const a of page.activities) {
         const card = cards.get(a.id);
+        const qualityTitle = config.classifyTitles && card && KEYWORD_SOURCES.has(card.source ?? '')
+          ? cleanQualityTitle((card.title ?? '').replace(packageName, ' ')) : '';
         activities.push({ id: a.id, start: a.start_ms, end: a.end_ms, category: card?.category ?? a.category,
-          keywords: cardKeywords(card) });
+          keywords: cardKeywords(card), ...(qualityTitle ? { qualityTitle } : {}) });
       }
       cursor = page.next_cursor;
     } while (cursor);
@@ -84,8 +87,10 @@ export async function readActivities(config: PocketlogConfig, from: number, to: 
 export async function syncPocketlog(store: PocketlogStore, config: PocketlogConfig, now = new Date(), fetcher: typeof fetch = fetch, backfill = false) {
   const status = store.status();
   const latest = store.latestStart();
-  const full = backfill || !status.lastFullAt || +now - Date.parse(status.lastFullAt) > DAY_MS;
-  const start = +now - (backfill || latest === null ? BACKFILL_DAYS : full ? FULL_DAYS : RECENT_DAYS) * DAY_MS;
+  const qualityBackfill = Boolean(config.classifyTitles && !status.qualityBackfilled);
+  const fullBackfill = backfill || qualityBackfill || latest === null;
+  const full = fullBackfill || !status.lastFullAt || +now - Date.parse(status.lastFullAt) > DAY_MS;
+  const start = +now - (fullBackfill ? BACKFILL_DAYS : full ? FULL_DAYS : RECENT_DAYS) * DAY_MS;
   let from = Math.min(start, latest ?? start);
   const to = +now + 60_000;
   const categories = await readCategories(config, fetcher);
@@ -96,7 +101,7 @@ export async function syncPocketlog(store: PocketlogStore, config: PocketlogConf
     read = await readActivities(config, from, to, fetcher);
   }
   const changed = store.save({
-    ...read, categories, full: full || latest === null || read.epoch !== status.journalEpoch,
+    ...read, categories, full: full || read.epoch !== status.journalEpoch, qualityBackfilled: Boolean(config.classifyTitles),
     window: { from, to, expectedAttempt: status.lastAttemptAt },
   }, now);
   return { read: read.activities.length, changed };

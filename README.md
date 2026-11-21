@@ -216,10 +216,12 @@ and `POCKETLOG_TOKEN` (a 64-hex **journal** device key issued in PocketLog under
 paged `GET /v1/activities` every `POCKETLOG_SYNC_INTERVAL_MINUTES` (default 15):
 the last 3 days on each run, 35 days once a day, and up to 400 days the first
 time or after the PocketLog journal is deleted. Each successful read also removes
-mirror rows absent from that range. Of each card it keeps only the
-interval, the effective category and the labels from the fixed keyword vocabulary
-(`src/dayflow/keywords.ts`); titles, summaries, apps and screen content stay in
-PocketLog. The public page uses Dayflow's layout for daily summaries, categories,
+mirror rows absent from that range. Infovore mirrors activity intervals and effective
+categories. With the Dayflow AI provider configured, it also backfills up to 400 days
+once and uses sanitized AI or owner-written card titles to classify PocketLog projects,
+topics and works with Dayflow's rules. Raw titles, summaries, app lists and screen
+content stay in PocketLog. Without model results, only project and activity labels
+from the fixed vocabulary are shown. The public page uses Dayflow's layout for daily summaries, categories,
 and recurring labels. `/api/pocketlog.json` uses the same `{ fetchedAt, data }`
 format as Dayflow, and `pocketlog`, `pocketlog-keywords`, and
 `pocketlog-categories` are available as share cards. Device keys
