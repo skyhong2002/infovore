@@ -8,7 +8,7 @@ export const coverageSources: Record<string, { label: string; color: string }> =
   'health-sleep': { label: 'Sleep', color: '#8ab4f8' },
   health: { label: 'Exercise', color: '#4285f4' },
   statsfm: { label: 'Music', color: '#1ed761' },
-  youtube: { label: 'YouTube', color: '#ff0033' },
+  youtube: { label: 'urtube', color: '#d03b3b' },
   computai: { label: 'AI agents', color: '#b48cff' },
 };
 // Home's time-by-platform bars use the rhythm colors, plus distinct hues for

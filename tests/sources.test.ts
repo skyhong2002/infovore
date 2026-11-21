@@ -7,6 +7,7 @@ import { fetchKitsu } from '../src/sources/kitsu.js';
 import { parseSimklEntries } from '../src/sources/simkl.js';
 import { normalizeStatsfm } from '../src/sources/statsfm.js';
 import { fetchYoutube, normalizeYoutube } from '../src/sources/youtube.js';
+import { config } from '../src/config.js';
 import { enrichPublicEvent, normalizeEvent, parseEventMetadata } from '../src/sources/events.js';
 
 
@@ -84,6 +85,40 @@ test('urtube fetch still fails the source when one summary window is unavailable
     return range === 'all' ? new Response('Unavailable', { status: 503 }) : Response.json(urtubeSummary('28d'));
   });
   await assert.rejects(fetchYoutube(), /youtube: HTTP 503/);
+});
+
+test('urtube recent watches use the latest event per video across interval pages', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-09-04T00:00:00Z'));
+  const previous = { ...config.urtube };
+  Object.assign(config.urtube, { publicRecent: true, dashboardToken: 'synthetic-dashboard-token' });
+  t.after(() => { Object.assign(config.urtube, previous); });
+  const cursor = '2026-09-02T04:00:00.000Z';
+  const repeat = { eventId: 'rewatch', videoId: 'repeatvideo', title: 'Repeat', watchedAt: '2026-09-03T18:00:00.000Z', precision: 'exact' };
+  let rejectIntervals = false;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const range = url.searchParams.get('range');
+    if (range === '28d' || range === 'all') {
+      assert.equal(new Headers(init?.headers).has('Authorization'), false);
+      return Response.json(urtubeSummary(range));
+    }
+    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer synthetic-dashboard-token');
+    assert.equal(init?.redirect, 'error');
+    if (rejectIntervals) return new Response(null, { status: 404 });
+    const boundary = { eventId: 'at-boundary', videoId: 'dateonlyvid', title: 'Day only', watchedAt: cursor, precision: 'day' };
+    return url.searchParams.get('since') === cursor
+      ? Response.json({ nextSince: null, intervals: [boundary, repeat] })
+      : Response.json({ nextSince: cursor, intervals: [{ ...repeat, eventId: 'first-watch', watchedAt: '2026-09-01T00:00:00Z' }, boundary] });
+  });
+
+  const snapshot = await fetchYoutube();
+  assert.deepEqual(snapshot.extra.recentVideos?.map(({ title, watchedAt, precision }) => [title, watchedAt, precision]), [
+    ['Repeat', '2026-09-03T18:00:00.000Z', 'exact'],
+    ['Day only', cursor, 'day'],
+  ]);
+  assert.equal(snapshot.entries.length, 1);
+  rejectIntervals = true;
+  assert.equal((await fetchYoutube()).extra.recentVideos, undefined);
 });
 
 test('urtube fetch failures name the range, phase and cause without the URL', async (t) => {

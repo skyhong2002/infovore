@@ -5,6 +5,7 @@ import { app, repository } from '../src/index.js';
 import { createIngestApp } from '../src/ingest.js';
 import { setCache } from '../src/data/cache.js';
 import { normalizeYoutube } from '../src/sources/youtube.js';
+import { config } from '../src/config.js';
 import type { SourceSnapshot } from '../src/data/types.js';
 import type { KitsuLibraryEntry } from '../src/sources/kitsu.js';
 
@@ -348,27 +349,42 @@ test('profile, now and Wrapped pages render from durable activities', async () =
   assert.deepEqual(status.refresh.running, []);
 });
 
-test('YouTube platform pages render only the urtube mirror', async () => {
+test('urtube platform page leads with opted-in watches and uses its own branding', async (t) => {
+  const previous = config.urtube.publicRecent;
+  t.after(() => { config.urtube.publicRecent = previous; });
   const mirror = normalizeYoutube(urtubeSummary('28d'), urtubeSummary('all'), { baseUrl: 'https://urtube.test', handle: 'sky', ownerName: 'Sky' });
+  mirror.extra.recentVideos = [
+    { videoId: 'recentvideo', title: 'Latest watch', channelTitle: 'Channel', watchedAt: '2026-09-02T17:30:00.000Z', precision: 'exact' },
+    { videoId: 'dateonlyvid', title: 'Date-only watch', channelTitle: 'Another channel', watchedAt: '2026-09-02T04:00:00.000Z', precision: 'day' },
+  ];
   setCache('data:youtube', mirror);
   const platformIndex = await (await app.request('/platforms')).text();
-  assert.match(platformIndex, /href="\/platforms\/youtube"/);
+  assert.match(platformIndex, /href="\/platforms\/urtube"/);
   assert.match(platformIndex, /watch events 403/);
-  assert.match(platformIndex, /Platform mirror · via urtube/);
-  const indexPage = load(platformIndex);
-  assert.equal(indexPage('.platform-tile[href="/platforms/youtube"] img').attr('src'), '/logos/youtube.png');
-  const youtubeLogo = await app.request('/logos/youtube.png');
-  assert.equal(youtubeLogo.status, 200);
-  assert.equal(youtubeLogo.headers.get('content-type'), 'image/png');
+  assert.doesNotMatch(platformIndex, /Platform mirror/i);
+  assert.match(platformIndex, /src="\/logos\/urtube\.svg\?v=brand"/);
   const logoResponse = await app.request('/logos/urtube.svg');
   assert.equal(logoResponse.status, 200);
   assert.equal(logoResponse.headers.get('content-type'), 'image/svg+xml');
   assert.equal((await app.request('/logos/missing.svg')).status, 404);
-  const dashboardPage = await app.request('/platforms/youtube');
+  const oldPath = await app.request('/platforms/youtube');
+  assert.equal(oldPath.status, 301);
+  assert.equal(oldPath.headers.get('location'), '/platforms/urtube');
+  config.urtube.publicRecent = false;
+  assert.doesNotMatch(await (await app.request('/platforms/urtube')).text(), /Latest watch/);
+  config.urtube.publicRecent = true;
+  const dashboardPage = await app.request('/platforms/urtube');
   assert.equal(dashboardPage.status, 200);
   const dashboardHtml = await dashboardPage.text();
   assert.match(dashboardHtml, /href="https:\/\/urtube\.test\/sky">Open on urtube/);
-  assert.match(dashboardHtml, /class="platform-avatar" src="\/logos\/urtube\.svg"/);
+  assert.match(dashboardHtml, /class="platform-avatar" src="\/logos\/urtube\.svg\?v=brand"/);
+  const $ = load(dashboardHtml);
+  assert.equal($('.platform-main > section').first().attr('id'), 'recent-watches');
+  assert.deepEqual($('#recent-watches h3').map((_, title) => $(title).text()).get(), ['Latest watch', 'Date-only watch']);
+  assert.deepEqual($('#recent-watches time').map((_, time) => $(time).attr('datetime')).get(), ['2026-09-02T17:30:00.000Z', '2026-09-02']);
+  assert.match($('#recent-watches time').first().text(), /Sep 3, 2026.*01:30/);
+  assert.equal($('#recent-watches time').last().text(), 'Sep 2, 2026');
+  assert.match(dashboardHtml, /Videos by watch time · last 28 days/);
   assert.match(dashboardHtml, /Top channels · last 28 days/);
   assert.match(dashboardHtml, /Theo - t3\.gg/);
   assert.match(dashboardHtml, /Music Performance · 79/);
@@ -376,6 +392,7 @@ test('YouTube platform pages render only the urtube mirror', async () => {
   assert.match(dashboardHtml, /1 plays · 1\.6h/);
   const mirrorJson = await (await app.request('/api/youtube.json')).text();
   assert.match(mirrorJson, /"lifetimeWatches":40652/);
+  assert.doesNotMatch(mirrorJson, /Latest watch|recentVideos/);
   const health = await app.request('/healthz');
   assert.equal(health.status, 200);
   assert.match(await health.text(), /"source":"youtube","fresh":true/);
@@ -420,7 +437,8 @@ test('platform index and dedicated mirrors render source-native content', async 
   const index = await app.request('/platforms');
   const indexHtml = await index.text();
   assert.equal(index.status, 200);
-  assert.match(indexHtml, /Platform mirror/);
+  assert.match(indexHtml, /<h1>Platforms<\/h1>/);
+  assert.doesNotMatch(indexHtml, /Platform mirror/i);
   assert.match(indexHtml, /href="\/platforms\/statsfm"/);
   assert.match(indexHtml, /Manual events/);
   assert.match(indexHtml, /href="\/platforms" aria-current="page">Platforms/);

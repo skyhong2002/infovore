@@ -139,6 +139,7 @@ export const config = {
     // Dashboard token for the private intervals feed (exact watch times with
     // measured or estimated seconds). Without it only public aggregates sync.
     dashboardToken: process.env.URTUBE_DASHBOARD_TOKEN ?? '',
+    publicRecent: process.env.URTUBE_PUBLIC_RECENT === 'true',
   },
   userAgent:
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',

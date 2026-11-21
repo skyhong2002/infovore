@@ -6,7 +6,7 @@ import type { CloudTerm } from './cloud.js';
 import { dayflowDay, type DayflowSnapshot } from '../dayflow/types.js';
 import { taipeiDay, dateFormat } from '../data/time.js';
 import type { Activity } from '../data/types.js';
-import { delta, html, info, shell, sourceLabel, sparkline, sum, timeAmount } from './pages.js';
+import { delta, html, info, platformPath, shell, sourceLabel, sparkline, sum, timeAmount } from './pages.js';
 import { activityMeta } from './activity-meta.js';
 
 export interface HomepageData {
@@ -197,7 +197,7 @@ export function syncAge(iso: string, now = new Date()): string {
 }
 
 function overviewTile(item: PlatformOverview): string {
-  return `<a class="home-platform-tile" href="/platforms/${html(item.source)}">
+  return `<a class="home-platform-tile" href="${platformPath(item.source)}">
     ${imageOrPlaceholder(item.image, 'home-platform-art', item.title)}
     <span class="home-platform-copy"><span class="home-platform-source">${html(sourceLabel(item.source))}</span><span class="home-platform-title" title="${html(item.title)}">${html(item.title)}</span><span class="home-platform-meta">${html(item.detail)}</span>${syncLine(item)}</span>
   </a>`;
@@ -244,7 +244,7 @@ function shareBar(entries: TimeEntry[], windowKey: 'last28d' | 'allTime', label:
     const seconds = entry.windows[windowKey];
     const share = seconds / total;
     const name = timeLabel(entry.source);
-    return { entry, seconds, share, name, color: platformColors[entry.source] ?? '#8caacb', href: entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${entry.source}` };
+    return { entry, seconds, share, name, color: platformColors[entry.source] ?? '#8caacb', href: entry.source === 'health-sleep' ? '/platforms/health#sleep' : platformPath(entry.source) };
   });
   const percent = (share: number) => share < 0.005 ? '<1%' : `${Math.round(share * 100)}%`;
   return `<section class="share-bar" aria-labelledby="share-bar-title"><div class="share-bar-head"><strong id="share-bar-title">Where the time went</strong><span>${html(label)} · ${html(timeAmount(total))} summed per platform, so overlapping time counts once for each platform (unlike “Time recorded”, which counts it once). Includes computer and phone activity and sleep, which the <a href="/stats">Time page</a> leaves out</span></div>
@@ -299,7 +299,7 @@ function timePanel(timeSpent: TimeSpentSummary | null, sleepTime?: TimeWindows |
     const approx = entry.method === 'estimated' ? '~' : '';
     const label = timeLabel(entry.source);
     const series = window.key === 'last28d' ? daily?.sources[entry.source] : undefined;
-    const href = entry.source === 'health-sleep' ? '/platforms/health#sleep' : `/platforms/${html(entry.source)}`;
+    const href = entry.source === 'health-sleep' ? '/platforms/health#sleep' : platformPath(entry.source);
     return `<a class="home-time-row" href="${href}" data-source="${html(entry.source)}"><span class="home-time-label" title="${html(label)}">${html(label)}</span><span class="home-time-track"><span style="width:${Math.max(3, Math.round(seconds / max * 100))}%${platformColors[entry.source] ? `;background:${platformColors[entry.source]}` : ''}"></span></span><strong class="home-time-value">${approx}${timeAmount(seconds)}</strong>${series ? `<span class="home-time-spark">${sparkline(series, { width: 64, height: 18, color: platformColors[entry.source], label: `${label} · daily` })}</span>` : ''}</a>`;
   }).join('');
   const notes = [

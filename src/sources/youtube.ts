@@ -67,6 +67,14 @@ export type YoutubeTopic = YoutubeSummary['topics'][number];
 export type YoutubeKeyword = YoutubeSummary['keywords'][number];
 export type YoutubeDay = YoutubeSummary['daily'][number];
 
+export interface YoutubeRecentVideo {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  watchedAt: string;
+  precision: 'exact' | 'day';
+}
+
 export interface YoutubeExtra {
   dashboardUrl: string;
   generatedAt: string;
@@ -75,6 +83,7 @@ export interface YoutubeExtra {
   lifetime: YoutubeWindowStats;
   topChannels: YoutubeChannel[];
   topVideos: YoutubeVideo[];
+  recentVideos?: YoutubeRecentVideo[];
   topics: YoutubeTopic[];
   keywords: YoutubeKeyword[];
   // Lifetime per-day estimates (Taipei calendar days) for the time ledger.
@@ -192,18 +201,27 @@ async function getSummary(range: '28d' | 'all'): Promise<unknown> {
 
 export async function fetchYoutube(): Promise<SourceSnapshot<YoutubeExtra>> {
   // Settle both windows so a failure reports every range, not just the first.
-  const [recent, lifetime] = await Promise.allSettled([getSummary('28d'), getSummary('all')]);
+  const [recent, lifetime, recentVideos] = await Promise.allSettled([
+    getSummary('28d'), getSummary('all'), fetchYoutubeRecentVideos(),
+  ]);
   if (recent.status === 'rejected' || lifetime.status === 'rejected') {
     const failures = [recent, lifetime].flatMap((r) => r.status === 'rejected' ? [r.reason instanceof Error ? r.reason.message : String(r.reason)] : []);
     throw new Error(failures.join('; '));
   }
-  return normalizeYoutube(recent.value, lifetime.value, { ...config.urtube, ownerName: config.ownerName });
+  const snapshot = normalizeYoutube(recent.value, lifetime.value, { ...config.urtube, ownerName: config.ownerName });
+  if (recentVideos.status === 'fulfilled' && recentVideos.value) {
+    snapshot.extra.recentVideos = recentVideos.value;
+  }
+  return snapshot;
 }
 
 const intervalsSchema = z.object({
   nextSince: z.string().nullable().catch(null),
   intervals: z.array(z.object({
     eventId: z.string().min(1),
+    videoId: z.string().regex(/^[\w-]{11}$/).nullable().catch(null),
+    title: optionalString,
+    channelTitle: optionalString,
     watchedAt: z.string().datetime({ offset: true }),
     precision: z.enum(['exact', 'day']).catch('day'),
     actualWatchedSeconds: z.coerce.number().finite().nullable().catch(null),
@@ -222,15 +240,43 @@ const INTERVAL_MAX_PAGES = 50;
 // re-reads the day before the checkpoint.
 const INTERVAL_OVERLAP_MS = 86_400_000;
 
-async function getIntervalPage(since: string): Promise<z.infer<typeof intervalsSchema>> {
+async function getIntervalPage(since: string, signal = AbortSignal.timeout(30000)): Promise<z.infer<typeof intervalsSchema>> {
   const { baseUrl, handle, dashboardToken } = config.urtube;
   const url = `${baseUrl}/u/${encodeURIComponent(handle)}/intervals.json?since=${encodeURIComponent(since)}&limit=${INTERVAL_PAGE}`;
   const res = await fetch(url, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${dashboardToken}`, 'User-Agent': config.userAgent },
-    signal: AbortSignal.timeout(30000),
+    signal,
+    redirect: 'error',
   });
   if (!res.ok) throw new Error(`youtube: HTTP ${res.status} for ${url.replace(/since=[^&]*/, 'since=…')}`);
   return intervalsSchema.parse(await res.json());
+}
+
+// Project only the latest distinct, identifiable videos from the same
+// 28-day period as the overview. The interval cursor runs oldest first.
+async function fetchYoutubeRecentVideos(): Promise<YoutubeRecentVideo[] | undefined> {
+  if (!config.urtube.publicRecent || !config.urtube.dashboardToken) return undefined;
+  const signal = AbortSignal.timeout(15_000);
+  let since = new Date(Date.now() - 28 * 86_400_000).toISOString();
+  const videos = new Map<string, YoutubeRecentVideo>();
+  for (let page = 0; page < INTERVAL_MAX_PAGES; page++) {
+    const { intervals, nextSince } = await getIntervalPage(since, signal);
+    for (const { videoId, title, channelTitle, watchedAt, precision } of intervals) {
+      if (!videoId || !title.trim()) continue;
+      const timestamp = new Date(watchedAt).toISOString();
+      const previous = videos.get(videoId);
+      if (previous && (previous.watchedAt > timestamp ||
+        (previous.watchedAt === timestamp && previous.precision === 'exact'))) continue;
+      videos.set(videoId, { videoId, title, channelTitle, watchedAt: timestamp, precision });
+    }
+    if (!nextSince) {
+      return [...videos.values()].sort((a, b) =>
+        b.watchedAt.localeCompare(a.watchedAt) || a.videoId.localeCompare(b.videoId)).slice(0, 10);
+    }
+    if (nextSince <= since) break;
+    since = nextSince;
+  }
+  throw new Error('youtube: recent watch pagination did not complete');
 }
 
 // Pull every watch interval since the stored checkpoint (all history on the

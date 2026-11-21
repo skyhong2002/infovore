@@ -9,10 +9,11 @@ import type { SourceTimeSpent } from '../data/database.js';
 import type { MediaEntry, SourceSnapshot } from '../data/types.js';
 import type { HealthConnectExtra, HealthDailySummary } from '../health/types.js';
 import type { KitsuExtra } from '../sources/kitsu.js';
-import { html, info, shell, timeAmount } from './pages.js';
+import { html, info, platformPath, shell, timeAmount } from './pages.js';
 import { platformColors } from './rhythm.js';
 import { sleepSection } from './sleep.js';
-import { dateFormat } from '../data/time.js';
+import type { YoutubeRecentVideo } from '../sources/youtube.js';
+import { dateFormat, taipeiDay } from '../data/time.js';
 
 export interface PlatformDefinition {
   source: string;
@@ -24,10 +25,6 @@ export interface PlatformDefinition {
   cards?: string[];
   // Brand mark for the index and for detail pages without a profile avatar.
   logo?: string;
-  // Platform mark for the index when the detail page shows the mirror's mark.
-  indexLogo?: string;
-  // The service the data is mirrored through, when it is not the platform itself.
-  via?: { name: string; url: string };
 }
 
 export interface PlatformSummary {
@@ -218,7 +215,7 @@ function platformNav(active?: string): string {
     ['statsfm', 'stats.fm'],
     ['simkl', 'Simkl'],
     ['hardcover', 'Hardcover'],
-    ['youtube', 'YouTube'],
+    ['youtube', 'urtube'],
     ['health', 'Health'],
     ['dayflow', 'Dayflow'],
     ['pocketlog', 'PocketLog'],
@@ -227,24 +224,24 @@ function platformNav(active?: string): string {
     ['events', 'Manual'],
   ];
   return `<nav class="platform-nav" aria-label="Platforms"><a href="/platforms"${active ? '' : ' aria-current="page"'}>All</a>${sources.map(([source, title]) =>
-    `<a href="/platforms/${source}"${active === source ? ' aria-current="page"' : ''}>${title}</a>`
+    `<a href="${platformPath(source)}"${active === source ? ' aria-current="page"' : ''}>${title}</a>`
   ).join('')}</nav>`;
 }
 
 export function platformIndexPage(ownerName: string, platforms: PlatformSummary[]): string {
   const cards = platforms.map(({ definition, snapshot, fetchedAt }) => {
     const profile = snapshot?.profile;
-    const logo = definition.indexLogo ?? definition.logo;
+    const logo = definition.logo;
     const accent = platformColors[definition.source] ?? definition.accent;
     const daysOnly = definition.source === 'pocketlog';
     const entryCount = daysOnly ? snapshot?.stats.recordedDays ?? 0 : snapshot?.entries.length ?? 0;
     const entryLabel = daysOnly ? 'recorded days' : 'synced entries';
     const stats = Object.entries(snapshot?.stats ?? {}).slice(0, 3);
-    return `<a class="platform-tile" href="/platforms/${html(definition.source)}" style="--platform-accent:${html(accent)}">
+    return `<a class="platform-tile" href="${platformPath(definition.source)}" style="--platform-accent:${html(accent)}">
       <div class="platform-tile-top">${logo
         ? `<img src="${html(logo)}" alt="" width="42" height="42" loading="lazy">`
         : `<span class="platform-monogram" aria-hidden="true">${html(definition.title.slice(0, 1))}</span>`}
-        <div><div class="platform-eyebrow">Platform mirror${definition.via ? ` · via ${html(definition.via.name)}` : ''}</div><h2>${html(definition.title)}</h2>
+        <div><h2>${html(definition.title)}</h2>
         <p>${html(profile?.name ?? 'Waiting for first sync')}</p></div></div>
       <p class="platform-description">${html(definition.description)}</p>
       <div class="platform-tile-stats"><strong>${number(entryCount)}</strong> ${entryLabel}${stats.length
@@ -253,10 +250,34 @@ export function platformIndexPage(ownerName: string, platforms: PlatformSummary[
       <div class="platform-tile-footer">${fetchedAt ? `Synced ${html(date(fetchedAt))}` : 'Live from the infovore archive'} <span>Open →</span></div>
     </a>`;
   }).join('');
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Source view</div><h1>Platform mirrors</h1>
+  const intro = `<section class="page-intro"><div><h1>Platforms</h1>
     <p>A local, read-only copy of what infovore collects for ${html(ownerName)} from every connected account—kept separate here, then surfaced on the personal homepage.</p></div>
     <div class="page-intro-aside">Open a platform to see its native entries, summary, and shareable cards.</div></section>`;
   return shell(`${ownerName} · platforms`, `${intro}${platformNav()}<div class="platform-index">${cards}</div>`, 'platforms', '', { path: '/platforms' });
+}
+
+const watchDay = dateFormat('en', {
+  timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric',
+});
+const watchDateTime = dateFormat('en', {
+  timeZone: 'Asia/Taipei', year: 'numeric', month: 'short', day: 'numeric',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+
+export function youtubeRecentSection(videos: YoutubeRecentVideo[] | undefined): string {
+  const contents = videos?.length ? `<ol class="platform-watch-list">${videos.map((video) => {
+    const watchedAt = new Date(video.watchedAt);
+    const dayOnly = video.precision === 'day';
+    const datetime = dayOnly ? taipeiDay(watchedAt) : video.watchedAt;
+    const videoId = encodeURIComponent(video.videoId);
+    return `<li><a class="platform-entry" href="https://www.youtube.com/watch?v=${videoId}">
+      <img src="https://i.ytimg.com/vi/${videoId}/mqdefault.jpg" alt="" width="72" height="40" loading="lazy">
+      <div class="platform-entry-copy"><h3>${html(video.title)}</h3>
+        <div class="platform-entry-meta">${html(video.channelTitle)}</div>
+        <time class="platform-entry-meta" datetime="${html(datetime)}">${html((dayOnly ? watchDay : watchDateTime).format(watchedAt))}</time>
+      </div></a></li>`;
+  }).join('')}</ol>` : `<div class="empty">${videos ? 'No watches recorded in the last 28 days.' : 'Recent watches are temporarily unavailable.'}</div>`;
+  return `<section id="recent-watches"><div class="platform-section-heading"><h2>Recently watched</h2><span>Taipei time</span></div>${contents}</section>`;
 }
 
 export function platformPage(
@@ -267,6 +288,7 @@ export function platformPage(
   cardVersions: Record<string, string> = {},
   timeSpent: SourceTimeSpent | null = null,
   libraryHtml = '',
+  leadHtml = '',
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
   const kitsuLibrary = definition.source === 'kitsu' ? (snapshot.extra as Partial<KitsuExtra> | null)?.library : null;
@@ -281,7 +303,7 @@ export function platformPage(
   const groups = [...new Set(recent.map((entry) => entry.kind))];
   const entries = groups.map((kind) => {
     const items = recent.filter((entry) => entry.kind === kind);
-    const title = kindLabels[kind] ?? kind;
+    const title = definition.source === 'youtube' ? 'Videos by watch time · last 28 days' : kindLabels[kind] ?? kind;
     return `<section><div class="platform-section-heading"><h2>${html(kitsuLibrary ? `Recent ${title.toLowerCase()}` : title)}</h2><span>${items.length} entries</span></div>
       <div class="platform-entry-grid">${items.map(entryCard).join('')}</div></section>`;
   }).join('');
@@ -310,7 +332,7 @@ export function platformPage(
     : '';
   const facts: Array<[string, string]> = [
     ['Profile', html(snapshot.profile.name || ownerName)],
-    ['Platform', `${html(definition.title)}${definition.via ? ` · via <a href="${html(definition.via.url)}">${html(definition.via.name)}</a>` : ''}`],
+    ['Platform', html(definition.title)],
     ...(profileUrl ? [['Source', `<a href="${html(profileUrl)}">${html(profileUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))} ↗</a>`] as [string, string]] : []),
     ['Data', `<a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a>${['places', 'pocketlog'].includes(definition.source) ? '' : ` · <a href="/search?source=${html(definition.source)}">Search</a>`}`],
     ['Synced', fetchedAt ? html(date(fetchedAt)) : waiting],
@@ -326,14 +348,13 @@ export function platformPage(
       ${snapshot.profile.avatar
         ? `<img class="platform-avatar" src="${html(snapshot.profile.avatar)}" alt="" loading="eager">`
         : definition.logo
-          ? `<img class="platform-avatar" src="${html(definition.logo)}" alt="${html(definition.via?.name ?? definition.title)} logo" loading="eager">`
+          ? `<img class="platform-avatar" src="${html(definition.logo)}" alt="${html(definition.title)} logo" loading="eager">`
           : `<span class="platform-avatar platform-monogram">${html(definition.title.slice(0, 1))}</span>`}
-      <div><div class="platform-eyebrow">infovore mirror · ${html(definition.title)}${definition.via ? ` · via <a href="${html(definition.via.url)}">${html(definition.via.name)}</a>` : ''}</div>
-      <h2>${html(snapshot.profile.name || ownerName)}</h2><p>${html(definition.description)}</p>
-      <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">${definition.via ? `Open on ${html(definition.via.name)}` : 'View original'} ↗</a>` : ''}
+      <div>${definition.source === 'youtube' ? '<h2>urtube</h2>' : `<div class="platform-eyebrow">${html(definition.title)}</div><h2>${html(snapshot.profile.name || ownerName)}</h2>`}<p>${html(definition.description)}</p>
+      <div class="platform-actions">${profileUrl ? `<a href="${html(profileUrl)}">${definition.source === 'youtube' ? 'Open on urtube' : 'View original'} ↗</a>` : ''}
       <a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a></div></div>
       <div class="platform-freshness">${fetchedAt ? `Last synced ${html(date(fetchedAt))}` : waiting}</div>
     </section>
-    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${extras}${platformEntries}${libraryHtml}${cards}</div>${aside}</div>`;
-  return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms', '', { path: `/platforms/${definition.source}` });
+    <div class="platform-layout"><div class="platform-main">${definition.source === 'health' ? sleepSection(extra as unknown as HealthConnectExtra) : ''}${leadHtml}${extras}${platformEntries}${libraryHtml}${cards}</div>${aside}</div>`;
+  return shell(`${definition.title} · ${snapshot.profile.name}`, definition.source === 'health' ? `<div class="health-platform">${body}</div>` : body, 'platforms', '', { path: platformPath(definition.source) });
 }

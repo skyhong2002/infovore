@@ -42,7 +42,7 @@ test('public entries use thousands separators and the share bar legend covers ev
   assert.match($('.home-metric').text(), /48,845/);
   assert.equal($('.share-track a').length, 0);
   assert.equal($('.share-track').attr('aria-hidden'), 'true');
-  assert.deepEqual($('.share-legend a').map((_, a) => $(a).attr('href')).get(), ['/platforms/kitsu', '/platforms/simkl', '/platforms/youtube']);
+  assert.deepEqual($('.share-legend a').map((_, a) => $(a).attr('href')).get(), ['/platforms/kitsu', '/platforms/simkl', '/platforms/urtube']);
   assert.match($('.share-legend').text(), /<1%/);
   assert.match($('.home-metric').text(), /overlaps counted once/);
 });
@@ -137,11 +137,11 @@ test('the Time page scope text follows the sources in the table', async () => {
   const render = (sources: string[]) => load(statsPage('Sample', { generatedAt: new Date().toISOString(), measuredTotal: w(1), total: w(sources.length),
     sources: sources.map((source) => ({ source, method: 'measured', windows: w(1) })) } as never));
   const cases: Array<{ sources: string[]; scope: string; absent: RegExp[] }> = [
-    { sources: Object.keys(TIME_SCOPE), scope: 'Media platforms (games, shows, anime, books, music, YouTube), manually logged events, exercise from Health and AI agent working time.', absent: [] },
+    { sources: Object.keys(TIME_SCOPE), scope: 'Media platforms (games, shows, anime, books, music, urtube), manually logged events, exercise from Health and AI agent working time.', absent: [] },
     { sources: ['statsfm', 'backloggd'], scope: 'Media platforms (games, music).', absent: [/manually logged events/, /exercise from Health/, /AI agent/] },
     { sources: ['health', 'events'], scope: 'manually logged events and exercise from Health.', absent: [/Media platforms/, /AI agent/] },
     { sources: ['computai'], scope: 'AI agent working time.', absent: [/Media platforms/, /manually logged events/] },
-    { sources: ['youtube', 'futuresource'], scope: 'Media platforms (YouTube) and futuresource.', absent: [/AI agent/] },
+    { sources: ['youtube', 'futuresource'], scope: 'Media platforms (urtube) and futuresource.', absent: [/AI agent/] },
   ];
   for (const { sources, scope, absent } of cases) {
     const $ = render(sources);
@@ -151,8 +151,8 @@ test('the Time page scope text follows the sources in the table', async () => {
     assert.match(text, /Computer activity \(Dayflow\) and sleep are not in this table/);
     assert.equal(/AI agent time is wall-clock time/.test(text), sources.includes('computai'));
     const rows = $('.time-table tbody td:first-child a').map((_, a) => $(a).attr('href')!.replace('/platforms/', '')).get();
-    assert.deepEqual(rows, sources);
-    for (const source of rows) assert.ok(text.includes(TIME_SCOPE[source]?.label ?? source), `${source} row is named in the scope text`);
+    assert.deepEqual(rows, sources.map((source) => source === 'youtube' ? 'urtube' : source));
+    for (const source of sources) assert.ok(text.includes(TIME_SCOPE[source]?.label ?? source), `${source} row is named in the scope text`);
   }
   assert.match(render([])('.page-intro-aside').text(), /^No platform has recorded time yet\. Computer activity/);
 });

@@ -1,4 +1,4 @@
-import { html, shell, sourceLabel } from './pages.js';
+import { html, platformPath, shell, sourceLabel } from './pages.js';
 import { syncAge } from './home.js';
 import { dateFormat } from '../data/time.js';
 
@@ -57,7 +57,7 @@ export function statusPage(view: StatusView): string {
     // On phones the column headers are hidden and each row is a card, so every cell carries its
     // column's name: visible for the time, note and data, read-only for the state chip.
     const label = (name: string) => `<span class="status-label">${name}</span>`;
-    return `<tr><th scope="row"><a href="/platforms/${html(source.source)}">${html(sourceLabel(source.source))}</a></th>
+    return `<tr><th scope="row"><a href="${platformPath(source.source)}">${html(sourceLabel(source.source))}</a></th>
       <td>${label('State')}<span class="status-chip ${tone}">${state}</span>${running}</td>
       <td>${label('Last successful sync')}${source.lastFetched ? `<time datetime="${html(source.lastFetched)}">${html(syncAge(source.lastFetched, now))}</time><span class="status-abs">${html(absolute(source.lastFetched))}</span>` : '—'}</td>
       <td>${label('Note')}${detail ? html(detail) : '<span class="status-quiet">—</span>'}</td>
