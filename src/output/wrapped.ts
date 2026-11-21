@@ -1,7 +1,7 @@
 import type { AgentPeriod } from '../computai/store.js';
 import { agentName } from '../computai/types.js';
 import type { WrappedSummary, YearTime } from '../data/database.js';
-import { html, info, shell, sourceLabel, timeAmount } from './pages.js';
+import { html, info, platformPath, shell, sourceLabel, timeAmount } from './pages.js';
 import { timeNotes } from './platforms.js';
 import { platformColors } from './rhythm.js';
 
@@ -28,7 +28,7 @@ function timeSection(time: YearTime): string {
     const approx = entry.method === 'estimated' ? '~' : '';
     const share = time.total ? Math.round(entry.seconds / time.total * 100) : 0;
     const note = timeNotes[entry.source];
-    return `<div class="wrapped-row"><a href="/platforms/${html(entry.source)}">${html(sourceLabel(entry.source))}</a>${note ? info(note) : '<span></span>'}<div class="bar"><span style="width:${Math.max(1, Math.round(entry.seconds / max * 100))}%;background:${platformColors[entry.source] ?? 'var(--accent)'}"></span></div><strong>${approx}${timeAmount(entry.seconds)}</strong><span class="wrapped-share">${share}%</span></div>`;
+    return `<div class="wrapped-row"><a href="${platformPath(entry.source)}">${html(sourceLabel(entry.source))}</a>${note ? info(note) : '<span></span>'}<div class="bar"><span style="width:${Math.max(1, Math.round(entry.seconds / max * 100))}%;background:${platformColors[entry.source] ?? 'var(--accent)'}"></span></div><strong>${approx}${timeAmount(entry.seconds)}</strong><span class="wrapped-share">${share}%</span></div>`;
   }).join('');
   const caveat = time.complete ? '' : '<p class="feed-note">stats.fm time for past years only counts streams synced into infovore, so it can undercount.</p>';
   return `<section class="content-section"><div class="section-heading"><div><div class="eyebrow">Time</div><h2>Where the year went</h2></div><span>${hours(time.total)} across ${time.sources.length} platforms · overlaps counted per platform</span></div>

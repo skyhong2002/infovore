@@ -165,6 +165,10 @@ const platforms = `
 .platform-stat strong{display:block;font-size:24px;font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin-top:3px}.platform-stat small{color:var(--quiet);display:block;font-size:12px;margin-top:3px}
 .platform-note{background:var(--surface);border-left:3px solid var(--accent);border-radius:8px;color:var(--muted);font-size:13.5px;margin-top:18px;padding:12px 14px}
 .platform-entry-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.platform-watch-list{display:grid;gap:6px;list-style:none;margin:0;padding:0}
+.platform-watch-list a{color:var(--text);text-decoration:none}
+.platform-watch-list a:hover{border-color:var(--line-strong)}
+.platform-watch-list .platform-entry img{height:auto;object-fit:cover}
 .platform-entry{align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);display:grid;gap:10px;grid-template-columns:auto minmax(0,1fr);padding:8px}
 .platform-entry img,.platform-entry-placeholder{background:var(--surface-raised);border-radius:6px;height:54px;max-width:72px}.platform-entry-placeholder{width:40px}
 .platform-entry-copy{min-width:0}.platform-entry h3{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:13px;line-height:1.3;margin:1px 0 2px;overflow:hidden}.platform-entry-meta{color:var(--quiet);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12px;line-height:1.4;overflow:hidden}

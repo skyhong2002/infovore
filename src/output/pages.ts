@@ -118,8 +118,12 @@ export function shell(title: string, body: string, active: PageKey, extraStyles 
   ${inlineScript(THEME_TOGGLE_SCRIPT)}${inlineScript(ADAPTIVE_MEDIA_SCRIPT)}${inlineScript(INFO_SCRIPT)}</body></html>`;
 }
 
+export function platformPath(source: string): string {
+  return '/platforms/' + (source === 'youtube' ? 'urtube' : encodeURIComponent(source));
+}
+
 export function sourceLabel(source: string): string {
-  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', hardcover: 'Hardcover', youtube: 'YouTube', health: 'Health', dayflow: 'Dayflow', pocketlog: 'PocketLog', computai: 'ComputAI', events: 'Manual' } as Record<string, string>)[source] ?? source;
+  return ({ backloggd: 'Backloggd', kitsu: 'Kitsu', statsfm: 'stats.fm', simkl: 'Simkl', hardcover: 'Hardcover', youtube: 'urtube', health: 'Health', dayflow: 'Dayflow', pocketlog: 'PocketLog', computai: 'ComputAI', events: 'Manual' } as Record<string, string>)[source] ?? source;
 }
 
 // Coarse relative age for the present view: "today", "12 days ago", "4 months ago".
@@ -203,7 +207,7 @@ export function searchPage(ownerName: string, filters: SearchFilters, page: Acti
   };
   const active = Boolean(filters.query || filters.source || filters.kind);
   const searchable = Object.values(bySource).reduce((total, count) => total + count, 0);
-  const intro = `<section class="page-intro"><div><div class="eyebrow">Archive search</div><h1>Search</h1><p>Find titles, artists, channels, venues and tags from the media platforms and events ${html(ownerName)} has synced.</p></div><div class="page-intro-aside">${active && page.total ? `${page.total.toLocaleString('en')} matching entries of ${searchable.toLocaleString('en')} searchable.` : `${searchable.toLocaleString('en')} searchable entries.`} Individual YouTube watches, health, Dayflow and AI agent records count toward the archive total but are not in this index: browse <a href="/platforms/youtube">YouTube</a>, <a href="/platforms/health">Health</a>, <a href="/platforms/dayflow">Dayflow</a> or <a href="/platforms/computai">AI agents</a>.</div></section>`;
+  const intro = `<section class="page-intro"><div><div class="eyebrow">Archive search</div><h1>Search</h1><p>Find titles, artists, channels, venues and tags from the media platforms and events ${html(ownerName)} has synced.</p></div><div class="page-intro-aside">${active && page.total ? `${page.total.toLocaleString('en')} matching entries of ${searchable.toLocaleString('en')} searchable.` : `${searchable.toLocaleString('en')} searchable entries.`} Individual YouTube watches, health, Dayflow and AI agent records count toward the archive total but are not in this index: browse <a href="/platforms/urtube">urtube</a>, <a href="/platforms/health">Health</a>, <a href="/platforms/dayflow">Dayflow</a> or <a href="/platforms/computai">AI agents</a>.</div></section>`;
   const form = `<form class="search-form" action="/search" role="search"><input type="search" name="q" value="${html(filters.query)}" placeholder="Try an artist, a game, a book, a channel…" aria-label="Search the archive" autofocus>${filters.source ? `<input type="hidden" name="source" value="${html(filters.source)}">` : ''}${filters.kind ? `<input type="hidden" name="kind" value="${html(filters.kind)}">` : ''}<button type="submit">Search</button></form>`;
   // Platforms keep their place by size; while filtering, the ones with matches come first.
   const countOf = (source: string) => matchingBySource ? matchingBySource[source] ?? 0 : bySource[source];
@@ -301,7 +305,7 @@ export function nowPage(ownerName: string, current: Activity[], upcoming: Activi
 }
 
 export function profilePage(ownerName: string, total: number, bySource: Record<string, number>, latest: Activity[]): string {
-  const stats = Object.entries(bySource).map(([source, count]) => `<a class="metric-card" href="/platforms/${html(source)}"><span class="pill">${html(sourceLabel(source))}</span><span class="count">${count.toLocaleString('en')}</span></a>`).join('');
+  const stats = Object.entries(bySource).map(([source, count]) => `<a class="metric-card" href="${platformPath(source)}"><span class="pill">${html(sourceLabel(source))}</span><span class="count">${count.toLocaleString('en')}</span></a>`).join('');
   const year = new Date().getUTCFullYear();
   const intro = `<section class="page-intro"><div><div class="eyebrow">Long-term view</div><h1>The archive</h1><p>Every durable entry collected for ${html(ownerName)}, summarized across sources without losing the original platform context.</p></div><div class="page-intro-aside">${total.toLocaleString('en')} public activities and counting.</div></section>
     <div class="archive-actions"><a class="archive-action" href="/platforms"><strong>Browse by platform →</strong><span>Open the source-specific mirrors behind these totals.</span></a>

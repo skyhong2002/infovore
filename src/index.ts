@@ -39,12 +39,12 @@ import { fetchYoutube, syncYoutubeIntervals, type YoutubeExtra } from './sources
 import { rasterize } from './output/render.js';
 import { RasterCache } from './output/raster-cache.js';
 import { activityRss } from './output/feed.js';
-import { apiPage, html, nowPage, profilePage, searchPage, shell, stylesVersion } from './output/pages.js';
+import { apiPage, html, nowPage, platformPath, profilePage, searchPage, shell, stylesVersion } from './output/pages.js';
 import { wrappedPage } from './output/wrapped.js';
 import { baseStyles } from './output/styles.js';
 import { homePage } from './output/home.js';
 import { dashboardActivities } from './health/home.js';
-import { platformIndexPage, platformPage, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
+import { platformIndexPage, platformPage, youtubeRecentSection, type PlatformDefinition, type PlatformSummary } from './output/platforms.js';
 import { statsPage } from './output/stats.js';
 import { sitemapXml } from './seo.js';
 import { handleMcpRequest } from './mcp.js';
@@ -384,7 +384,7 @@ app.get('/sitemap.xml', (c) => {
     if (placesEnabled) platforms.push('places');
     if (pocketlogEnabled) platforms.push('pocketlog');
     sitemapCache = { hour, body: sitemapXml(config.publicBaseUrl, [
-      '/', '/now', '/stats', '/platforms', ...platforms.map((source) => `/platforms/${source}`),
+      '/', '/now', '/stats', '/platforms', ...platforms.map(platformPath),
       '/profile', '/cards', ...repository.activityYears().map((year) => `/wrapped/${year}`),
     ]) };
   }
@@ -680,9 +680,9 @@ const allSections: PlatformDefinition[] = [
   { source: 'simkl', title: 'Simkl', description: 'Movies, TV and anime collected into one watch history.', accent: '#7bb8ff', url: `https://simkl.com/${config.simkl.userId}/`, cards: ['simkl', 'simkl-shows', 'simkl-movies'], logo: '/logos/simkl.png' },
   { source: 'hardcover', title: 'Hardcover', description: 'Reading shelf, completed books, authors and ratings.', accent: '#d6b98c', url: `https://hardcover.app/@${config.hardcover.username}`, cards: ['hardcover'], logo: '/logos/hardcover.png' },
   {
-    source: 'youtube', title: 'YouTube', description: 'Viewing volume, top channels, topics and most-watched videos, mirrored from urtube.',
+    source: 'youtube', title: 'urtube', description: 'Recent YouTube watches, viewing time, top channels and topics.',
     accent: '#ff453a', url: `${config.urtube.baseUrl}/${config.urtube.handle}`, cards: ['youtube', 'youtube-channels', 'youtube-topics'],
-    logo: '/logos/urtube.svg', indexLogo: '/logos/youtube.png', via: { name: 'urtube', url: config.urtube.baseUrl },
+    logo: '/logos/urtube.svg?v=brand', jsonUrl: '/api/youtube.json',
   },
   {
     source: 'computai', title: 'ComputAI', description: 'AI agent tokens, hours and models across Claude Code and Codex on every machine, as a rolling 30-day report.',
@@ -870,8 +870,10 @@ app.get('/platforms', (c) => {
 
 // Goodreads → Hardcover move; must precede the :source route to match.
 app.get('/platforms/goodreads', (c) => c.redirect('/platforms/hardcover', 301));
+app.get('/platforms/youtube', (c) => c.redirect(platformPath('youtube'), 301));
 app.get('/platforms/:source', (c) => {
-  const source = c.req.param('source');
+  const slug = c.req.param('source');
+  const source = slug === 'urtube' ? 'youtube' : slug;
   const definition = source === 'events' ? manualPlatform : source === 'places' && placesEnabled ? placesPlatform
     : source === 'pocketlog' && pocketlogEnabled ? pocketlogPlatform
     : sections.find((section) => section.source === source);
@@ -911,7 +913,10 @@ app.get('/platforms/:source', (c) => {
     ? timeSpentWithAgents().summary.sources.find((entry) => entry.source === source) ?? null
     : null;
   const library = source === 'backloggd' ? backloggdLibrarySection(repository.backloggdLibrary.read()) : '';
-  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions, timeSpent, library));
+  const lead = source === 'youtube' && config.urtube.publicRecent
+    ? youtubeRecentSection((cached.data.extra as YoutubeExtra).recentVideos)
+    : '';
+  return c.html(platformPage(config.ownerName, definition, cached.data, new Date(cached.fetchedAt).toISOString(), cardVersions, timeSpent, library, lead));
 });
 
 app.get('/cards', (c) => {
@@ -932,7 +937,7 @@ app.get('/cards', (c) => {
         .join('\n');
       const shortUrl = externalUrl.replace(/^https:\/\//, '').replace(/\/$/, '');
       const profileLink = s.url ? `<a class="profile-link" href="${html(externalUrl)}">${html(shortUrl)} ↗</a>` : '';
-      return `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/platforms/${html(s.source)}">${html(s.title)}</a></h2>${profileLink}</div><div class="card-gallery-row">${imgs}</div></section>`;
+      return `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="${platformPath(s.source)}">${html(s.title)}</a></h2>${profileLink}</div><div class="card-gallery-row">${imgs}</div></section>`;
     })
     .join('\n');
   const updated = lastUpdatedLabel();
@@ -1266,6 +1271,13 @@ app.get('/api/:file{[a-z-]+\\.json}', (c) => {
   const name = c.req.param('file').replace(/\.json$/, '');
   const entry = getCache(`data:${name}`);
   if (!entry || entry.data === null) return c.json({ error: publicError(entry?.error) ?? 'not found' }, 404);
+  if (name === 'youtube') {
+    const snapshot = entry.data as SourceSnapshot<YoutubeExtra>;
+    return c.json({
+      fetchedAt: new Date(entry.fetchedAt).toISOString(),
+      data: { ...snapshot, extra: { ...snapshot.extra, recentVideos: undefined } },
+    });
+  }
   return c.json({ fetchedAt: new Date(entry.fetchedAt).toISOString(), data: entry.data });
 });
 
