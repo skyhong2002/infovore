@@ -204,12 +204,13 @@ function overviewTile(item: PlatformOverview): string {
 }
 
 function recentRow(activity: Activity, dayflow?: DayflowSnapshot | null, pocketlog?: DayflowSnapshot | null): string {
+  const kind = activity.source === 'pocketlog' ? 'phone' : activity.mediaKind;
   const when = formatDate(activity);
   const meta = activityMeta(activity);
   const time = when.time ? `${when.date} · ${when.time}` : when.date;
   return `<li class="home-recent-item">
     ${imageOrPlaceholder(activity.image, 'home-recent-art', activity.title)}
-    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(activity.mediaKind)}</span></span>${activity.source === 'health' || activity.source === 'dayflow' || activity.source === 'pocketlog' || activity.source === 'computai' ? `<a class="home-recent-title" href="/platforms/${html(activity.source)}${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span>${activity.source === 'dayflow' ? dailyKeywords(activity, dayflow) : activity.source === 'pocketlog' ? dailyKeywords(activity, pocketlog) : ''}</span>
+    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(kind)}</span></span>${activity.source === 'health' || activity.source === 'dayflow' || activity.source === 'pocketlog' || activity.source === 'computai' ? `<a class="home-recent-title" href="/platforms/${html(activity.source)}${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span>${activity.source === 'dayflow' ? dailyKeywords(activity, dayflow) : activity.source === 'pocketlog' ? dailyKeywords(activity, pocketlog) : ''}</span>
     <time class="home-recent-time"${when.datetime ? ` datetime="${html(when.datetime)}"` : ''}>${html(time)}${when.time ? ' GMT+8' : ''}</time>
   </li>`;
 }

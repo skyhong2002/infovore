@@ -278,7 +278,7 @@ export function platformPage(
   const groups = [...new Set(recent.map((entry) => entry.kind))];
   const entries = groups.map((kind) => {
     const items = recent.filter((entry) => entry.kind === kind);
-    const title = kindLabels[kind] ?? kind;
+    const title = kind === 'computer' && definition.source === 'pocketlog' ? 'Daily phone activity' : kindLabels[kind] ?? kind;
     return `<section><div class="platform-section-heading"><h2>${html(kitsuLibrary ? `Recent ${title.toLowerCase()}` : title)}</h2><span>${items.length} entries</span></div>
       <div class="platform-entry-grid">${items.map(entryCard).join('')}</div></section>`;
   }).join('');
