@@ -9,6 +9,7 @@ const { Repository } = await import('../src/data/database.js');
 const { buildSnapshot } = await import('../src/pocketlog/store.js');
 const { syncPocketlog, PocketlogHttpError } = await import('../src/pocketlog/sync.js');
 const { DayflowQualityWorker } = await import('../src/dayflow/quality-worker.js');
+const { qualityHash } = await import('../src/dayflow/quality.js');
 
 const H = 3_600_000;
 const at = (iso: string) => Date.parse(iso);
@@ -166,6 +167,9 @@ test('PocketLog backfills sanitized titles and shares Dayflow topic classificati
   assert.deepEqual(before.extra.keywordPools?.all, []);
   assert.equal(before.extra.keywordQuality?.mode, 'local');
 
+  const unrelatedTitle = '已分類但不在這批的活動';
+  repo.pocketlog.quality.save([{ title: unrelatedTitle, hash: qualityHash(unrelatedTitle) }],
+    [[{ name: '之前的標籤', kind: 'topic', confidence: 1 }]], 'sky-quality', 'upstream-model');
   const worker = new DayflowQualityWorker(repo.pocketlog, { baseUrl: 'http://model.test', apiKey: 'key', model: 'sky-quality' },
     async (inputs, known) => {
       assert.deepEqual(known, []);

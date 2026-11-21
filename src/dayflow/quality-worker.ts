@@ -6,13 +6,14 @@ interface QualitySource {
   quality: DayflowQualityStore;
   batchesSince(day: string, now: Date): DayflowBatch[];
 }
+type QualitySourceName = 'dayflow' | 'pocketlog';
 
 // Ingest is the sole owner. The DB lease also prevents overlapping workers
 // during a rollout/restart. Reads and ingestion never wait on the model.
 export class DayflowQualityWorker {
   private running = false;
   constructor(private store: QualitySource, private config: QualityConfig,
-    private classify = classifyQualityTitles, private source = 'dayflow') {}
+    private classify = classifyQualityTitles, private source: QualitySourceName = 'dayflow') {}
   async tick(now = new Date()): Promise<number> {
     if (this.running || !this.store.quality.acquire(+now)) return 0;
     this.running = true;
@@ -25,7 +26,8 @@ export class DayflowQualityWorker {
         const inputs = this.store.quality.pending(batches, now);
         if (!inputs.length) break;
         try {
-          const result = await this.classify(inputs, this.store.quality.known(), this.config);
+          const hints = this.source === 'dayflow' ? this.store.quality.known() : [];
+          const result = await this.classify(inputs, hints, this.config);
           this.store.quality.save(inputs, result.labels, this.config.model, result.model);
           processed += inputs.length;
           console.log(`[${this.source}-quality] classified ${inputs.length} titles`);
@@ -40,7 +42,7 @@ export class DayflowQualityWorker {
     return processed;
   }
 }
-export function startDayflowQualityWorker(store: QualitySource, config: QualityConfig, source = 'dayflow'): () => void {
+export function startDayflowQualityWorker(store: QualitySource, config: QualityConfig, source: QualitySourceName = 'dayflow'): () => void {
   const worker = new DayflowQualityWorker(store, config, classifyQualityTitles, source);
   let stopped = false, timer: ReturnType<typeof setTimeout>;
   const run = async () => {
