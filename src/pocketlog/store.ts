@@ -200,6 +200,6 @@ export function buildSnapshot(activities: PocketlogActivity[], categories: Pocke
     lastSyncedAt: status.lastSuccessAt, firstDay: batches.at(-1)?.day ?? null, lastDay: batches[0]?.day ?? null,
   }, now, quality, classification ? {
     mode: reviewed ? 'ai' : 'local', classifiedActivities: classification.classified,
-    eligibleActivities: classification.eligible, model: classification.model,
+    eligibleActivities: classification.eligible, model: classification.requestedModel,
   } : undefined);
 }

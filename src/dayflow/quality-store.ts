@@ -81,12 +81,15 @@ export class DayflowQualityStore {
       ON CONFLICT(title_hash) DO UPDATE SET retry_at=excluded.retry_at`);
     for (const input of inputs) write.run(input.hash, QUALITY_VERSION, now + 30 * 60_000);
   }
-  labelsFor(batches: DayflowBatch[], now: Date): { get: QualityLabels; hasResults: boolean; classified: number; eligible: number; model: string | null } {
-    const rows = this.db.prepare(`SELECT title_hash, labels_json, resolved_model FROM ${this.table}
-      WHERE version = ? AND labels_json IS NOT NULL`).all(QUALITY_VERSION) as Array<{ title_hash: string; labels_json: string; resolved_model: string }>;
+  labelsFor(batches: DayflowBatch[], now: Date): { get: QualityLabels; hasResults: boolean; classified: number; eligible: number; model: string | null; requestedModel: string | null } {
+    const rows = this.db.prepare(`SELECT title_hash, labels_json, requested_model, resolved_model FROM ${this.table}
+      WHERE version = ? AND labels_json IS NOT NULL`).all(QUALITY_VERSION) as Array<{
+        title_hash: string; labels_json: string; requested_model: string | null; resolved_model: string | null;
+      }>;
     const ready = new Map(rows.map((row) => [row.title_hash, row]));
     const labels = new Map<string, QualityLabel[]>(), seen = new Set<string>();
     let classified = 0, eligible = 0, model: string | null = null;
+    let requestedModel: string | null = null;
     for (const batch of [...batches].sort((a, b) => b.observedAt.localeCompare(a.observedAt) || b.day.localeCompare(a.day))) for (const card of batch.cards) {
       if (!qualityEligible(batch, card, now)) continue;
       const id = batch.deviceId + ':' + card.record_id;
@@ -95,8 +98,9 @@ export class DayflowQualityStore {
       const hash = qualityHash(card.title), row = ready.get(hash);
       if (!row) continue;
       classified++; model ??= row.resolved_model;
+      requestedModel ??= row.requested_model;
       if (!labels.has(hash)) labels.set(hash, JSON.parse(row.labels_json) as QualityLabel[]);
     }
-    return { get: (title) => labels.get(qualityHash(title)) ?? null, hasResults: rows.length > 0, classified, eligible, model };
+    return { get: (title) => labels.get(qualityHash(title)) ?? null, hasResults: rows.length > 0, classified, eligible, model, requestedModel };
   }
 }

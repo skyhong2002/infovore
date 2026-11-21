@@ -166,11 +166,11 @@ test('PocketLog backfills sanitized titles and shares Dayflow topic classificati
   assert.deepEqual(before.extra.keywordPools?.all, []);
   assert.equal(before.extra.keywordQuality?.mode, 'local');
 
-  const worker = new DayflowQualityWorker(repo.pocketlog, { baseUrl: 'http://model.test', apiKey: 'key', model: 'test' },
+  const worker = new DayflowQualityWorker(repo.pocketlog, { baseUrl: 'http://model.test', apiKey: 'key', model: 'sky-quality' },
     async (inputs, known) => {
       assert.deepEqual(known, []);
       assert.deepEqual(inputs.map((input) => input.title).sort(), ['在 Discord 討論樂譜', '整理樂譜', '透過 YouTube 查找樂譜'].sort());
-      return { model: 'test', labels: inputs.map(() => [
+      return { model: 'upstream-model', labels: inputs.map(() => [
         { name: '樂譜整理', kind: 'topic', confidence: 0.95 },
         { name: 'Discord', kind: 'tool', confidence: 1 },
         { name: 'Low confidence', kind: 'topic', confidence: 0.6 },
@@ -179,7 +179,7 @@ test('PocketLog backfills sanitized titles and shares Dayflow topic classificati
   assert.equal(await worker.tick(now), 3);
   const after = repo.pocketlog.snapshot('Sky', now);
   assert.deepEqual(after.extra.keywordPools?.all, [{ name: '樂譜整理', mentions: 2 }]);
-  assert.deepEqual(after.extra.keywordQuality, { mode: 'ai', classifiedActivities: 3, eligibleActivities: 3, model: 'test' });
+  assert.deepEqual(after.extra.keywordQuality, { mode: 'ai', classifiedActivities: 3, eligibleActivities: 3, model: 'sky-quality' });
   assert.equal(repo.dayflow.quality.revision(), 0);
   assert.doesNotMatch(JSON.stringify(after), /Discord|YouTube|Low confidence|example\.com|private summary|查找樂譜/);
 
