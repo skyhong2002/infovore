@@ -203,9 +203,10 @@ test('the PocketLog platform page, JSON and listings', async () => {
   assert.match(body, /工作/);
   assert.match(body, /Phone time is the Android app sessions PocketLog recorded/);
   assert.doesNotMatch(body, /search\?source=pocketlog/);
-  for (const section of ['Distinctive lately', 'All recent keywords', 'Categories this week', 'Recent recorded days', 'Daily phone activity', 'Share cards']) {
+  for (const section of ['Distinctive lately', 'All recent keywords', 'Categories this week', 'Recent recorded days', 'Share cards']) {
     assert.ok(body.includes(section), section);
   }
+  assert.doesNotMatch(body, /<div class="platform-entry-grid">/);
   const json = await (await app.request('/api/pocketlog.json')).json() as {
     fetchedAt: string; data: { source: string; stats: { recordedDays: number }; entries: Array<{ status: string }> };
   };

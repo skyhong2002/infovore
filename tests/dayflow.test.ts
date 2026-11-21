@@ -87,6 +87,8 @@ test('Dayflow public projections contain aggregates only and do not inflate medi
     assert.equal(repo.timeSpent(now).total.allTime, 0);
     assert.equal(snapshot.stats.weeklyHours, 1);
     assert.match(page, /Categories this week/);
+    assert.match(page, /Recent recorded days/);
+    assert.doesNotMatch(page, /<div class="platform-entry-grid">/);
     assert.match(svg, /<svg/);
   } finally { repo.close(); }
 });

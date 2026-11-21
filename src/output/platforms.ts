@@ -267,23 +267,25 @@ export function platformPage(
   libraryHtml = '',
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
+  const hasRecordedDays = definition.source === 'dayflow' || definition.source === 'pocketlog';
   const kitsuLibrary = definition.source === 'kitsu' ? (snapshot.extra as Partial<KitsuExtra> | null)?.library : null;
   const coverage = kitsuLibrary ? `${number(kitsuLibrary.anime.length + kitsuLibrary.manga.length)} library entries`
+    : hasRecordedDays ? `${number(snapshot.stats.recordedDays ?? 0)} recorded days`
     : `${number(snapshot.entries.length)} synced entries`;
-  const waiting = definition.source === 'places' ? 'Updated with every sync, shown days behind' : ['dayflow', 'pocketlog'].includes(definition.source) ? 'Waiting for the first sync' : 'Stored manually';
+  const waiting = definition.source === 'places' ? 'Updated with every sync, shown days behind' : hasRecordedDays ? 'Waiting for the first sync' : 'Stored manually';
   const stats = Object.entries(snapshot.stats).filter(([key]) => !hiddenStats.has(key)).map(([key, value]) =>
     `<div class="platform-stat"><span>${html(statLabels[key] ?? label(key))}</span><strong>${number(value)}</strong></div>`
   ).join('');
-  const recent = kitsuLibrary ? snapshot.entries.filter((entry) => entry.status !== 'planned') : snapshot.entries;
+  const recent = hasRecordedDays ? [] : kitsuLibrary ? snapshot.entries.filter((entry) => entry.status !== 'planned') : snapshot.entries;
   const groups = [...new Set(recent.map((entry) => entry.kind))];
   const entries = groups.map((kind) => {
     const items = recent.filter((entry) => entry.kind === kind);
-    const title = kind === 'computer' && definition.source === 'pocketlog' ? 'Daily phone activity' : kindLabels[kind] ?? kind;
+    const title = kindLabels[kind] ?? kind;
     return `<section><div class="platform-section-heading"><h2>${html(kitsuLibrary ? `Recent ${title.toLowerCase()}` : title)}</h2><span>${items.length} entries</span></div>
       <div class="platform-entry-grid">${items.map(entryCard).join('')}</div></section>`;
   }).join('');
   const platformEntries = kitsuLibrary ? kitsuShowboard(kitsuLibrary, entries)
-    : entries || (['dayflow', 'places', 'pocketlog'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>');
+    : entries || (hasRecordedDays || definition.source === 'places' ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>');
   const extra = (snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {}) as Record<string, unknown>;
   const extras = [
     definition.source === 'dayflow' || definition.source === 'pocketlog' ? dayflowDetails(extra as unknown as DayflowExtra, definition.source) : '',
