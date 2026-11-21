@@ -1,11 +1,12 @@
 import { summarizeDay } from './day-summary.js';
 import { DayflowQualityStore } from './quality-store.js';
 import type { QualityLabels } from './quality.js';
-import { dayflowCloudTerms, keywordPools } from './pools.js';
+import { dayflowCloudTerms } from './pools.js';
+import { activitySnapshot } from './snapshot.js';
 import { measureRead } from '../data/read-timing.js';
 import { dayflowKeywords } from './keywords.js';
 import type { DatabaseSync } from 'node:sqlite';
-import { dayflowBatchSchema, dayflowDay, type DayflowBatch, type DayflowCategory, type DayflowDay, type DayflowSnapshot } from './types.js';
+import { dayflowBatchSchema, dayflowDay, type DayflowBatch, type DayflowDay, type DayflowSnapshot } from './types.js';
 
 export function migrateDayflow(db: DatabaseSync): void {
   db.exec(`BEGIN;
@@ -117,37 +118,9 @@ export class DayflowStore {
     const classification = this.useQuality ? this.quality.labelsFor(batches, now) : null;
     const quality = classification?.hasResults ? classification.get : undefined;
     const daily = [...byDay].map(([day, batches]) => this.summarize(day, batches, now, quality));
-    const today = dayflowDay(now);
-    const weekStart = new Date(`${today}T00:00:00Z`);
-    weekStart.setUTCDate(weekStart.getUTCDate() - (weekStart.getUTCDay() + 6) % 7);
-    const week = daily.filter((d) => d.day >= weekStart.toISOString().slice(0, 10));
-    const categories = new Map<string, DayflowCategory>();
-    for (const day of week) for (const cat of day.categories) {
-      const value = categories.get(cat.name) ?? { ...cat, minutes: 0 };
-      value.minutes += cat.minutes; categories.set(cat.name, value);
-    }
-    const status = this.status();
-    return {
-      source: 'dayflow', profile: { id: 'dayflow', name: owner, avatar: '/logos/dayflow.png', url: '' },
-      stats: { recordedDays: daily.filter((d) => d.trackedMinutes + d.errorMinutes > 0).length,
-        todayMinutes: daily.find((d) => d.day === today)?.trackedMinutes ?? 0,
-        weeklyHours: Math.round(week.reduce((sum, d) => sum + d.trackedMinutes, 0) / 6) / 10,
-        weeklyActiveHours: Math.round(week.reduce((sum, d) => sum + d.activeMinutes, 0) / 6) / 10 },
-      entries: daily.filter((d) => d.trackedMinutes > 0).slice(0, 14).map((d) => ({
-        source: 'dayflow', sourceItemId: `day:${d.day}`, kind: 'computer', visibility: 'public',
-        title: `Computer activity · ${Math.floor(d.trackedMinutes / 60)}h ${Math.round(d.trackedMinutes % 60)}m`,
-        image: '/logos/dayflow.png', status: 'daily_summary', activityAt: d.day, rating: null,
-        extra: { durationMinutes: d.trackedMinutes, activeMinutes: d.activeMinutes, idleMinutes: d.idleMinutes },
-      })),
-      extra: { timeZone: 'Asia/Taipei', dayBoundaryHour: 4, daily,
-        keywordPools: keywordPools(batches, now, quality),
-        ...(classification ? { keywordQuality: { mode: quality ? 'ai' as const : 'local' as const,
-          classifiedActivities: classification.classified, eligibleActivities: classification.eligible,
-          model: classification.model } } : {}),
-        keywords: dayflowKeywords([...byDay].filter(([day]) => day >= weekStart.toISOString().slice(0, 10)).flatMap(([, batches]) => batches), now, 36, quality),
-        categories: [...categories.values()].sort((a, b) => b.minutes - a.minutes),
-        lastSyncedAt: status.lastSyncedAt, firstDay: status.firstDay, lastDay: status.lastDay },
-    };
+    return activitySnapshot('dayflow', owner, daily, batches, this.status(), now, quality,
+      classification ? { mode: quality ? 'ai' : 'local', classifiedActivities: classification.classified,
+        eligibleActivities: classification.eligible, model: classification.model } : undefined);
   }
 }
 

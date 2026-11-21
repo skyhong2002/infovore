@@ -81,18 +81,24 @@ export async function readActivities(config: PocketlogConfig, from: number, to: 
   return { epoch, activities };
 }
 
-export async function syncPocketlog(store: PocketlogStore, config: PocketlogConfig, now = new Date(), fetcher: typeof fetch = fetch) {
+export async function syncPocketlog(store: PocketlogStore, config: PocketlogConfig, now = new Date(), fetcher: typeof fetch = fetch, backfill = false) {
   const status = store.status();
   const latest = store.latestStart();
-  const full = !status.lastFullAt || +now - Date.parse(status.lastFullAt) > DAY_MS;
-  const from = latest === null ? +now - BACKFILL_DAYS * DAY_MS : +now - (full ? FULL_DAYS : RECENT_DAYS) * DAY_MS;
+  const full = backfill || !status.lastFullAt || +now - Date.parse(status.lastFullAt) > DAY_MS;
+  const start = +now - (backfill || latest === null ? BACKFILL_DAYS : full ? FULL_DAYS : RECENT_DAYS) * DAY_MS;
+  let from = Math.min(start, latest ?? start);
+  const to = +now + 60_000;
   const categories = await readCategories(config, fetcher);
-  let read = await readActivities(config, Math.min(from, latest ?? from), +now + 60_000, fetcher);
+  let read = await readActivities(config, from, to, fetcher);
   // The journal was deleted and restarted since the last run: read everything again.
   if (status.journalEpoch !== null && read.epoch !== status.journalEpoch && latest !== null) {
-    read = await readActivities(config, +now - BACKFILL_DAYS * DAY_MS, +now + 60_000, fetcher);
+    from = +now - BACKFILL_DAYS * DAY_MS;
+    read = await readActivities(config, from, to, fetcher);
   }
-  const changed = store.save({ epoch: read.epoch, categories, activities: read.activities, full: full || latest === null }, now);
+  const changed = store.save({
+    ...read, categories, full: full || latest === null || read.epoch !== status.journalEpoch,
+    window: { from, to, expectedAttempt: status.lastAttemptAt },
+  }, now);
   return { read: read.activities.length, changed };
 }
 

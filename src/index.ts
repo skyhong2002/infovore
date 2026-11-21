@@ -97,6 +97,9 @@ const cards: Record<string, CardDefinition> = {
   dayflow: defineCard('dayflow', buildDayflowCard),
   'dayflow-keywords': defineCard('dayflow', buildDayflowKeywordsCard),
   'dayflow-categories': defineCard('dayflow', buildDayflowCategoriesCard),
+  pocketlog: defineCard('pocketlog', buildDayflowCard),
+  'pocketlog-keywords': defineCard('pocketlog', buildDayflowKeywordsCard),
+  'pocketlog-categories': defineCard('pocketlog', buildDayflowCategoriesCard),
   health: defineCard('health', buildHealthCard),
   'health-sleep': defineCard('health', buildHealthSleepCard),
   'health-sleep-stages': defineCard('health', buildHealthSleepStagesCard),
@@ -315,14 +318,15 @@ const dayflowEnabled = Boolean(config.dayflow.token) && config.sourceEnabled('da
 // keywords are public.
 const pocketlogEnabled = Boolean(config.pocketlog) && config.sourceEnabled('pocketlog');
 const pocketlogPlatform: PlatformDefinition = {
-  source: 'pocketlog', title: 'PocketLog', accent: '#7fb59a', jsonUrl: '/api/pocketlog.json', logo: '/logos/pocketlog.png',
-  description: 'Daily phone activity from PocketLog: time by category, active time and recognized topics. Card titles, summaries and apps stay private.',
+  source: 'pocketlog', title: 'PocketLog', accent: '#b5adff', cards: ['pocketlog', 'pocketlog-keywords', 'pocketlog-categories'],
+  jsonUrl: '/api/pocketlog.json', logo: '/logos/pocketlog.png',
+  description: 'Daily phone activity, category breakdowns and active time from PocketLog.',
 };
 const currentPocketlog = (now = new Date()) => repository.pocketlog.snapshot(config.ownerName, now);
 app.get('/api/pocketlog.json', (c) => {
   if (!pocketlogEnabled) return c.json({ error: 'PocketLog is not configured' }, 404);
   c.header('Cache-Control', 'no-cache');
-  return c.json(currentPocketlog());
+  return c.json({ fetchedAt: repository.pocketlog.status().lastSuccessAt, data: currentPocketlog() });
 });
 const computaiEnabled = Boolean(config.computai.token) && config.sourceEnabled('computai');
 
@@ -401,8 +405,31 @@ const FIVE_MINUTES = 5 * 60_000;
 let dayflowRevision = -1;
 let dayflowClock = -1;
 let dayflowRefresh: ReturnType<typeof setTimeout> | null = null;
-let dayflowRenderRevision = '';
-let dayflowRender: Promise<void> | null = null;
+const activityCards = {
+  dayflow: { revision: '', pending: null as Promise<void> | null },
+  pocketlog: { revision: '', pending: null as Promise<void> | null },
+};
+async function refreshActivityCards(source: keyof typeof activityCards, revision: number, snapshot: () => DayflowSnapshot) {
+  const state = activityCards[source];
+  if (state.pending) await state.pending;
+  const key = `${revision}:${Math.floor(Date.now() / QUARTER_HOUR)}`;
+  if (state.revision === key) return;
+  const render = async () => {
+    const data = snapshot();
+    const rendered = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === source)
+      .map(async ([name, card]) => [name, await card.build(data)] as const));
+    for (const [name, svg] of rendered) setCache(`svg:${name}`, svg);
+    state.revision = key;
+  };
+  if (state.revision.startsWith(`${revision}:`) && getCache(`svg:${source}`)?.data) {
+    state.pending = new Promise((resolve) => setTimeout(resolve, 0)).then(render).catch((error) => {
+      console.error(`Could not refresh ${source} cards`, error);
+    }).finally(() => { state.pending = null; });
+  } else {
+    state.pending = render().finally(() => { state.pending = null; });
+    await state.pending;
+  }
+}
 function rebuildDayflow(status = repository.dayflow.status()): void {
   restoreCache('data:dayflow', repository.dayflow.snapshot(config.ownerName), status.lastSyncedAt ? Date.parse(status.lastSyncedAt) : 0);
   dayflowRevision = status.revision;
@@ -411,31 +438,17 @@ function rebuildDayflow(status = repository.dayflow.status()): void {
 app.use('*', async (c, next) => {
   if (dayflowEnabled && c.req.method === 'GET') {
     const status = repository.dayflow.status();
-    const renderRevision = `${status.revision}:${Math.floor(Date.now() / QUARTER_HOUR)}`;
     if (status.revision !== dayflowRevision || !getCache('data:dayflow')) rebuildDayflow(status);
     else if (Math.floor(Date.now() / FIVE_MINUTES) !== dayflowClock && !dayflowRefresh) {
       dayflowRefresh = setTimeout(() => { dayflowRefresh = null; rebuildDayflow(); }, 0);
     }
     if (c.req.path === '/cards' || c.req.path === '/platforms/dayflow' || /^\/card\/dayflow(?:-keywords|-categories)?\.(svg|png|webp)$/.test(c.req.path)) {
-      if (dayflowRender) await dayflowRender;
-      if (dayflowRenderRevision !== renderRevision) {
-        const snapshot = getCache<DayflowSnapshot>('data:dayflow')!.data!;
-        const render = async () => {
-          const rendered = await Promise.all(Object.entries(cards).filter(([, card]) => card.source === 'dayflow')
-            .map(async ([name, card]) => [name, await card.build(snapshot)] as const));
-          for (const [name, svg] of rendered) setCache(`svg:${name}`, svg);
-          dayflowRenderRevision = renderRevision;
-        };
-        // Same data, only the quarter-hour moved: serve the cards already
-        // rendered and refresh them after this response.
-        if (dayflowRenderRevision.startsWith(`${status.revision}:`) && getCache('svg:dayflow')?.data) {
-          dayflowRender = new Promise((resolve) => setTimeout(resolve, 0)).then(render).finally(() => { dayflowRender = null; });
-        } else {
-          dayflowRender = render();
-          try { await dayflowRender; } finally { dayflowRender = null; }
-        }
-      }
+      await refreshActivityCards('dayflow', status.revision, () => getCache<DayflowSnapshot>('data:dayflow')!.data!);
     }
+  }
+  if (pocketlogEnabled && c.req.method === 'GET' &&
+      (c.req.path === '/cards' || c.req.path === '/platforms/pocketlog' || /^\/card\/pocketlog(?:-keywords|-categories)?\.(svg|png|webp)$/.test(c.req.path))) {
+    await refreshActivityCards('pocketlog', repository.pocketlog.status().revision, currentPocketlog);
   }
   await next();
 });
@@ -750,7 +763,9 @@ function dashboardView(now: Date) {
   const healthSnapshot = config.sourceEnabled('health') && config.healthConnect.token
     ? repository.healthConnectSnapshot(config.ownerName, now) : null;
   const dayflow = dayflowEnabled ? getCache<DayflowSnapshot>('data:dayflow')?.data : null;
-  const daily = dayflow?.entries.map((entry) => activityFromEntry(entry, `${entry.activityAt}T04:00:00+08:00`)) ?? [];
+  const pocketlog = pocketlogEnabled ? currentPocketlog(now) : null;
+  const daily = [...(dayflow?.entries ?? []), ...(pocketlog?.entries ?? [])]
+    .map((entry) => activityFromEntry(entry, `${entry.activityAt}T04:00:00+08:00`));
   const agents = computaiEnabled ? getCache<ComputaiSnapshot>('data:computai')?.data?.entries
     .map((entry) => activityFromEntry(entry, entry.activityAt.includes('T') ? entry.activityAt : `${entry.activityAt}T00:00:00+08:00`)) ?? [] : [];
   return { healthSnapshot, activities: dashboardActivities([...repository.listActivities(500), ...repository.latestPublicActivitiesBySource(now), ...daily, ...agents], healthSnapshot, now) };
@@ -863,7 +878,8 @@ app.get('/platforms/:source', (c) => {
   if (!definition) return c.text('Platform not found', 404);
   if (source === 'pocketlog') {
     c.header('Cache-Control', 'no-cache');
-    return c.html(platformPage(config.ownerName, definition, currentPocketlog() as SourceSnapshot<unknown>, repository.pocketlog.status().lastSuccessAt));
+    const cardVersions = Object.fromEntries((definition.cards ?? []).map((name) => [name, version(name)]));
+    return c.html(platformPage(config.ownerName, definition, currentPocketlog(), repository.pocketlog.status().lastSuccessAt, cardVersions));
   }
   if (source === 'places') {
     c.header('Cache-Control', 'no-cache');
@@ -903,7 +919,7 @@ app.get('/cards', (c) => {
   const nowCard = `<section class="card-gallery-section"><div class="card-gallery-title"><h2><a href="/now">Right now</a></h2><span>In progress, up next, and the latest item from each platform</span></div><div class="card-gallery-row"><a href="/card/now.svg?v=${version('now')}"><img src="/card/now.webp?v=${version('now')}" alt="Right now · in-progress media, upcoming events and latest activity" width="520" loading="lazy"></a></div><p><a href="/card/now.svg">SVG</a> · <a href="/card/now.png">PNG</a> · <a href="/card/now.webp">WebP</a></p></section>`;
   const wordCloud = `<section class="card-gallery-section" id="word-cloud"><div class="card-gallery-title"><h2><a href="/profile">Word cloud</a></h2><span>Artists, games, channels, films and more from the last ${WORD_CLOUD_DAYS} days, sized by attention</span></div><div class="card-gallery-row"><a href="/card/word-cloud.svg?v=${version('word-cloud')}"><img src="/card/word-cloud.webp?v=${version('word-cloud')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud.svg">SVG</a> · <a href="/card/word-cloud.png">PNG</a> · <a href="/card/word-cloud.webp">WebP</a></p></section>`
     + `<section class="card-gallery-section" id="word-cloud-plain"><div class="card-gallery-title"><h2><a href="/profile">Word cloud, words only</a></h2><span>The same ${WORD_CLOUD_DAYS} days without the frame, for embedding</span></div><div class="card-gallery-row"><a href="/card/word-cloud-plain.svg?v=${version('word-cloud-plain')}"><img src="/card/word-cloud-plain.webp?v=${version('word-cloud-plain')}" alt="Word cloud · what ${html(config.ownerName)} has been into over the last ${WORD_CLOUD_DAYS} days, words only" width="520" loading="lazy"></a></div><p><a href="/card/word-cloud-plain.svg">SVG</a> · <a href="/card/word-cloud-plain.png">PNG</a> · <a href="/card/word-cloud-plain.webp">WebP</a></p></section>`;
-  const body = nowCard + wordCloud + rhythm + sections.filter((s) => s.cards?.length)
+  const body = nowCard + wordCloud + rhythm + [...sections, ...(pocketlogEnabled ? [pocketlogPlatform] : [])].filter((s) => s.cards?.length)
     .map((s) => {
       const externalUrl = s.url ?? '#';
       // Card gallery uses WebP (≈10× smaller than the SVG for photo-heavy cards,
@@ -1162,8 +1178,8 @@ app.get('/search', (c) => {
 
 app.get('/api', (c) => c.html(apiPage(config.ownerName, {
   baseUrl: config.publicBaseUrl,
-  sources: [...activeSources, ...(config.healthConnect.token ? ['health'] : []), ...(dayflowEnabled ? ['dayflow'] : []), ...(computaiEnabled ? ['computai'] : [])],
-  cards: sections.flatMap((s) => s.cards ?? []),
+  sources: [...activeSources, ...(config.healthConnect.token ? ['health'] : []), ...(dayflowEnabled ? ['dayflow'] : []), ...(pocketlogEnabled ? ['pocketlog'] : []), ...(computaiEnabled ? ['computai'] : [])],
+  cards: [...sections, ...(pocketlogEnabled ? [pocketlogPlatform] : [])].flatMap((s) => s.cards ?? []),
 })));
 
 // The per-platform time ledger plus ComputAI agent time, which lives in its

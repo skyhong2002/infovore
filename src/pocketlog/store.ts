@@ -1,9 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { summarizeDay } from '../dayflow/day-summary.js';
-import { dayflowKeywords } from '../dayflow/keywords.js';
-import { keywordPools } from '../dayflow/pools.js';
+import { activitySnapshot } from '../dayflow/snapshot.js';
 import type { QualityLabels } from '../dayflow/quality.js';
-import { dayflowDay, type DayflowBatch, type DayflowCategory, type DayflowExtra, type DayflowSnapshot } from '../dayflow/types.js';
+import { dayflowDay, type DayflowBatch, type DayflowSnapshot } from '../dayflow/types.js';
 
 // Phone activity mirrored from PocketLog (src/pocketlog/sync.ts). Only what the
 // public page needs is kept: each activity's interval, its effective category
@@ -59,22 +58,42 @@ export class PocketlogStore {
   }
 
   /**
-   * Store one read. Reads return activities clipped to the requested range, so
-   * an activity seen by several reads keeps the widest interval. A different
-   * journal epoch means the journal was deleted in PocketLog: start over.
+   * Replace the activities overlapping a complete read. Keep the known part
+   * of an interval outside the read only when the API clipped it at an edge.
    */
-  save(read: { epoch: number; categories: PocketlogCategory[]; activities: PocketlogActivity[]; full: boolean }, at = new Date()): number {
+  save(read: { epoch: number; categories: PocketlogCategory[]; activities: PocketlogActivity[]; full: boolean;
+    window?: { from: number; to: number; expectedAttempt: string | null } }, at = new Date()): number {
     const stamp = at.toISOString();
-    this.db.exec('BEGIN');
+    this.db.exec('BEGIN IMMEDIATE');
     try {
       const current = this.status();
+      const window = read.window;
+      if (window && current.lastAttemptAt !== window.expectedAttempt) throw new Error('PocketLog sync changed during the read');
       if (current.journalEpoch !== null && current.journalEpoch !== read.epoch) this.db.exec('DELETE FROM pocketlog_activities');
-      const upsert = this.db.prepare(`INSERT INTO pocketlog_activities (id, start_ms, end_ms, category, keywords_json) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET start_ms = MIN(start_ms, excluded.start_ms), end_ms = MAX(end_ms, excluded.end_ms),
-        category = excluded.category, keywords_json = excluded.keywords_json
-        WHERE start_ms > excluded.start_ms OR end_ms < excluded.end_ms OR category IS NOT excluded.category OR keywords_json IS NOT excluded.keywords_json`);
+      const activities = new Map<string, PocketlogActivity>();
+      for (const a of read.activities) {
+        const prior = activities.get(a.id);
+        activities.set(a.id, prior ? { ...a, start: Math.min(prior.start, a.start), end: Math.max(prior.end, a.end) } : a);
+      }
       let changes = 0;
-      for (const a of read.activities) changes += Number(upsert.run(a.id, a.start, a.end, a.category, JSON.stringify(a.keywords)).changes);
+      if (window) {
+        const existing = this.db.prepare('SELECT id FROM pocketlog_activities WHERE end_ms > ? AND start_ms < ?').all(window.from, window.to) as Array<{ id: string }>;
+        const remove = this.db.prepare('DELETE FROM pocketlog_activities WHERE id = ?');
+        for (const { id } of existing) if (!activities.has(id)) changes += Number(remove.run(id).changes);
+      }
+      const upsert = this.db.prepare(`INSERT INTO pocketlog_activities (id, start_ms, end_ms, category, keywords_json) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET start_ms = CASE WHEN ? THEN MIN(start_ms, excluded.start_ms) ELSE excluded.start_ms END,
+        end_ms = CASE WHEN ? THEN MAX(end_ms, excluded.end_ms) ELSE excluded.end_ms END,
+        category = excluded.category, keywords_json = excluded.keywords_json
+        WHERE (CASE WHEN ? THEN start_ms > excluded.start_ms ELSE start_ms != excluded.start_ms END)
+          OR (CASE WHEN ? THEN end_ms < excluded.end_ms ELSE end_ms != excluded.end_ms END)
+          OR category IS NOT excluded.category OR keywords_json IS NOT excluded.keywords_json`);
+      for (const a of activities.values()) {
+        const clippedStart = Number(!window || a.start === window.from);
+        const clippedEnd = Number(!window || a.end === window.to);
+        changes += Number(upsert.run(a.id, a.start, a.end, a.category, JSON.stringify(a.keywords),
+          clippedStart, clippedEnd, clippedStart, clippedEnd).changes);
+      }
       const categories = JSON.stringify(read.categories);
       const changed = changes > 0 || current.journalEpoch !== read.epoch
         || (this.db.prepare('SELECT categories_json FROM pocketlog_sync WHERE id = 1').get() as { categories_json: string }).categories_json !== categories;
@@ -150,34 +169,7 @@ export function buildSnapshot(activities: PocketlogActivity[], categories: Pocke
   });
   const batches = [...byDay.values()].sort((a, b) => b.day.localeCompare(a.day));
   const daily = batches.map((batch) => summarizeDay(batch.day, [batch], now, quality));
-  const weekStart = new Date(`${today}T00:00:00Z`);
-  weekStart.setUTCDate(weekStart.getUTCDate() - (weekStart.getUTCDay() + 6) % 7);
-  const weekFrom = weekStart.toISOString().slice(0, 10);
-  const week = daily.filter((d) => d.day >= weekFrom);
-  const totals = new Map<string, DayflowCategory>();
-  for (const day of week) for (const c of day.categories) {
-    const value = totals.get(c.name) ?? { ...c, minutes: 0 };
-    value.minutes += c.minutes;
-    totals.set(c.name, value);
-  }
-  const hours = (minutes: number) => Math.round(minutes / 6) / 10;
-  const extra: DayflowExtra = {
-    timeZone: 'Asia/Taipei', dayBoundaryHour: 4, daily,
-    categories: [...totals.values()].sort((a, b) => b.minutes - a.minutes),
-    keywords: dayflowKeywords(batches.filter((b) => b.day >= weekFrom), now, 36, quality),
-    keywordPools: keywordPools(batches, now, quality),
-    lastSyncedAt: status.lastSuccessAt,
-    firstDay: batches.at(-1)?.day ?? null, lastDay: batches[0]?.day ?? null,
-  };
-  return {
-    source: 'pocketlog', profile: { id: 'pocketlog', name: owner, avatar: '/logos/pocketlog.png', url: '' },
-    stats: {
-      recordedDays: daily.filter((d) => d.trackedMinutes > 0).length,
-      todayMinutes: Math.round(daily.find((d) => d.day === today)?.trackedMinutes ?? 0),
-      weeklyHours: hours(week.reduce((sum, d) => sum + d.trackedMinutes, 0)),
-      weeklyActiveHours: hours(week.reduce((sum, d) => sum + d.activeMinutes, 0)),
-    },
-    entries: [],
-    extra,
-  };
+  return activitySnapshot('pocketlog', owner, daily, batches, {
+    lastSyncedAt: status.lastSuccessAt, firstDay: batches.at(-1)?.day ?? null, lastDay: batches[0]?.day ?? null,
+  }, now, quality);
 }

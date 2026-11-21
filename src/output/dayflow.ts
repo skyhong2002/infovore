@@ -44,6 +44,7 @@ const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div
 const serif = { fontFamily: 'Instrument Serif', fontWeight: 400 };
 
 function dayflowShell(data: DayflowSnapshot, content: unknown[], note: string): Promise<string> {
+  const source = data.source === 'pocketlog' ? 'pocketlog' : 'dayflow';
   return renderCard(h('div', { style: {
     width: 520, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative',
     backgroundColor: C.background, color: C.text, fontFamily: 'Figtree', padding: 24, gap: 20,
@@ -54,7 +55,7 @@ function dayflowShell(data: DayflowSnapshot, content: unknown[], note: string): 
     h('div', { style: { display: 'flex', position: 'absolute', top: 0, left: 0, width: 520, height: 180,
       backgroundImage: 'linear-gradient(180deg, rgba(251,247,242,0) 0%, #FBF7F2 100%)' } }),
     row([
-      row([h('img', { src: logo('dayflow'), width: 32, height: 32 }), text('Dayflow', { fontSize: 19, fontWeight: 700 })], { gap: 9, alignItems: 'center' }),
+      row([h('img', { src: logo(source), width: 32, height: 32 }), text(source === 'pocketlog' ? 'PocketLog' : 'Dayflow', { fontSize: 19, fontWeight: 700 })], { gap: 9, alignItems: 'center' }),
       text(truncate(data.profile.name, 28), { fontSize: 12, color: C.muted }),
     ], { justifyContent: 'space-between', alignItems: 'center' }),
     ...content,
@@ -66,13 +67,14 @@ function dayflowShell(data: DayflowSnapshot, content: unknown[], note: string): 
 }
 
 export function buildDayflowCard(data: DayflowSnapshot): Promise<string> {
+  const device = data.source === 'pocketlog' ? 'Phone' : 'Computer';
   const days = data.extra.daily.filter((d) => d.trackedMinutes + d.errorMinutes > 0).slice(0, 7).reverse();
   const max = Math.max(1, ...days.map((d) => d.trackedMinutes));
   return dayflowShell(data, [
     row([
       text('This week', { ...serif, fontSize: 34, lineHeight: 1.1 }),
       row([
-        row([text(`${data.stats.weeklyHours}h`, { ...serif, fontSize: 56, lineHeight: 1 }), text('Computer time', { fontSize: 12, color: C.muted, marginTop: 6 })], { flexDirection: 'column' }),
+        row([text(`${data.stats.weeklyHours}h`, { ...serif, fontSize: 56, lineHeight: 1 }), text(`${device} time`, { fontSize: 12, color: C.muted, marginTop: 6 })], { flexDirection: 'column' }),
         row([text(`${data.stats.weeklyActiveHours}h`, { ...serif, fontSize: 38, lineHeight: 1, color: C.accent }), text('Active time', { fontSize: 12, color: C.muted, marginTop: 6 })], { flexDirection: 'column', borderLeft: '1px solid #DFD3CA', paddingLeft: 28, marginLeft: 36 }),
       ], { alignItems: 'flex-end', marginTop: 12 }),
     ], { flexDirection: 'column' }),
@@ -86,7 +88,7 @@ export function buildDayflowCard(data: DayflowSnapshot): Promise<string> {
       ], { alignItems: 'center', gap: 10, marginBottom: 12 })),
       ...(!days.length ? [text('Your days will appear here after the first sync.', { color: C.muted, fontSize: 13, paddingTop: 8, paddingBottom: 16 })] : []),
     ], { flexDirection: 'column', backgroundColor: '#FFFCF9', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 20px 6px', boxShadow: '0 2px 5px #EDE2D8' }),
-  ], 'Computer time may overlap other platforms.');
+  ], `${device} time may overlap other platforms.`);
 }
 
 export function buildDayflowKeywordsCard(data: DayflowSnapshot): Promise<string> {

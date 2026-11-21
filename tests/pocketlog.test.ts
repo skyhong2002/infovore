@@ -113,6 +113,31 @@ test('a deleted journal (new epoch) replaces the mirror; a refused key is record
   repo.close();
 });
 
+test('a full sync removes rebuilt activity IDs and updates shortened intervals', async () => {
+  const repo = new Repository(':memory:');
+  const now = new Date('2026-11-18T12:00:00+08:00');
+  const card = { category: 'work', app: 'x', title: 'Python', summary: '' };
+  const retained = { ...card, id: 'same', start_ms: +now - 4 * H, end_ms: +now - 2 * H };
+  const historical = { ...card, id: 'historical', start_ms: +now - 60 * 24 * H, end_ms: +now - 60 * 24 * H + H };
+  const replaced = { ...card, id: 'old', start_ms: +now - 5 * 24 * H, end_ms: +now - 5 * 24 * H + H };
+  await syncPocketlog(repo.pocketlog, config, now, fakePocketlog([retained, historical, replaced]).fetcher);
+
+  const replacement = { ...replaced, id: 'new' };
+  const shortened = { ...retained, start_ms: retained.start_ms + H, end_ms: retained.end_ms - H / 2 };
+  const later = new Date(+now + 24 * H + 1);
+  const { fetcher } = fakePocketlog([shortened, replacement]);
+  await syncPocketlog(repo.pocketlog, config, later, fetcher);
+  assert.deepEqual(repo.pocketlog.activities().map((a) => [a.id, a.start, a.end]), [
+    ['historical', historical.start_ms, historical.end_ms],
+    ['new', replacement.start_ms, replacement.end_ms],
+    ['same', shortened.start_ms, shortened.end_ms],
+  ]);
+
+  await syncPocketlog(repo.pocketlog, config, new Date(+later + H), fetcher, true);
+  assert.deepEqual(repo.pocketlog.activities().map((a) => a.id), ['new', 'same']);
+  repo.close();
+});
+
 test('the PocketLog platform page, JSON and listings', async () => {
   const now = new Date();
   repository.pocketlog.save({ epoch: 1, full: true, categories: [{ id: 'work', name: '工作', color: '#b9a4ed', idle: false }],
@@ -127,12 +152,25 @@ test('the PocketLog platform page, JSON and listings', async () => {
   assert.match(body, /工作/);
   assert.match(body, /Phone time is the Android app sessions PocketLog recorded/);
   assert.doesNotMatch(body, /search\?source=pocketlog/);
-  const json = await (await app.request('/api/pocketlog.json')).json() as { source: string; stats: { recordedDays: number } };
-  assert.equal(json.source, 'pocketlog');
-  assert.ok(json.stats.recordedDays >= 1);
+  for (const section of ['Distinctive lately', 'All recent keywords', 'Categories this week', 'Recent recorded days', 'Share cards']) {
+    assert.ok(body.includes(section), section);
+  }
+  const json = await (await app.request('/api/pocketlog.json')).json() as {
+    fetchedAt: string; data: { source: string; stats: { recordedDays: number }; entries: Array<{ status: string }> };
+  };
+  assert.equal(json.fetchedAt, now.toISOString());
+  assert.equal(json.data.source, 'pocketlog');
+  assert.ok(json.data.stats.recordedDays >= 1);
+  assert.equal(json.data.entries[0].status, 'daily_summary');
+  for (const name of ['pocketlog', 'pocketlog-keywords', 'pocketlog-categories']) {
+    assert.ok(body.includes(`/card/${name}.webp?v=`));
+    const svg = await app.request(`/card/${name}.svg`);
+    assert.equal(svg.status, 200);
+    assert.match(await svg.text(), /<svg/);
+  }
   assert.match(await (await app.request('/platforms')).text(), /href="\/platforms\/pocketlog"/);
   const home = await (await app.request('/')).text();
-  assert.match(home, /on the phone this week/);
+  assert.match(home, /h active this week/);
   assert.match(home, /data-source="pocketlog"/, 'phone time is listed by platform');
   assert.match(home, /Phone · active/);
   const coverage = repository.activityCoverage(now, { dayflow: false, health: false, pocketlog: true });

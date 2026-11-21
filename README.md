@@ -215,11 +215,14 @@ and `POCKETLOG_TOKEN` (a 64-hex **journal** device key issued in PocketLog under
 設定 → 連線與裝置) set, the ingest service reads `GET /v1/workspace` and the
 paged `GET /v1/activities` every `POCKETLOG_SYNC_INTERVAL_MINUTES` (default 15):
 the last 3 days on each run, 35 days once a day, and up to 400 days the first
-time or after the PocketLog journal is deleted. Of each card it keeps only the
+time or after the PocketLog journal is deleted. Each successful read also removes
+mirror rows absent from that range. Of each card it keeps only the
 interval, the effective category and the labels from the fixed keyword vocabulary
 (`src/dayflow/keywords.ts`); titles, summaries, apps and screen content stay in
-PocketLog. The public page shows daily phone time by PocketLog category, this
-week's categories and recurring labels, using the Dayflow layout. Device keys
+PocketLog. The public page uses Dayflow's layout for daily summaries, categories,
+and recurring labels. `/api/pocketlog.json` uses the same `{ fetchedAt, data }`
+format as Dayflow, and `pocketlog`, `pocketlog-keywords`, and
+`pocketlog-categories` are available as share cards. Device keys
 last at most 90 days, so reissue the key before it expires; a refused key shows on
 `/status` and `/healthz`. In production the `ingest` service joins the
 `pocketlog-production_default` network to reach PocketLog, which listens only on
