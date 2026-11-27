@@ -190,7 +190,10 @@ if (process.env.NODE_ENV !== 'test') {
   const repository = new Repository(config.databasePath, { dayflowQuality: Boolean(config.dayflow.quality) });
   const app = createIngestApp(repository);
   if (config.dayflow.quality && config.dayflow.token && config.sourceEnabled('dayflow')) startDayflowQualityWorker(repository.dayflow, config.dayflow.quality);
-  if (config.pocketlog && config.sourceEnabled('pocketlog')) startPocketlogSync(repository.pocketlog, config.pocketlog);
+  if (config.pocketlog && config.sourceEnabled('pocketlog')) {
+    startPocketlogSync(repository.pocketlog, config.pocketlog);
+    if (config.dayflow.quality) startDayflowQualityWorker(repository.pocketlog, config.dayflow.quality, 'pocketlog');
+  }
   if (config.fog.dropbox) startFogSync(repository.fog, config.fog.dropbox, () => afterFogSync(repository.fog, config.places));
   serve({ fetch: app.fetch, port: config.port }, (info) => console.log(`infovore ingest listening on :${info.port}`));
 }

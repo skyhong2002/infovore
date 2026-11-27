@@ -8,6 +8,8 @@ const { app, repository } = await import('../src/index.js');
 const { Repository } = await import('../src/data/database.js');
 const { buildSnapshot } = await import('../src/pocketlog/store.js');
 const { syncPocketlog, PocketlogHttpError } = await import('../src/pocketlog/sync.js');
+const { DayflowQualityWorker } = await import('../src/dayflow/quality-worker.js');
+const { qualityHash } = await import('../src/dayflow/quality.js');
 
 const H = 3_600_000;
 const at = (iso: string) => Date.parse(iso);
@@ -113,6 +115,84 @@ test('a deleted journal (new epoch) replaces the mirror; a refused key is record
   repo.close();
 });
 
+test('a full sync removes rebuilt activity IDs and updates shortened intervals', async () => {
+  const repo = new Repository(':memory:');
+  const now = new Date('2026-11-18T12:00:00+08:00');
+  const card = { category: 'work', app: 'x', title: 'Python', summary: '' };
+  const retained = { ...card, id: 'same', start_ms: +now - 4 * H, end_ms: +now - 2 * H };
+  const historical = { ...card, id: 'historical', start_ms: +now - 60 * 24 * H, end_ms: +now - 60 * 24 * H + H };
+  const replaced = { ...card, id: 'old', start_ms: +now - 5 * 24 * H, end_ms: +now - 5 * 24 * H + H };
+  await syncPocketlog(repo.pocketlog, config, now, fakePocketlog([retained, historical, replaced]).fetcher);
+
+  const replacement = { ...replaced, id: 'new' };
+  const shortened = { ...retained, start_ms: retained.start_ms + H, end_ms: retained.end_ms - H / 2 };
+  const later = new Date(+now + 24 * H + 1);
+  const { fetcher } = fakePocketlog([shortened, replacement]);
+  await syncPocketlog(repo.pocketlog, config, later, fetcher);
+  assert.deepEqual(repo.pocketlog.activities().map((a) => [a.id, a.start, a.end]), [
+    ['historical', historical.start_ms, historical.end_ms],
+    ['new', replacement.start_ms, replacement.end_ms],
+    ['same', shortened.start_ms, shortened.end_ms],
+  ]);
+
+  await syncPocketlog(repo.pocketlog, config, new Date(+later + H), fetcher, true);
+  assert.deepEqual(repo.pocketlog.activities().map((a) => a.id), ['new', 'same']);
+  repo.close();
+});
+
+test('PocketLog backfills sanitized titles and shares Dayflow topic classification and publishing rules', async () => {
+  const repo = new Repository(':memory:', { dayflowQuality: true });
+  const now = new Date('2026-11-22T12:00:00+08:00');
+  const journal: Stored[] = [
+    { id: 'old', start_ms: +now - 60 * 24 * H, end_ms: +now - 60 * 24 * H + H,
+      category: 'work', app: 'private.app', title: '整理樂譜', summary: '' },
+    { id: 'first', start_ms: +now - 27 * H, end_ms: +now - 26 * H,
+      category: 'work', app: 'private.app', title: '透過 YouTube 查找樂譜 Alice@example.com', summary: 'private summary' },
+    { id: 'second', start_ms: +now - 4 * H, end_ms: +now - 3 * H,
+      category: 'work', app: 'private.app', title: '在 Discord 討論樂譜 https://example.com/private', summary: '', source: 'user' },
+    { id: 'app-only', start_ms: +now - 2 * H, end_ms: +now - H,
+      category: 'work', app: 'private.app', title: 'Discord', summary: '', source: 'app_only' },
+  ];
+  const { fetcher, calls } = fakePocketlog(journal);
+  await syncPocketlog(repo.pocketlog, config, new Date(+now - H), fetcher);
+  assert.equal(repo.pocketlog.activities()[0].qualityTitle, undefined);
+
+  const aiConfig = { ...config, classifyTitles: true };
+  calls.length = 0;
+  await syncPocketlog(repo.pocketlog, aiConfig, now, fetcher);
+  assert.ok(calls.filter((url) => url.startsWith('/v1/activities')).length > 13);
+  assert.equal(repo.pocketlog.status().qualityBackfilled, true);
+  assert.equal(repo.pocketlog.activities()[0].qualityTitle, '整理樂譜');
+  const before = repo.pocketlog.snapshot('Sky', now);
+  assert.deepEqual(before.extra.keywordPools?.all, []);
+  assert.equal(before.extra.keywordQuality?.mode, 'local');
+
+  const unrelatedTitle = '已分類但不在這批的活動';
+  repo.pocketlog.quality.save([{ title: unrelatedTitle, hash: qualityHash(unrelatedTitle) }],
+    [[{ name: '之前的標籤', kind: 'topic', confidence: 1 }]], 'sky-quality', 'upstream-model');
+  const worker = new DayflowQualityWorker(repo.pocketlog, { baseUrl: 'http://model.test', apiKey: 'key', model: 'sky-quality' },
+    async (inputs, known) => {
+      assert.deepEqual(known, []);
+      assert.deepEqual(inputs.map((input) => input.title).sort(), ['在 Discord 討論樂譜', '整理樂譜', '透過 YouTube 查找樂譜'].sort());
+      return { model: 'upstream-model', labels: inputs.map(() => [
+        { name: '樂譜整理', kind: 'topic', confidence: 0.95 },
+        { name: 'Discord', kind: 'tool', confidence: 1 },
+        { name: 'Low confidence', kind: 'topic', confidence: 0.6 },
+      ]) };
+    }, 'pocketlog');
+  assert.equal(await worker.tick(now), 3);
+  const after = repo.pocketlog.snapshot('Sky', now);
+  assert.deepEqual(after.extra.keywordPools?.all, [{ name: '樂譜整理', mentions: 2 }]);
+  assert.deepEqual(after.extra.keywordQuality, { mode: 'ai', classifiedActivities: 3, eligibleActivities: 3, model: 'sky-quality' });
+  assert.equal(repo.dayflow.quality.revision(), 0);
+  assert.doesNotMatch(JSON.stringify(after), /Discord|YouTube|Low confidence|example\.com|private summary|查找樂譜/);
+
+  calls.length = 0;
+  await syncPocketlog(repo.pocketlog, aiConfig, new Date(+now + H), fetcher);
+  assert.ok(calls.filter((url) => url.startsWith('/v1/activities')).length < 10);
+  repo.close();
+});
+
 test('the PocketLog platform page, JSON and listings', async () => {
   const now = new Date();
   repository.pocketlog.save({ epoch: 1, full: true, categories: [{ id: 'work', name: '工作', color: '#b9a4ed', idle: false }],
@@ -127,12 +207,26 @@ test('the PocketLog platform page, JSON and listings', async () => {
   assert.match(body, /工作/);
   assert.match(body, /Phone time is the Android app sessions PocketLog recorded/);
   assert.doesNotMatch(body, /search\?source=pocketlog/);
-  const json = await (await app.request('/api/pocketlog.json')).json() as { source: string; stats: { recordedDays: number } };
-  assert.equal(json.source, 'pocketlog');
-  assert.ok(json.stats.recordedDays >= 1);
+  for (const section of ['Distinctive lately', 'All recent keywords', 'Categories this week', 'Recent recorded days', 'Share cards']) {
+    assert.ok(body.includes(section), section);
+  }
+  assert.doesNotMatch(body, /<div class="platform-entry-grid">/);
+  const json = await (await app.request('/api/pocketlog.json')).json() as {
+    fetchedAt: string; data: { source: string; stats: { recordedDays: number }; entries: Array<{ status: string }> };
+  };
+  assert.equal(json.fetchedAt, now.toISOString());
+  assert.equal(json.data.source, 'pocketlog');
+  assert.ok(json.data.stats.recordedDays >= 1);
+  assert.equal(json.data.entries[0].status, 'daily_summary');
+  for (const name of ['pocketlog', 'pocketlog-keywords', 'pocketlog-categories']) {
+    assert.ok(body.includes(`/card/${name}.webp?v=`));
+    const svg = await app.request(`/card/${name}.svg`);
+    assert.equal(svg.status, 200);
+    assert.match(await svg.text(), /<svg/);
+  }
   assert.match(await (await app.request('/platforms')).text(), /href="\/platforms\/pocketlog"/);
   const home = await (await app.request('/')).text();
-  assert.match(home, /on the phone this week/);
+  assert.match(home, /h active this week/);
   assert.match(home, /data-source="pocketlog"/, 'phone time is listed by platform');
   assert.match(home, /Phone · active/);
   const coverage = repository.activityCoverage(now, { dayflow: false, health: false, pocketlog: true });

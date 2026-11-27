@@ -67,7 +67,6 @@ const pocketlogInterval = Number(process.env.POCKETLOG_SYNC_INTERVAL_MINUTES ?? 
 if (!Number.isInteger(pocketlogInterval) || pocketlogInterval < 5 || pocketlogInterval > 1440) {
   throw new Error('POCKETLOG_SYNC_INTERVAL_MINUTES must be an integer between 5 and 1440');
 }
-const pocketlog = pocketlogUrl ? { baseUrl: pocketlogUrl, token: pocketlogToken, intervalMinutes: pocketlogInterval } : null;
 // The public Places page (src/location/public.ts): on with at least one privacy zone.
 const places = locationToken ? parsePlacesConfig(process.env) : null;
 const publicBaseUrl = basePublicUrl(process.env);
@@ -76,6 +75,10 @@ const qualityApiKey = process.env.DAYFLOW_AI_API_KEY ?? '';
 if (qualityBaseUrl && !/^https?:\/\//.test(qualityBaseUrl)) throw new Error('DAYFLOW_AI_BASE_URL must use HTTP or HTTPS');
 const dayflowQuality = qualityBaseUrl && qualityApiKey ? {
   baseUrl: qualityBaseUrl, apiKey: qualityApiKey, model: process.env.DAYFLOW_AI_MODEL || 'sky-quality',
+} : null;
+
+const pocketlog = pocketlogUrl ? {
+  baseUrl: pocketlogUrl, token: pocketlogToken, intervalMinutes: pocketlogInterval, classifyTitles: Boolean(dayflowQuality),
 } : null;
 
 const invalidSources = sources.filter((source) => !knownSources.includes(source as typeof knownSources[number]));

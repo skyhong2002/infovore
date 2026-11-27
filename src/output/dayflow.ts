@@ -18,9 +18,9 @@ export function dayflowDetails(extra: DayflowExtra, source: 'dayflow' | 'pocketl
   return `<section><div class="platform-section-heading"><h2>Distinctive lately</h2><span>Recent 7 days vs preceding 90 days</span></div>
     <div class="platform-tags">${special.map((k) => `<span title="${k.historicalMentions} activities in the comparison period; ${k.lift}× the previous mention rate">${html(k.name)} · ${k.mentions} activities</span>`).join('') || `<span>${pools?.status === 'insufficient_history' ? 'More historical activity is needed for comparison' : 'No distinctly rising keywords in this period'}</span>`}</div>
     <div class="platform-note">Less habitual topics whose activity mention rate has risen. ${pools ? `Recent: ${pools.recentFrom}–${pools.recentTo} (${pools.recentDays} recorded days). Comparison: ${pools.baselineFrom}–${pools.baselineTo} (${pools.baselineDays} recorded days).` : ''}</div></section>
-    <section><div class="platform-section-heading"><h2>All recent keywords</h2><span>Last 7 recorded days · ${phone ? 'recognized labels' : ai ? 'topics recurring across days' : 'recurring words included'}</span></div>
+    <section><div class="platform-section-heading"><h2>All recent keywords</h2><span>Last 7 recorded days · ${ai ? 'topics recurring across days' : phone ? 'recognized labels' : 'recurring words included'}</span></div>
     <div class="platform-tags">${keywords.map((k) => `<span>${html(k.name)} · ${k.mentions} activities</span>`).join('') || '<span>No keywords in this period</span>'}</div>
-    <div class="platform-note">${phone ? 'Only labels from a fixed vocabulary of tools, projects and activities are published; topics must recur on at least two days.' : ai ? 'Related activities are grouped into projects, topics and works. Tools and generic narration are excluded; recent topics must recur on at least two days. Topics may overlap.' : 'Tools, projects and topics found in activity descriptions. Repeated new words can appear alongside recognized tool names.'} Each activity counts once per keyword; counts are mentions, not time spent.</div></section><section><div class="platform-section-heading"><h2>Categories this week</h2><span>Monday–Sunday · 4am boundary</span></div>
+    <div class="platform-note">${ai ? 'Related activities are grouped into projects, topics and works. Tools and generic narration are excluded; recent topics must recur on at least two days. Topics may overlap.' : phone ? 'Labels from a fixed vocabulary of projects and activities; topics must recur on at least two days.' : 'Tools, projects and topics found in activity descriptions. Repeated new words can appear alongside recognized tool names.'} Each activity counts once per keyword; counts are mentions, not time spent.</div></section><section><div class="platform-section-heading"><h2>Categories this week</h2><span>Monday–Sunday · 4am boundary</span></div>
     <div class="platform-tags">${extra.categories.map((c) => `<span><i style="display:inline-block;width:8px;height:8px;background:${html(c.color)};margin-right:6px"></i>${html(c.name)} · ${html(duration(c.minutes))}</span>`).join('') || '<span>No activity this week</span>'}</div></section>
     <section><div class="platform-section-heading"><h2>Recent recorded days</h2><span>Asia/Taipei · 4am–4am</span></div>
     ${reviewing}
@@ -44,6 +44,7 @@ const row = (children: unknown[], style: Record<string, unknown> = {}) => h('div
 const serif = { fontFamily: 'Instrument Serif', fontWeight: 400 };
 
 function dayflowShell(data: DayflowSnapshot, content: unknown[], note: string): Promise<string> {
+  const source = data.source === 'pocketlog' ? 'pocketlog' : 'dayflow';
   return renderCard(h('div', { style: {
     width: 520, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative',
     backgroundColor: C.background, color: C.text, fontFamily: 'Figtree', padding: 24, gap: 20,
@@ -54,7 +55,7 @@ function dayflowShell(data: DayflowSnapshot, content: unknown[], note: string): 
     h('div', { style: { display: 'flex', position: 'absolute', top: 0, left: 0, width: 520, height: 180,
       backgroundImage: 'linear-gradient(180deg, rgba(251,247,242,0) 0%, #FBF7F2 100%)' } }),
     row([
-      row([h('img', { src: logo('dayflow'), width: 32, height: 32 }), text('Dayflow', { fontSize: 19, fontWeight: 700 })], { gap: 9, alignItems: 'center' }),
+      row([h('img', { src: logo(source), width: 32, height: 32 }), text(source === 'pocketlog' ? 'PocketLog' : 'Dayflow', { fontSize: 19, fontWeight: 700 })], { gap: 9, alignItems: 'center' }),
       text(truncate(data.profile.name, 28), { fontSize: 12, color: C.muted }),
     ], { justifyContent: 'space-between', alignItems: 'center' }),
     ...content,
@@ -66,13 +67,14 @@ function dayflowShell(data: DayflowSnapshot, content: unknown[], note: string): 
 }
 
 export function buildDayflowCard(data: DayflowSnapshot): Promise<string> {
+  const device = data.source === 'pocketlog' ? 'Phone' : 'Computer';
   const days = data.extra.daily.filter((d) => d.trackedMinutes + d.errorMinutes > 0).slice(0, 7).reverse();
   const max = Math.max(1, ...days.map((d) => d.trackedMinutes));
   return dayflowShell(data, [
     row([
       text('This week', { ...serif, fontSize: 34, lineHeight: 1.1 }),
       row([
-        row([text(`${data.stats.weeklyHours}h`, { ...serif, fontSize: 56, lineHeight: 1 }), text('Computer time', { fontSize: 12, color: C.muted, marginTop: 6 })], { flexDirection: 'column' }),
+        row([text(`${data.stats.weeklyHours}h`, { ...serif, fontSize: 56, lineHeight: 1 }), text(`${device} time`, { fontSize: 12, color: C.muted, marginTop: 6 })], { flexDirection: 'column' }),
         row([text(`${data.stats.weeklyActiveHours}h`, { ...serif, fontSize: 38, lineHeight: 1, color: C.accent }), text('Active time', { fontSize: 12, color: C.muted, marginTop: 6 })], { flexDirection: 'column', borderLeft: '1px solid #DFD3CA', paddingLeft: 28, marginLeft: 36 }),
       ], { alignItems: 'flex-end', marginTop: 12 }),
     ], { flexDirection: 'column' }),
@@ -86,7 +88,7 @@ export function buildDayflowCard(data: DayflowSnapshot): Promise<string> {
       ], { alignItems: 'center', gap: 10, marginBottom: 12 })),
       ...(!days.length ? [text('Your days will appear here after the first sync.', { color: C.muted, fontSize: 13, paddingTop: 8, paddingBottom: 16 })] : []),
     ], { flexDirection: 'column', backgroundColor: '#FFFCF9', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 20px 6px', boxShadow: '0 2px 5px #EDE2D8' }),
-  ], 'Computer time may overlap other platforms.');
+  ], `${device} time may overlap other platforms.`);
 }
 
 export function buildDayflowKeywordsCard(data: DayflowSnapshot): Promise<string> {

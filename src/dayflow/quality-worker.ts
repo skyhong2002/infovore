@@ -1,12 +1,19 @@
-import type { DayflowStore } from './store.js';
+import type { DayflowQualityStore } from './quality-store.js';
+import type { DayflowBatch } from './types.js';
 import { classifyQualityTitles, type QualityConfig } from './quality.js';
+
+interface QualitySource {
+  quality: DayflowQualityStore;
+  batchesSince(day: string, now: Date): DayflowBatch[];
+}
+type QualitySourceName = 'dayflow' | 'pocketlog';
 
 // Ingest is the sole owner. The DB lease also prevents overlapping workers
 // during a rollout/restart. Reads and ingestion never wait on the model.
 export class DayflowQualityWorker {
   private running = false;
-  constructor(private store: DayflowStore, private config: QualityConfig,
-    private classify = classifyQualityTitles) {}
+  constructor(private store: QualitySource, private config: QualityConfig,
+    private classify = classifyQualityTitles, private source: QualitySourceName = 'dayflow') {}
   async tick(now = new Date()): Promise<number> {
     if (this.running || !this.store.quality.acquire(+now)) return 0;
     this.running = true;
@@ -14,19 +21,20 @@ export class DayflowQualityWorker {
     try {
       // pending() sorts newest first, so fresh imports take priority over the
       // historical backlog each cycle. Cached titles are never sent again.
-      const batches = this.store.batchesSince('0000-00-00');
+      const batches = this.store.batchesSince('0000-00-00', now);
       for (let round = 0; round < 4; round++) {
         const inputs = this.store.quality.pending(batches, now);
         if (!inputs.length) break;
         try {
-          const result = await this.classify(inputs, this.store.quality.known(), this.config);
+          const hints = this.source === 'dayflow' ? this.store.quality.known() : [];
+          const result = await this.classify(inputs, hints, this.config);
           this.store.quality.save(inputs, result.labels, this.config.model, result.model);
           processed += inputs.length;
-          console.log(`[dayflow-quality] classified ${inputs.length} titles`);
+          console.log(`[${this.source}-quality] classified ${inputs.length} titles`);
         } catch {
           this.store.quality.failed(inputs);
           // Never log API bodies, activity text, URLs, credentials or IDs.
-          console.warn('[dayflow-quality] classification failed; retry after cooldown');
+          console.warn(`[${this.source}-quality] classification failed; retry after cooldown`);
           break;
         }
       }
@@ -34,13 +42,13 @@ export class DayflowQualityWorker {
     return processed;
   }
 }
-export function startDayflowQualityWorker(store: DayflowStore, config: QualityConfig): () => void {
-  const worker = new DayflowQualityWorker(store, config);
+export function startDayflowQualityWorker(store: QualitySource, config: QualityConfig, source: QualitySourceName = 'dayflow'): () => void {
+  const worker = new DayflowQualityWorker(store, config, classifyQualityTitles, source);
   let stopped = false, timer: ReturnType<typeof setTimeout>;
   const run = async () => {
     let processed = 0;
     try { processed = await worker.tick(); }
-    catch { console.warn('[dayflow-quality] worker unavailable; retrying later'); }
+    catch { console.warn(`[${source}-quality] worker unavailable; retrying later`); }
     finally {
       // Drain the backlog without a minute-long pause after every 64 titles.
       // Calls stay serial and bounded; idle/failing workers retain the slower poll.

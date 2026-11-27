@@ -314,7 +314,7 @@ export class Repository {
     this.computai = new ComputaiStore(this.db);
     this.location = new LocationStore(this.db);
     this.fog = new FogStore(this.db);
-    this.pocketlog = new PocketlogStore(this.db);
+    this.pocketlog = new PocketlogStore(this.db, options.dayflowQuality);
     this.backloggdLibrary = new BackloggdLibraryStore(this.db);
   }
 

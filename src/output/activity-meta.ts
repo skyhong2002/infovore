@@ -35,7 +35,7 @@ export function eventStatusLabel(activity: Activity, now = new Date()): string |
 
 export function activityMeta(activity: Activity, now = new Date()): string {
   if (activity.source === 'health') return html(healthActivityMeta(activity));
-  if (activity.source === 'dayflow') return html(`${timeAmount(Number(activity.extra.activeMinutes) * 60)} active · ${timeAmount(Number(activity.extra.idleMinutes) * 60)} idle`);
+  if (activity.source === 'dayflow' || activity.source === 'pocketlog') return html(`${timeAmount(Number(activity.extra.activeMinutes) * 60)} active · ${timeAmount(Number(activity.extra.idleMinutes) * 60)} idle`);
   if (activity.source === 'computai') return html(computaiMeta(activity));
   const details: string[] = [];
   const add = (value: unknown) => details.push(html(value));

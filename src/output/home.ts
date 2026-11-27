@@ -78,7 +78,7 @@ const homeStyles = `
   .home-platform-source{color:var(--accent);display:block;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
   .home-platform-title{color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:13px;font-weight:700;line-height:1.3;margin-top:3px;overflow:hidden;overflow-wrap:anywhere}
   .home-platform-meta{color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12.5px;line-height:1.4;margin-top:2px;overflow:hidden}
-  .home-platform-tile[href="/platforms/health"] .home-platform-meta,.home-platform-tile[href="/platforms/dayflow"] .home-platform-meta{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .home-platform-tile[href="/platforms/health"] .home-platform-meta,.home-platform-tile[href="/platforms/dayflow"] .home-platform-meta,.home-platform-tile[href="/platforms/pocketlog"] .home-platform-meta{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .home-dashboard-grid{align-items:start;display:grid;gap:12px;grid-template-columns:minmax(0,1.4fr) minmax(300px,.6fr)}
   .home-panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0;padding:16px 18px}
   .home-panel h2{display:inline;font-size:16px;margin:0;vertical-align:middle}
@@ -203,13 +203,14 @@ function overviewTile(item: PlatformOverview): string {
   </a>`;
 }
 
-function recentRow(activity: Activity, dayflow?: DayflowSnapshot | null): string {
+function recentRow(activity: Activity, dayflow?: DayflowSnapshot | null, pocketlog?: DayflowSnapshot | null): string {
+  const kind = activity.source === 'pocketlog' ? 'phone' : activity.mediaKind;
   const when = formatDate(activity);
   const meta = activityMeta(activity);
   const time = when.time ? `${when.date} · ${when.time}` : when.date;
   return `<li class="home-recent-item">
     ${imageOrPlaceholder(activity.image, 'home-recent-art', activity.title)}
-    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(activity.mediaKind)}</span></span>${activity.source === 'health' || activity.source === 'dayflow' || activity.source === 'computai' ? `<a class="home-recent-title" href="/platforms/${html(activity.source)}${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span>${activity.source === 'dayflow' ? dailyKeywords(activity, dayflow) : ''}</span>
+    <span class="home-recent-copy"><span class="home-recent-labels"><span class="home-recent-source">${html(sourceLabel(activity.source))}</span><span class="home-recent-kind">${html(kind)}</span></span>${activity.source === 'health' || activity.source === 'dayflow' || activity.source === 'pocketlog' || activity.source === 'computai' ? `<a class="home-recent-title" href="/platforms/${html(activity.source)}${activity.status === 'sleep' ? '#sleep' : ''}">${html(activity.title)}</a>` : `<span class="home-recent-title">${html(activity.title)}</span>`}<span class="home-recent-meta" title="${meta}">${meta}</span>${activity.source === 'dayflow' ? dailyKeywords(activity, dayflow) : activity.source === 'pocketlog' ? dailyKeywords(activity, pocketlog) : ''}</span>
     <time class="home-recent-time"${when.datetime ? ` datetime="${html(when.datetime)}"` : ''}>${html(time)}${when.time ? ' GMT+8' : ''}</time>
   </li>`;
 }
@@ -328,7 +329,7 @@ function rhythmPanel(coverage: CoverageDay[]): string {
 
 export function homePage(data: HomepageData): string {
   const recent = data.recentActivities.length
-    ? `<ul class="home-recent-list">${data.recentActivities.map(activity => recentRow(activity, data.dayflow)).join('')}</ul>`
+    ? `<ul class="home-recent-list">${data.recentActivities.map(activity => recentRow(activity, data.dayflow, data.pocketlog)).join('')}</ul>`
     : '<div class="home-empty">No activity has been collected yet.</div>';
   const highlights = data.platformOverviews?.length
     ? `<div class="home-platform-scroller">${data.platformOverviews.map(overviewTile).join('')}</div>`

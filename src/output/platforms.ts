@@ -233,9 +233,7 @@ export function platformIndexPage(ownerName: string, platforms: PlatformSummary[
     const profile = snapshot?.profile;
     const logo = definition.logo;
     const accent = platformColors[definition.source] ?? definition.accent;
-    const daysOnly = definition.source === 'pocketlog';
-    const entryCount = daysOnly ? snapshot?.stats.recordedDays ?? 0 : snapshot?.entries.length ?? 0;
-    const entryLabel = daysOnly ? 'recorded days' : 'synced entries';
+    const entryCount = snapshot?.entries.length ?? 0;
     const stats = Object.entries(snapshot?.stats ?? {}).slice(0, 3);
     return `<a class="platform-tile" href="${platformPath(definition.source)}" style="--platform-accent:${html(accent)}">
       <div class="platform-tile-top">${logo
@@ -244,7 +242,7 @@ export function platformIndexPage(ownerName: string, platforms: PlatformSummary[
         <div><h2>${html(definition.title)}</h2>
         <p>${html(profile?.name ?? 'Waiting for first sync')}</p></div></div>
       <p class="platform-description">${html(definition.description)}</p>
-      <div class="platform-tile-stats"><strong>${number(entryCount)}</strong> ${entryLabel}${stats.length
+      <div class="platform-tile-stats"><strong>${number(entryCount)}</strong> synced entries${stats.length
         ? ` · ${stats.map(([key, value]) => `${html(label(key))} ${number(value)}`).join(' · ')}`
         : ''}</div>
       <div class="platform-tile-footer">${fetchedAt ? `Synced ${html(date(fetchedAt))}` : 'Live from the infovore archive'} <span>Open →</span></div>
@@ -291,15 +289,16 @@ export function platformPage(
   leadHtml = '',
 ): string {
   const profileUrl = snapshot.profile.url || definition.url;
+  const hasRecordedDays = definition.source === 'dayflow' || definition.source === 'pocketlog';
   const kitsuLibrary = definition.source === 'kitsu' ? (snapshot.extra as Partial<KitsuExtra> | null)?.library : null;
   const coverage = kitsuLibrary ? `${number(kitsuLibrary.anime.length + kitsuLibrary.manga.length)} library entries`
-    : definition.source === 'pocketlog' ? `${number(snapshot.stats.recordedDays ?? 0)} recorded days`
+    : hasRecordedDays ? `${number(snapshot.stats.recordedDays ?? 0)} recorded days`
     : `${number(snapshot.entries.length)} synced entries`;
-  const waiting = definition.source === 'places' ? 'Updated with every sync, shown days behind' : definition.source === 'pocketlog' ? 'Waiting for the first sync' : 'Stored manually';
+  const waiting = definition.source === 'places' ? 'Updated with every sync, shown days behind' : hasRecordedDays ? 'Waiting for the first sync' : 'Stored manually';
   const stats = Object.entries(snapshot.stats).filter(([key]) => !hiddenStats.has(key)).map(([key, value]) =>
     `<div class="platform-stat"><span>${html(statLabels[key] ?? label(key))}</span><strong>${number(value)}</strong></div>`
   ).join('');
-  const recent = kitsuLibrary ? snapshot.entries.filter((entry) => entry.status !== 'planned') : snapshot.entries;
+  const recent = hasRecordedDays ? [] : kitsuLibrary ? snapshot.entries.filter((entry) => entry.status !== 'planned') : snapshot.entries;
   const groups = [...new Set(recent.map((entry) => entry.kind))];
   const entries = groups.map((kind) => {
     const items = recent.filter((entry) => entry.kind === kind);
@@ -308,7 +307,7 @@ export function platformPage(
       <div class="platform-entry-grid">${items.map(entryCard).join('')}</div></section>`;
   }).join('');
   const platformEntries = kitsuLibrary ? kitsuShowboard(kitsuLibrary, entries)
-    : entries || (['dayflow', 'places', 'pocketlog'].includes(definition.source) ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>');
+    : entries || (hasRecordedDays || definition.source === 'places' ? '' : '<div class="empty">Nothing has been collected from this platform yet.</div>');
   const extra = (snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {}) as Record<string, unknown>;
   const extras = [
     definition.source === 'dayflow' || definition.source === 'pocketlog' ? dayflowDetails(extra as unknown as DayflowExtra, definition.source) : '',
@@ -334,9 +333,9 @@ export function platformPage(
     ['Profile', html(snapshot.profile.name || ownerName)],
     ['Platform', html(definition.title)],
     ...(profileUrl ? [['Source', `<a href="${html(profileUrl)}">${html(profileUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))} ↗</a>`] as [string, string]] : []),
-    ['Data', `<a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a>${['places', 'pocketlog'].includes(definition.source) ? '' : ` · <a href="/search?source=${html(definition.source)}">Search</a>`}`],
+    ['Data', `<a href="${html(definition.jsonUrl ?? `/api/activities.json?source=${definition.source}`)}">JSON</a>${['places', 'dayflow', 'pocketlog'].includes(definition.source) ? '' : ` · <a href="/search?source=${html(definition.source)}">Search</a>`}`],
     ['Synced', fetchedAt ? html(date(fetchedAt)) : waiting],
-    [definition.source === 'pocketlog' ? 'Coverage' : 'Entries', coverage],
+    ['Entries', coverage],
   ];
   const aside = `<aside class="platform-aside">
     <section class="aside-card"><h3>About this mirror</h3><dl class="fact-list">${facts.map(([term, value]) => `<dt>${term}</dt><dd>${value}</dd>`).join('')}</dl></section>
