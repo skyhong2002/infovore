@@ -1,4 +1,5 @@
-import satori from 'satori';
+import { Renderer } from '@takumi-rs/core';
+import { fromJsx } from '@takumi-rs/helpers/jsx';
 import { Resvg } from '@resvg/resvg-js';
 import encodeWebp, { init as initWebp } from '@jsquash/webp/encode.js';
 import { simd } from 'wasm-feature-detect';
@@ -30,6 +31,15 @@ const fonts = [
   { name: 'Noto Sans TC', data: font('NotoSansTC-Bold.otf'), weight: 700 as const, style: 'normal' as const },
 ];
 
+// A renderer instance holds compiled font state, so it's built once and
+// reused across every card render instead of re-registered per call.
+const renderer = new Renderer();
+let fontsReady: Promise<unknown> | null = null;
+function ensureFonts(): Promise<unknown> {
+  if (!fontsReady) fontsReady = Promise.all(fonts.map((f) => renderer.registerFont(f)));
+  return fontsReady;
+}
+
 // Platform logos shipped in-repo, inlined as data URIs.
 const logoCache = new Map<string, string>();
 export function logo(name: 'backloggd' | 'kitsu' | 'statsfm' | 'simkl' | 'goodreads'): string {
@@ -42,8 +52,8 @@ export function logo(name: 'backloggd' | 'kitsu' | 'statsfm' | 'simkl' | 'goodre
   return uri;
 }
 
-// Minimal element helper — satori accepts React-shaped plain objects,
-// so we skip JSX entirely.
+// Minimal element helper — takumi's fromJsx() accepts React-shaped plain
+// objects, so we skip JSX entirely.
 export function h(
   type: string,
   props: Record<string, unknown> | null,
@@ -80,14 +90,14 @@ export async function toDataUri(rawUrl: string, attempt = 0): Promise<string> {
     if (!res.ok) return attempt < 1 ? toDataUri(url, attempt + 1) : '';
     const buf = Buffer.from(await res.arrayBuffer());
     // Sniff the real type — some CDNs answer with binary/octet-stream,
-    // which satori refuses to size.
+    // which the renderer refuses to size.
     let type = 'image/jpeg';
     if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
       type = 'image/png';
     } else if (buf.subarray(0, 4).toString('ascii') === 'GIF8') {
       type = 'image/gif';
     } else if (buf.subarray(8, 12).toString('ascii') === 'WEBP') {
-      return ''; // satori can't render webp
+      return ''; // not decoded by this pipeline
     }
     return `data:${type};base64,${buf.toString('base64')}`;
   } catch {
@@ -111,7 +121,7 @@ const CJK = /[⺀-鿿豈-﫿＀-￯　-〿]/;
 
 // Max lines a wrapped tile title may occupy before it's clamped with an
 // ellipsis. Pair with `display: 'block'` + `lineClamp: MAX_TITLE_LINES` on the
-// title span (satori's line-clamp path).
+// title span (the renderer's line-clamp path).
 export const MAX_TITLE_LINES = 5;
 
 // CJK-weighted display length (CJK glyphs count as 2, matching `truncate`).
@@ -132,11 +142,9 @@ export function titleFontSize(text: string, base = 11, min = 8): number {
   return min;
 }
 
-// Satori assigns a font per whitespace-delimited word based on its first
-// character, so a Latin-prefixed word like "TVアニメ" gets the brand font
-// (which lacks kana) and the CJK tofus out. When a string contains any CJK,
-// put the Noto CJK fonts first — Noto also covers Latin, so the whole run
-// renders. Pure-Latin strings keep the brand font.
+// When a string contains any CJK, put the Noto CJK fonts first in the
+// font-family stack — Noto also covers Latin, so the whole run renders even
+// if the brand font lacks CJK glyphs. Pure-Latin strings keep the brand font.
 export function textFont(text: string, brand: string): string {
   return CJK.test(text) ? `"Noto Sans JP", "Noto Sans TC", ${brand}` : brand;
 }
@@ -184,12 +192,14 @@ export async function renderCard(
   width: number,
   height: number
 ): Promise<string> {
+  await ensureFonts();
+  const { node: root, stylesheets } = await fromJsx(node as never);
   const draftHeight = height + 240; // headroom so nothing is clipped pre-trim (wrapped titles can add several lines)
-  const draft = await satori(node as never, { width, height: draftHeight, fonts });
+  const draft = await renderer.renderSvg(root, { width, height: draftHeight, stylesheets });
   const img = new Resvg(draft).render();
   const bottom = contentBottom(Buffer.from(img.pixels), img.width, img.height);
   const trimmed = Math.min(draftHeight, bottom + BOTTOM_PAD);
-  return satori(node as never, { width, height: trimmed, fonts });
+  return renderer.renderSvg(root, { width, height: trimmed, stylesheets });
 }
 
 // Lazily compile the WebP encoder's wasm once (its default fetch()-based

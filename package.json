@@ -12,9 +12,10 @@
     "@hono/node-server": "^2.0.8",
     "@jsquash/webp": "^1.5.0",
     "@resvg/resvg-js": "^2.6.2",
+    "@takumi-rs/core": "^2.0.1",
+    "@takumi-rs/helpers": "^2.0.1",
     "cheerio": "^1.2.0",
     "hono": "^4.12.28",
-    "satori": "^0.26.0",
     "tsx": "^4.23.0",
     "wasm-feature-detect": "^1.8.0"
   },
